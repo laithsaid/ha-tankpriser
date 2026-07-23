@@ -27,10 +27,10 @@
  *   highlight_cheapest: true             # optional, default true
  *   max_stations: 0                      # optional, 0 = all (list only)
  *
- * Company icons are each chain's official favicon (via DuckDuckGo's icon
- * service), referenced at runtime — nothing is bundled. A colored code badge
- * is shown as a fallback if an icon cannot load. Map tiles need internet from
- * the browser; the price table works offline.
+ * Company icons are each chain's official favicon, bundled with the
+ * integration and served by Home Assistant — no third-party requests. A
+ * colored code badge is shown as a fallback if an icon cannot load. Map tiles
+ * need internet from the browser; the price table works offline.
  */
 
 // Leaflet is vendored under the integration's own static path, so the browser
@@ -39,8 +39,49 @@
 // it as the primary source broke the map whenever the *client* device could not
 // reach unpkg (DNS filtering, Private Relay, WAN down while HA is local).
 const VENDOR = "/tankpriser/vendor";
+
+// Where "Support the project" points unless a dashboard overrides it.
+const DONATE_URL = "https://github.com/laithsaid/ha-tankpriser";
+
+// Only http(s) links may be rendered. A dashboard config is trusted, but
+// "javascript:..." in donate_url would run in Home Assistant's origin, and
+// dashboard YAML gets copied between users.
+function _safeUrl(url) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(String(url), window.location.origin);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+  } catch (e) {
+    return "";
+  }
+}
 const CDN_LEAFLET = "https://unpkg.com/leaflet@1.9.4/dist";
 const CDN_CLUSTER = "https://unpkg.com/leaflet.markercluster@1.5.3/dist";
+
+// Subresource Integrity for the CDN copies. Without these, a compromised or
+// spoofed unpkg response would execute as script inside Home Assistant's own
+// origin, with access to the logged-in session. The digests are of the exact
+// pinned versions above, verified byte-identical to the vendored files, so a
+// tampered CDN response simply fails to load and the map degrades instead.
+const SRI = {
+  "leaflet.js":
+    "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH",
+  "leaflet.css":
+    "sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H",
+  "leaflet.markercluster.js":
+    "sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr",
+  "MarkerCluster.css":
+    "sha384-pmjIAcz2bAn0xukfxADbZIb3t8oRT9Sv0rvO+BR5Csr6Dhqq+nZs59P0pPKQJkEV",
+  "MarkerCluster.Default.css":
+    "sha384-wgw+aLYNQ7dlhK47ZPK7FRACiq7ROZwgFNg0m04avm4CaXS+Z9Y7nMu8yNjBKYC+",
+};
+
+// Integrity only applies to the cross-origin CDN copies; the vendored files are
+// served by Home Assistant itself over the same origin.
+function _sriFor(url) {
+  if (!url.startsWith("https://unpkg.com/")) return "";
+  return SRI[url.split("/").pop()] || "";
+}
 
 const LEAFLET_JS = [`${VENDOR}/leaflet.js`, `${CDN_LEAFLET}/leaflet.js`];
 const LEAFLET_CSS = [`${VENDOR}/leaflet.css`, `${CDN_LEAFLET}/leaflet.css`];
@@ -85,21 +126,25 @@ const FUEL_LABELS = {
   hvo100: "HVO100",
 };
 
-const ICON_BASE = "https://icons.duckduckgo.com/ip3/";
+// Brand icons are bundled and served by Home Assistant. They used to be
+// fetched from a third-party favicon service, which told that service the
+// user's IP, when they opened the dashboard and which chains they follow —
+// on every single render. Nothing here leaves the local network.
+const ICON_BASE = "/tankpriser/vendor/icons/";
 const COMPANIES = [
-  { test: /oil/i, code: "OIL!", color: "#D81E05", domain: "oiltankstationer.dk" },
-  { test: /f24/i, code: "F24", color: "#7A1FA2", domain: "f24.dk" },
-  { test: /q8/i, code: "Q8", color: "#00843D", domain: "q8.dk" },
-  { test: /shell/i, code: "Shell", color: "#D9A400", domain: "shell.dk" },
-  { test: /circle ?k/i, code: "CK", color: "#E4002B", domain: "circlek.dk" },
-  { test: /go.?on/i, code: "Go'on", color: "#2E9C48", domain: "goon.nu" },
-  { test: /uno.?x/i, code: "Uno-X", color: "#111", domain: "uno-x.dk" },
-  { test: /ok/i, code: "OK", color: "#E4571B", domain: "ok.dk" },
+  { test: /oil/i, code: "OIL!", color: "#D81E05", icon: "oiltankstationer.dk.png" },
+  { test: /f24/i, code: "F24", color: "#7A1FA2", icon: "f24.dk.png" },
+  { test: /q8/i, code: "Q8", color: "#00843D", icon: "q8.dk.png" },
+  { test: /shell/i, code: "Shell", color: "#D9A400", icon: "shell.dk.ico" },
+  { test: /circle ?k/i, code: "CK", color: "#E4002B", icon: "circlek.dk.ico" },
+  { test: /go.?on/i, code: "Go'on", color: "#2E9C48", icon: "goon.nu.png" },
+  { test: /uno.?x/i, code: "Uno-X", color: "#111", icon: "uno-x.dk.ico" },
+  { test: /ok/i, code: "OK", color: "#E4571B", icon: "ok.dk.ico" },
 ];
 function companyMeta(company) {
   const c = company || "";
   for (const m of COMPANIES) if (m.test.test(c)) return m;
-  return { code: c.slice(0, 4) || "?", color: "#607d8b", domain: null };
+  return { code: c.slice(0, 4) || "?", color: "#607d8b", icon: null };
 }
 
 const _iconStatus = {}; // url -> 'ok' | 'fail'
@@ -138,6 +183,11 @@ function _loadScript(src) {
       return;
     }
     el = document.createElement("script");
+    const integrity = _sriFor(src);
+    if (integrity) {
+      el.integrity = integrity;
+      el.crossOrigin = "anonymous"; // required for integrity to be enforced
+    }
     el.src = src;
     el.onload = () => {
       el.dataset.loaded = "1";
@@ -217,7 +267,9 @@ class TankpriserCard extends HTMLElement {
       highlight_cheapest: config.highlight_cheapest !== false,
       max_stations: config.max_stations || 0,
       show_map: showMap,
-      map_height: config.map_height || 420,
+      // Coerced to a number: it is interpolated into a style attribute, so a
+      // string from YAML could otherwise close the attribute and inject markup.
+      map_height: Number(config.map_height) || 420,
       map_theme: ["light", "dark"].includes(config.map_theme) ? config.map_theme : "auto",
       // "national" (default) shows every Danish station; the map viewport is the
       // filter. "area" restricts the map to the sensor's Home-based area.
@@ -226,7 +278,7 @@ class TankpriserCard extends HTMLElement {
       // list shows by default only when there is no map to carry the info
       show_list: config.show_list !== undefined ? config.show_list === true : !showMap,
       show_donate: config.show_donate !== false,
-      donate_url: config.donate_url || "https://github.com/laithsaid/ha-tankpriser",
+      donate_url: _safeUrl(config.donate_url) || DONATE_URL,
       // Show a live "you are here" dot on the map, updated while you move.
       show_my_location: config.show_my_location !== false,
       // Start with follow-me armed. Off by default: it takes control of the map
@@ -319,7 +371,8 @@ class TankpriserCard extends HTMLElement {
       ? [LEAFLET_CSS, CLUSTER_CSS[0], CLUSTER_CSS[1]]
           .map(
             ([local, cdn]) =>
-              `<link rel="stylesheet" href="${local}" data-fallback="${cdn}">`
+              `<link rel="stylesheet" href="${local}" data-fallback="${cdn}" ` +
+              `data-integrity="${_sriFor(cdn)}">`
           )
           .join("\n")
       : "";
@@ -328,7 +381,7 @@ class TankpriserCard extends HTMLElement {
       : "";
     const donate = this._config.show_donate
       ? `<div class="ff-donate">Enjoying this card?
-           <a href="${this._config.donate_url}" target="_blank" rel="noopener">Support the project ♥</a>
+           <a href="${this._escape(this._config.donate_url)}" target="_blank" rel="noopener">Support the project ♥</a>
          </div>`
       : "";
 
@@ -434,7 +487,15 @@ class TankpriserCard extends HTMLElement {
     for (const link of this.querySelectorAll("link[data-fallback]")) {
       link.addEventListener("error", () => {
         const cdn = link.dataset.fallback;
-        if (cdn && link.href !== cdn) link.href = cdn;
+        if (!cdn || link.href === cdn) return;
+        // Set integrity before href: a stylesheet fetch starts as soon as href
+        // is assigned, so a later integrity attribute would not be enforced.
+        const integrity = link.dataset.integrity;
+        if (integrity) {
+          link.integrity = integrity;
+          link.crossOrigin = "anonymous";
+        }
+        link.href = cdn;
       });
     }
     this._built = true;
@@ -583,7 +644,7 @@ class TankpriserCard extends HTMLElement {
 
   _iconUrl(company) {
     const meta = companyMeta(company);
-    return meta.domain ? `${ICON_BASE}${meta.domain}.ico` : null;
+    return meta.icon ? `${ICON_BASE}${meta.icon}` : null;
   }
 
   _effectiveTheme() {
@@ -985,7 +1046,7 @@ class TankpriserCard extends HTMLElement {
     const extra = companies.length - shown.length;
     const icons = shown
       .map((meta) => {
-        const url = meta.domain ? `${ICON_BASE}${meta.domain}.ico` : null;
+        const url = meta.icon ? `${ICON_BASE}${meta.icon}` : null;
         return url && _iconStatus[url] === "ok"
           ? `<img class="ff-cico" src="${url}" alt="">`
           : `<span class="ff-ccode" style="background:${meta.color}">${this._escape(meta.code)}</span>`;

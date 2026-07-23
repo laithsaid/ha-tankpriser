@@ -21,6 +21,7 @@ from typing import Final
 import aiohttp
 
 from .const import (
+    MAX_STALE_AGE,
     OIL_FUELTYPES,
     OIL_URL,
     OK_URL,
@@ -429,10 +430,34 @@ async def _fetch_provider(
                 "Fetched %d stations from %s", len(stations), provider.key
             )
             return stations
-        except (aiohttp.ClientError, ValueError) as err:
-            _LOGGER.warning("Provider %s failed: %s", provider.key, err)
-            # Fall back to stale cache if we have one, else empty.
-            return cached[1] if cached else []
+        # TimeoutError must be listed explicitly: aiohttp raises the builtin
+        # (an OSError), which is neither a ClientError nor a ValueError, so
+        # without it one slow chain would abort the whole refresh instead of
+        # degrading to the other chains.
+        except (aiohttp.ClientError, ValueError, TimeoutError) as err:
+            if cached is None:
+                _LOGGER.warning("Provider %s failed: %s", provider.key, err)
+                return []
+            age = time.monotonic() - cached[0]
+            if age > MAX_STALE_AGE:
+                # Serving prices this old is worse than serving none: the user
+                # cannot tell they are stale, and may drive to a bad price.
+                _LOGGER.warning(
+                    "Provider %s failed and its cached data is %.0f min old; "
+                    "dropping it: %s",
+                    provider.key,
+                    age / 60,
+                    err,
+                )
+                _CACHE.pop(provider.key, None)
+                return []
+            _LOGGER.warning(
+                "Provider %s failed, using cached data from %.0f min ago: %s",
+                provider.key,
+                age / 60,
+                err,
+            )
+            return cached[1]
 
 
 async def fetch_all(

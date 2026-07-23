@@ -24,12 +24,15 @@ OK_URL: Final = "https://mobility-prices.ok.dk/api/v1/fuel-prices"
 OIL_URL: Final = "https://apim-fuel-prices-prod.azure-api.net/Oil-FuelPrices/prices"
 OIL_FUELTYPES: Final = {"95E10": "blyfri95", "DieselB7": "diesel"}
 
-# Sent with every provider request. These are public JSON APIs, but a normal
-# browser Accept keeps us on the happy path.
+# Sent with every provider request. We identify honestly rather than
+# impersonating a browser: these are open JSON APIs published under the price
+# transparency law, all five endpoints were verified to answer this UA, and a
+# chain with a problem can reach us through the URL instead of silently
+# blocking what looks like a fake Chrome.
 REQUEST_HEADERS: Final = {
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        "HomeAssistant-Tankpriser/0.7.1 "
+        "(+https://github.com/laithsaid/ha-tankpriser)"
     ),
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "da,en-US;q=0.9,en;q=0.8",
@@ -38,6 +41,11 @@ REQUEST_HEADERS: Final = {
 # Seconds to cache each provider's nationwide response, shared across all
 # configured areas so many areas cost one fetch per provider.
 PROVIDER_CACHE_TTL: Final = 600.0
+
+# How long a failing provider's last good response may keep being served.
+# Beyond this the chain drops out of the list entirely: stale prices are worse
+# than absent ones, because nothing on screen tells the user they are old.
+MAX_STALE_AGE: Final = 6 * 3600.0
 
 # --- Geo (DAWA) ------------------------------------------------------------
 # Danmarks Adressers Web API — free, no key. Resolves the configured

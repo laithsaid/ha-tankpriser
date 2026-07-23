@@ -11,7 +11,6 @@ it for two things:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 import aiohttp
@@ -21,6 +20,11 @@ from .const import DAWA_BASE_URL, REQUEST_HEADERS
 _LOGGER = logging.getLogger(__name__)
 
 _TIMEOUT = aiohttp.ClientTimeout(total=20)
+
+# How many postnumre to resolve per DAWA request. Denmark has ~1100 in total,
+# so a handful of requests covers the whole country; kept well below any URL
+# length limit.
+_BATCH_SIZE = 100
 
 # postnummer -> (lat, lon); DAWA data changes ~never, so cache for process life.
 _CENTER_CACHE: dict[str, tuple[float, float] | None] = {}
@@ -43,15 +47,24 @@ async def postnummer_center(
     center: tuple[float, float] | None = None
     try:
         data = await _get_json(session, f"{DAWA_BASE_URL}/postnumre/{postnummer}")
-        # visueltcenter is [lon, lat] — note the order.
-        vc = data.get("visueltcenter") if isinstance(data, dict) else None
-        if vc and len(vc) == 2:
-            center = (float(vc[1]), float(vc[0]))
-    except (aiohttp.ClientError, ValueError, KeyError, TypeError) as err:
+        center = _center_of(data)
+    except (aiohttp.ClientError, ValueError, KeyError, TypeError, TimeoutError) as err:
         _LOGGER.debug("DAWA center lookup failed for %s: %s", postnummer, err)
+        # Do not cache a transient failure as "no such postnummer" — that would
+        # keep the station off the map for the rest of the process's life.
+        return None
 
     _CENTER_CACHE[postnummer] = center
     return center
+
+
+def _center_of(record) -> tuple[float, float] | None:
+    """Pull (lat, lon) out of a DAWA postnummer record."""
+    # visueltcenter is [lon, lat] — note the order.
+    vc = record.get("visueltcenter") if isinstance(record, dict) else None
+    if vc and len(vc) == 2:
+        return (float(vc[1]), float(vc[0]))
+    return None
 
 
 async def postnumre_within_point(
@@ -67,7 +80,7 @@ async def postnumre_within_point(
             nr = item.get("nr")
             if nr:
                 result.add(str(nr))
-    except (aiohttp.ClientError, ValueError, TypeError) as err:
+    except (aiohttp.ClientError, ValueError, TypeError, TimeoutError) as err:
         _LOGGER.warning(
             "DAWA radius lookup failed for %s,%s (%s m): %s", lat, lon, radius_m, err
         )
@@ -97,13 +110,34 @@ async def postnumre_within(
 async def centers_for(
     session: aiohttp.ClientSession, postnumre: set[str]
 ) -> dict[str, tuple[float, float]]:
-    """Resolve a set of postnumre to their centre coordinates (best effort)."""
-    unknown = [p for p in postnumre if p not in _CENTER_CACHE]
-    if unknown:
-        await asyncio.gather(
-            *(postnummer_center(session, p) for p in unknown),
-            return_exceptions=True,
-        )
+    """Resolve a set of postnumre to their centre coordinates (best effort).
+
+    DAWA accepts many postnumre in one call (``nr=8600|8620|...``), so this
+    costs one request per BATCH_SIZE rather than one per postnummer. That
+    matters for the national map, where every coordinate-less station needs a
+    lookup and the naive version fired hundreds of concurrent requests at a
+    free public API.
+    """
+    unknown = sorted(p for p in postnumre if p not in _CENTER_CACHE)
+    for start in range(0, len(unknown), _BATCH_SIZE):
+        batch = unknown[start : start + _BATCH_SIZE]
+        try:
+            data = await _get_json(
+                session, f"{DAWA_BASE_URL}/postnumre?nr={'|'.join(batch)}"
+            )
+        except (aiohttp.ClientError, ValueError, TypeError, TimeoutError) as err:
+            _LOGGER.debug("DAWA batch centre lookup failed (%d): %s", len(batch), err)
+            continue
+
+        for record in data or []:
+            nr = record.get("nr")
+            if nr:
+                _CENTER_CACHE[str(nr)] = _center_of(record)
+        # Anything DAWA did not return does not exist; remember that so the
+        # next refresh does not ask again.
+        for nr in batch:
+            _CENTER_CACHE.setdefault(nr, None)
+
     return {
         p: _CENTER_CACHE[p]
         for p in postnumre

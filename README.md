@@ -76,8 +76,13 @@ and only uses high-accuracy GPS while follow-me is on.
 Prices refresh when the integration has new data (it pushes an event after each
 poll), not on a separate timer in the card.
 
-The map library is served by Home Assistant itself, so the map works on a LAN
-with no internet — only the background tiles come from OpenStreetMap/CARTO.
+The map library and all chain icons are served by Home Assistant itself, so the
+map works on a LAN with no internet and nothing about your dashboard is
+disclosed to third parties — **except the background map tiles**, which your
+browser fetches from OpenStreetMap (or CARTO in dark mode). Those requests
+reveal your IP and roughly which area you are looking at. Set `show_map: false`
+if you would rather not make them; the price list works without any external
+request at all.
 
 **Card options:**
 

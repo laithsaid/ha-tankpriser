@@ -1,13 +1,19 @@
 {
   "domain": "tankpriser",
   "name": "Tankpriser",
-  "codeowners": ["@laithsaid"],
+  "codeowners": [
+    "@laithsaid"
+  ],
   "config_flow": true,
-  "dependencies": ["frontend", "http", "websocket_api"],
+  "dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/laithsaid/ha-tankpriser",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/laithsaid/ha-tankpriser/issues",
   "requirements": [],
-  "version": "0.7.0"
+  "version": "0.7.1"
 }
