@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Opsæt Tankpriser",
+        "description": "Priser hentes fra de danske brændstofkæders officielle pris-API'er (OK, Q8, F24, Shell, OIL!). Dit område er din Hjem-placering — vælg blot de brændstoftyper, du vil følge. Radius (standard 10 km) kan ændres senere under Indstillinger.",
+        "data": {
+          "area_name": "Navn (valgfrit)",
+          "fuel_types": "Brændstoftyper"
+        }
+      }
+    },
+    "error": {
+      "no_fuel_types": "Vælg mindst én brændstoftype."
+    },
+    "abort": {
+      "already_configured": "Tankpriser er allerede opsat."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tankpriser-indstillinger",
+        "menu_options": {
+          "settings": "Område og brændstoftyper",
+          "notifications": "Prisnotifikationer",
+          "chains": "Kæder og API-nøgler"
+        }
+      },
+      "settings": {
+        "title": "Område og brændstoftyper",
+        "description": "Justér radius omkring din Hjem-placering, vælg brændstoftyper og skjul tankstationer, du ikke er interesseret i.",
+        "data": {
+          "radius": "Radius omkring Hjem",
+          "fuel_types": "Brændstoftyper",
+          "excluded_stations": "Skjul disse tankstationer",
+          "scan_interval": "Opdateringsinterval (minutter)"
+        }
+      },
+      "notifications": {
+        "title": "Prisnotifikationer",
+        "description": "Få besked når priserne ændrer sig i dit område.",
+        "data": {
+          "notify_enabled": "Send notifikationer ved prisændringer",
+          "notify_service": "Notifikationstjeneste (fx notify.mobile_app_telefon)",
+          "notify_rule": "Hvornår skal der notificeres",
+          "notify_threshold": "Prisgrænse (for \"under grænse\")"
+        }
+      },
+      "chains": {
+        "title": "Kæder og API-nøgler",
+        "description": "De fleste danske kæder offentliggør deres priser frit og kræver ingen opsætning — OK, Q8, F24, Shell og OIL! virker med det samme. Kæderne nedenfor svarer kun med en personlig API-nøgle, som du selv skal anmode om. Vælg en for at se hvordan.",
+        "data": {
+          "provider": "Kæde"
+        }
+      },
+      "provider": {
+        "title": "API-nøgle til {name}",
+        "description": "**Sådan får du en nøgle til {name}:**\n\n{guide}\n\nTilmelding: {signup_url}\n\nNøglen gemmes i denne integrations konfiguration, sendes kun til {name} og skjules i diagnostik. Lad feltet stå tomt for at fjerne den og holde op med at bruge kæden.{warning}",
+        "data": {
+          "api_key": "API-nøgle"
+        },
+        "data_description": {
+          "api_key": "Nøglen kontrolleres med det samme — afviser kæden den, vises fejlen her."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Kæden afviste nøglen. Kontrollér at du har kopieret det hele, og at nøglen er aktiveret.",
+      "cannot_connect": "Kunne ikke få forbindelse til kædens API. Kontrollér din internetforbindelse og prøv igen.",
+      "no_stations": "Nøglen blev accepteret, men der kom ingen tankstationer retur. Kontoen har måske ikke adgang endnu, eller kæden har ændret format — opret gerne et issue."
+    },
+    "abort": {
+      "no_credential_chains": "Ingen kæder kræver i øjeblikket en API-nøgle — alle understøttede kæder offentliggør deres priser frit."
+    }
+  },
+  "selector": {
+    "notify_rule": {
+      "options": {
+        "any_change": "Enhver prisændring i området",
+        "cheapest_change": "Når den laveste pris ændrer sig",
+        "below_threshold": "Når den laveste pris kommer under grænsen",
+        "decrease_only": "Kun når den laveste pris falder"
+      }
+    }
+  }
+}

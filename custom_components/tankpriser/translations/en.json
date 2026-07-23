@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Tankpriser",
+        "description": "Prices come from Danish fuel chains' official price APIs (OK, Q8, F24, Shell, OIL!). Your area is your Home location — just choose which fuel types to track. The radius (default 10 km) can be changed later under Options.",
+        "data": {
+          "area_name": "Name (optional)",
+          "fuel_types": "Fuel types"
+        }
+      }
+    },
+    "error": {
+      "no_fuel_types": "Select at least one fuel type."
+    },
+    "abort": {
+      "already_configured": "Tankpriser is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tankpriser options",
+        "menu_options": {
+          "settings": "Area & fuel types",
+          "notifications": "Price notifications",
+          "chains": "Chains & API keys"
+        }
+      },
+      "settings": {
+        "title": "Area & fuel types",
+        "description": "Adjust the radius around your Home location, choose fuel types and hide stations you do not care about.",
+        "data": {
+          "radius": "Radius around Home",
+          "fuel_types": "Fuel types",
+          "excluded_stations": "Hide these stations",
+          "scan_interval": "Update interval (minutes)"
+        }
+      },
+      "notifications": {
+        "title": "Price notifications",
+        "description": "Get notified when prices change in your area.",
+        "data": {
+          "notify_enabled": "Send notifications on price changes",
+          "notify_service": "Notify service (e.g. notify.mobile_app_phone)",
+          "notify_rule": "When to notify",
+          "notify_threshold": "Price threshold (for \"below threshold\")"
+        }
+      },
+      "chains": {
+        "title": "Chains & API keys",
+        "description": "Most Danish chains publish their prices openly and need no setup — OK, Q8, F24, Shell and OIL! work out of the box. The chains below only answer with a personal API key that you must request yourself. Pick one to see how.",
+        "data": {
+          "provider": "Chain"
+        }
+      },
+      "provider": {
+        "title": "{name} API key",
+        "description": "**How to get a key for {name}:**\n\n{guide}\n\nSign-up: {signup_url}\n\nThe key is stored in this integration's configuration, sent only to {name}, and hidden from diagnostics. Leave the field empty to remove it and stop using this chain.{warning}",
+        "data": {
+          "api_key": "API key"
+        },
+        "data_description": {
+          "api_key": "The key is checked immediately — if the chain rejects it you will see an error here."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The chain rejected that key. Check that you copied all of it and that it has been activated.",
+      "cannot_connect": "Could not reach the chain's API. Check your internet connection and try again.",
+      "no_stations": "The key was accepted but no stations came back. The account may not have access yet, or the chain changed its format — please open an issue."
+    },
+    "abort": {
+      "no_credential_chains": "No chain currently needs an API key — every supported chain publishes its prices openly."
+    }
+  },
+  "selector": {
+    "notify_rule": {
+      "options": {
+        "any_change": "Any price change in the area",
+        "cheapest_change": "When the cheapest price changes",
+        "below_threshold": "When the cheapest price drops below the threshold",
+        "decrease_only": "Only when the cheapest price decreases"
+      }
+    }
+  }
+}
