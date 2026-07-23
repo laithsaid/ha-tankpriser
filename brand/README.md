@@ -1,47 +1,56 @@
-# Brand assets
+# Brand assets (source)
 
 The Tankpriser icon: Material Design's `mdi:gas-station` — the same fuel pump
 Home Assistant itself draws — with the Dannebrog on the pump body.
 
-| File | Size | Purpose |
-| --- | --- | --- |
-| `icon.png` | 256×256 | The icon Home Assistant and HACS show |
-| `icon@2x.png` | 512×512 | High-DPI version |
-| `preview-48.png` | 48×48 | Only for checking legibility at sidebar size |
-| `tankpriser-icon.svg` | vector | The master; edit this, not the PNGs |
-| `make_icon.js` | — | Renders the PNGs from the path data |
+**The images Home Assistant actually uses live in
+`custom_components/tankpriser/brand/`.** This folder holds only the sources
+that generate them.
+
+| File | Purpose |
+| --- | --- |
+| `make_icon.js` | Renders every PNG into `custom_components/tankpriser/brand/` |
+| `tankpriser-light.svg` | Vector master, light theme (dark pump) |
+| `tankpriser-dark.svg` | Vector master, dark theme (light pump) |
 
 ## Regenerating
 
 ```
 npm install sharp
-node make_icon.js
+node brand/make_icon.js
 ```
 
-then copy `fin_256.png` / `fin_512.png` over `icon.png` / `icon@2x.png`.
+This writes `icon.png`, `icon@2x.png`, `dark_icon.png` and `dark_icon@2x.png`
+into the integration's `brand/` folder. Edit the path data or colours in
+`make_icon.js` — the SVGs are outputs, not inputs.
+
+## How the icon reaches Home Assistant
+
+Since **Home Assistant 2026.3**, custom integrations ship their own brand
+images in `custom_components/<domain>/brand/`, and local images take priority
+over the brands CDN. No PR to
+[home-assistant/brands](https://github.com/home-assistant/brands) is required.
+
+On Home Assistant **older than 2026.3** this mechanism does not exist, and the
+integration will show a generic placeholder unless the icons are submitted to
+the brands repository as `custom_integrations/tankpriser/`.
 
 ## Design notes
 
 The pump outline is MDI's `gas-station` path, used **unmodified** — including
-the filler-neck handle on the right — so the icon sits naturally beside Home
-Assistant's own icons. Three deliberate additions:
+the filler-neck handle — so the icon sits naturally beside Home Assistant's
+own icons. Deliberate additions:
 
-* The display, which MDI leaves as a hole, is filled white. Left as a hole it
-  shows the page through it, so it looked dark on a dark theme and white on a
-  light one.
-* The cross bars are thicker than a true Dannebrog's ~1/7 ratio. At 48 px the
-  correct thin cross greys out into the red.
-* The glyph is trimmed and re-centred, because MDI's 24×24 grid leaves uneven
-  margins around this particular icon.
+* The display, which MDI leaves as a hole, is filled. Left as a hole it shows
+  the page through it, so it looked dark on a dark theme and white on a light
+  one.
+* A separate `dark_icon.png` inverts the pump body to light grey. The default
+  dark navy body all but disappears against a dark card background.
+* The cross bars are thicker than a true Dannebrog's ~1/7 ratio; at sidebar
+  size the correct thin cross greys out into the red.
+* The glyph is trimmed to ~96% of the canvas height, per Home Assistant's
+  requirement that brand images contain minimal empty space. It is taller than
+  it is wide, so the side margins are the leftover of keeping it square.
 
 The cross sits left of centre — that is what makes a Dannebrog read as Danish
-rather than as a generic (Swiss/Red Cross) centred cross.
-
-## Getting the icon into Home Assistant
-
-Home Assistant does not read these files from this repository. They have to be
-submitted to [home-assistant/brands](https://github.com/home-assistant/brands)
-as `custom_integrations/tankpriser/icon.png` (and `icon@2x.png`). Until that
-PR is merged the HACS validation "brands" check fails, which is why
-`.github/workflows/validate.yml` currently passes `ignore: brands`. Remove
-that line once the brands PR is merged.
+rather than as a generic centred cross.
