@@ -22,3 +22,9 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # The "brands" check requires the tankpriser domain to be merged
+          # into home-assistant/brands, which is a separate PR to that repo.
+          # Installing from a custom repository works without it; it is only
+          # mandatory to be listed in the HACS default store. Remove this
+          # line once the brands PR is merged.
+          ignore: brands

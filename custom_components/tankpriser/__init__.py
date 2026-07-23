@@ -8,6 +8,7 @@ import os
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CARD_BASE_URL, CARD_URL, DOMAIN
@@ -17,6 +18,11 @@ from .websocket import async_register as async_register_ws
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+# Tankpriser is configured entirely from the UI; there is nothing to put in
+# configuration.yaml. Declaring this is required because we implement
+# async_setup (to register the websocket command and the card early).
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _CARD_REGISTERED = False
 
