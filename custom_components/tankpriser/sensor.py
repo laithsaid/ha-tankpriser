@@ -65,7 +65,7 @@ class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
             name=entry.title,
             manufacturer="Tankpriser",
             model=f"{coordinator.area_label} · {coordinator.radius}",
-            configuration_url="https://github.com/laithsaid/ha_fuel_extension",
+            configuration_url="https://github.com/laithsaid/ha-tankpriser",
         )
 
     @property

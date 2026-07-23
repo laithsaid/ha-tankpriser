@@ -226,7 +226,7 @@ class TankpriserCard extends HTMLElement {
       // list shows by default only when there is no map to carry the info
       show_list: config.show_list !== undefined ? config.show_list === true : !showMap,
       show_donate: config.show_donate !== false,
-      donate_url: config.donate_url || "https://github.com/laithsaid/ha_fuel_extension",
+      donate_url: config.donate_url || "https://github.com/laithsaid/ha-tankpriser",
       // Show a live "you are here" dot on the map, updated while you move.
       show_my_location: config.show_my_location !== false,
       // Start with follow-me armed. Off by default: it takes control of the map

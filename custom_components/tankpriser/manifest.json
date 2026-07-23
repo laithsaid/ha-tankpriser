@@ -4,10 +4,10 @@
   "codeowners": ["@laithsaid"],
   "config_flow": true,
   "dependencies": ["frontend", "http", "websocket_api"],
-  "documentation": "https://github.com/laithsaid/ha_fuel_extension",
+  "documentation": "https://github.com/laithsaid/ha-tankpriser",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/laithsaid/ha_fuel_extension/issues",
+  "issue_tracker": "https://github.com/laithsaid/ha-tankpriser/issues",
   "requirements": [],
   "version": "0.7.0"
 }

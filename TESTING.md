@@ -78,7 +78,7 @@ You have the Add-on store, so you never touch the Proxmox host for this.
 
 **Option B — via HACS (the real install path)**
 
-1. Push this repo to `https://github.com/laithsaid/ha_fuel_extension` (public).
+1. Push this repo to `https://github.com/laithsaid/ha-tankpriser` (public).
 2. HACS → **⋮ → Custom repositories** → add that URL, category **Integration**.
 3. Install **Tankpriser** → **Restart Home Assistant**.
 
@@ -109,8 +109,8 @@ shell instead. HACS also has to be installed manually here.
    CFG=/opt/homeassistant/config          # ← replace with what step 2 printed
    mkdir -p "$CFG/custom_components"
    cd /tmp
-   git clone https://github.com/laithsaid/ha_fuel_extension
-   cp -r ha_fuel_extension/custom_components/tankpriser "$CFG/custom_components/"
+   git clone https://github.com/laithsaid/ha-tankpriser
+   cp -r ha-tankpriser/custom_components/tankpriser "$CFG/custom_components/"
    ```
 
    Not pushed yet? From your Windows machine instead:
@@ -313,7 +313,7 @@ Tracked here and in the project notes so nothing is lost while testing:
       they're pinned at their postnummer centre (flagged `≈`). Could geocode
       their addresses via DAWA for exact map pins.
 - [ ] **Optional: rename the GitHub repo** — code says `Tankpriser`, but the repo
-      is still `ha_fuel_extension`; if you rename it, tell me to update the URLs.
+      is still `ha-tankpriser`; if you rename it, tell me to update the URLs.
 
 ### Backlog (feature ideas)
 

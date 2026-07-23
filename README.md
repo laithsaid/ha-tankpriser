@@ -1,13 +1,13 @@
 # Tankpriser for Home Assistant
 
 Show **local fuel prices** (Blyfri 95/98, Diesel, HVO100) on your Home
-Assistant dashboard, per **postnummer** and **radius**, sourced from the free,
+Assistant dashboard, around **your Home location**, sourced from the free,
 official **per-station price APIs** that Danish fuel chains publish (OK, Q8, F24,
 Shell and OIL! today; more chains easy to add). Geographic filtering uses the free
 [DAWA](https://dawadocs.dataforsyningen.dk/) postal-code API.
 
-- 🧭 Configure as many **areas** as you like — each with its own postnummer,
-  radius and fuel types.
+- 🧭 **Nothing to look up** — the area is your Home location; just pick a
+  **radius** (default 10 km) and the fuel types you care about.
 - 📋 Each widget lists **every station** in the area with its price, cheapest
   highlighted.
 - 🗺️ Optional **map** showing where the stations are (exact where the chain
@@ -28,12 +28,17 @@ Shell and OIL! today; more chains easy to add). Geographic filtering uses the fr
 ## Installation (via HACS)
 
 1. In HACS → **⋮** → **Custom repositories**, add
-   `https://github.com/laithsaid/ha_fuel_extension` as category **Integration**.
+   `https://github.com/laithsaid/ha-tankpriser` as category **Integration**.
 2. Install **Tankpriser**, then **restart Home Assistant**.
 3. Go to **Settings → Devices & Services → Add Integration → Tankpriser**.
-4. Enter a **postnummer**, pick a **radius** and the **fuel types** to track.
+4. Pick the **fuel types** to track. That's the whole setup — the area comes
+   from your Home location.
 
-Add more areas by adding the integration again with a different postnummer.
+> ⚠️ Set your **Home location** first (Settings → System → General), otherwise
+> there is no area to search around and no stations will be found.
+
+Afterwards, **Configure** opens a menu where you can change the **radius**,
+hide stations you don't care about, and set up price notifications.
 
 ## Add the card
 
@@ -42,11 +47,11 @@ Add more areas by adding the integration again with a different postnummer.
 
 ```yaml
 type: custom:tankpriser-card
-title: Fuel near 8600
+title: Fuel near home
 show_map: true          # optional map of the stations
 entities:
-  - sensor.8600_blyfri_95_e10
-  - sensor.8600_diesel_b7
+  - sensor.tankpriser_blyfri_95_e10
+  - sensor.tankpriser_diesel_b7
 ```
 
 Each map marker shows the chain's icon + its price; nearby stations group into a
@@ -81,7 +86,7 @@ with no internet — only the background tiles come from OpenStreetMap/CARTO.
 | `show_map` | `false` | Show the map above the list |
 | `map_height` | `420` | Map height in px |
 | `map_theme` | `auto` | `auto` (follows HA theme) / `light` / `dark` |
-| `coverage` | `area` | `area` = configured postnummer+radius; `national` = **all** DK stations, the map viewport is the filter (zoom out to aggregate) |
+| `coverage` | `area` | `area` = your Home location + the configured radius; `national` = **all** DK stations, the map viewport is the filter (zoom out to aggregate) |
 | `cluster` | `true` | Group nearby stations |
 | `show_my_location` | `true` | Live GPS dot + the ◎ / ➤ buttons |
 | `follow_me` | `false` | Start with follow-me armed |
@@ -96,16 +101,17 @@ show_map: true
 coverage: national
 map_theme: dark
 entities:
-  - sensor.8600_blyfri_95_e10   # the fuel to show nationwide
+  - sensor.tankpriser_blyfri_95_e10   # the fuel to show nationwide
 ```
 
-## Options (per area)
+## Options
 
-Open the integration → **Configure**:
+Open the integration → **Configure**, then pick **Area & fuel types** or
+**Price notifications**:
 
 | Option | Description |
 | --- | --- |
-| Radius | 5 / 10 / 15 / 25 / 50 km |
+| Radius | 5 / 10 / 15 / 25 / 50 km around your Home location |
 | Fuel types | Which fuels to create sensors for |
 | Hide stations | Stations to exclude from the list & cheapest calc |
 | Update interval | Minutes between refreshes (min 15) |
