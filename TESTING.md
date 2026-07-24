@@ -272,12 +272,13 @@ browser viewing the dashboard; the price table works offline regardless.
    from one refuel to the next, and tanks shorter than ~1 hour are ignored to
    avoid nonsense — so a few rapid manual changes will *not* produce a number;
    real car usage over days will. The prediction maths itself is covered by the
-   offline test suite (`scratchpad/test_prediction.py`, 39 assertions). To force
-   a quick end-to-end number for testing only, temporarily lower
-   `MIN_SEGMENT_DAYS` and `MIN_SEGMENTS_FOR_PREDICTION` in `const.py`, then
-   simulate: set the level high, wait, lower it (consumption), then raise it by
-   >15% of the tank (a refuel) — twice — and the sensor should switch to
-   `status: ready` with `days_until_empty`, `avg_consumption`, `confidence`.
+   offline test suite (`scratchpad/test_prediction.py`). To see a full
+   end-to-end number **today**, call the service **Developer Tools → Actions →
+   `tankpriser.seed_demo_history`** (optionally set `tanks`, `litres_per_day`,
+   `days_per_tank`): it injects synthetic tanks so the sensor flips to
+   `status: ready` with `days_until_empty`, `avg_consumption` and `confidence`
+   at once. Undo it with **`tankpriser.reset_history`** to return to real
+   learning.
 5. **Prediction card:** add a **Tankpriser Prediction** card from the picker (or
    `type: custom:tankpriser-prediction-card`, `entity:
    sensor.<car>_days_until_refuel`). It shows the tank gauge, the headline, and

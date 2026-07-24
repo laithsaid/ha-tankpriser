@@ -182,6 +182,24 @@ class ConsumptionTracker:
     def _data_for_save(self) -> dict:
         return self.model.as_dict()
 
+    # -- testing / maintenance ---------------------------------------------
+    async def seed_demo(
+        self, tanks: int, litres_per_day: float, days_per_tank: float
+    ) -> None:
+        """Inject synthetic tanks so the prediction shows immediately (demo)."""
+        self.model.seed_demo(
+            dt_util.utcnow().timestamp(), tanks, litres_per_day, days_per_tank
+        )
+        await self._store.async_save(self.model.as_dict())
+        self._notify()
+
+    async def reset(self) -> None:
+        """Wipe learned history back to nothing (returns to 'learning')."""
+        self.model = ConsumptionModel(self.capacity_l)
+        self._ingest_current()  # keep the current level as the first sample
+        await self._store.async_save(self.model.as_dict())
+        self._notify()
+
     # -- prediction ---------------------------------------------------------
     def predict(self) -> Prediction | None:
         """Current prediction, or None while still learning."""

@@ -14,6 +14,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import CARD_BASE_URL, CARD_URL, DOMAIN, SUBENTRY_CAR
 from .consumption import ConsumptionTracker
 from .coordinator import TankpriserCoordinator
+from .services import async_register_services
 from .websocket import async_register as async_register_ws
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     pull-to-refresh reuses the cached document.
     """
     async_register_ws(hass)
+    async_register_services(hass)
     await _async_register_card(hass)
     return True
 

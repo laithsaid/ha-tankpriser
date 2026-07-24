@@ -262,6 +262,34 @@ class ConsumptionModel:
     def current_litres(self) -> float | None:
         return self.samples[-1].litres if self.samples else None
 
+    def seed_demo(
+        self,
+        now_ts: float,
+        tanks: int = 3,
+        litres_per_day: float = 5.0,
+        days_per_tank: float = 7.0,
+    ) -> None:
+        """Replace history with synthetic tanks so a prediction shows at once.
+
+        For testing/demo only: real learning overwrites these as tanks complete.
+        Each synthetic tank runs full → (full − consumed) over ``days_per_tank``.
+        """
+        tanks = max(1, int(tanks))
+        seg_secs = max(0.0, days_per_tank) * _SECONDS_PER_DAY
+        consumed = min(self.capacity_l, max(0.1, litres_per_day * days_per_tank))
+        end_litres = max(0.0, self.capacity_l - consumed)
+        segments = [
+            Segment(
+                start_ts=now_ts - i * seg_secs - seg_secs,
+                end_ts=now_ts - i * seg_secs,
+                start_litres=self.capacity_l,
+                end_litres=end_litres,
+            )
+            for i in range(tanks)
+        ]
+        segments.reverse()  # oldest first
+        self.segments = segments
+
     # -- (de)serialisation --------------------------------------------------
     def as_dict(self) -> dict[str, Any]:
         return {

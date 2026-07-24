@@ -1,0 +1,62 @@
+seed_demo_history:
+  name: Seed demo prediction history
+  description: >-
+    Inject synthetic tanks into a car so the fuel-consumption prediction shows a
+    number immediately, instead of waiting for real refuel cycles. For
+    testing/demo — this overwrites any learned history. Use "Reset history"
+    afterwards to go back to real learning.
+  fields:
+    car:
+      name: Car
+      description: Only this car (by name). Leave empty to apply to all cars.
+      required: false
+      example: VW Passat
+      selector:
+        text:
+    tanks:
+      name: Tanks
+      description: How many synthetic tanks to seed.
+      required: false
+      default: 3
+      selector:
+        number:
+          min: 2
+          max: 10
+          mode: box
+    litres_per_day:
+      name: Litres per day
+      description: Simulated consumption rate.
+      required: false
+      default: 5
+      selector:
+        number:
+          min: 0.5
+          max: 50
+          step: 0.5
+          unit_of_measurement: L/day
+          mode: box
+    days_per_tank:
+      name: Days per tank
+      description: Simulated days each tank lasts.
+      required: false
+      default: 7
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: days
+          mode: box
+
+reset_history:
+  name: Reset learned history
+  description: >-
+    Clear a car's learned consumption history, returning its prediction to
+    "learning". Useful after changing the tank size or to undo a demo seed.
+  fields:
+    car:
+      name: Car
+      description: Only this car (by name). Leave empty to apply to all cars.
+      required: false
+      example: VW Passat
+      selector:
+        text:
