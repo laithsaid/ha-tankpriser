@@ -11,7 +11,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CARD_BASE_URL, CARD_URL, DOMAIN
+from .const import CARD_BASE_URL, CARD_URL, DOMAIN, SUBENTRY_CAR
+from .consumption import ConsumptionTracker
 from .coordinator import TankpriserCoordinator
 from .websocket import async_register as async_register_ws
 
@@ -63,16 +64,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
+    await _async_setup_cars(hass, entry, coordinator)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
+
+
+async def _async_setup_cars(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: TankpriserCoordinator
+) -> None:
+    """Start a consumption tracker for each car subentry."""
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != SUBENTRY_CAR:
+            continue
+        tracker = ConsumptionTracker(hass, entry, subentry)
+        try:
+            await tracker.async_start()
+        except Exception:  # noqa: BLE001 - one bad car must not break setup
+            _LOGGER.exception("Could not start consumption tracker for %s", subentry.title)
+            continue
+        coordinator.cars[subentry.subentry_id] = tracker
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
+        if coordinator is not None:
+            for tracker in coordinator.cars.values():
+                await tracker.async_stop()
     return unload_ok
 
 

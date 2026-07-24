@@ -250,6 +250,45 @@ browser viewing the dashboard; the price table works offline regardless.
 
 ---
 
+## 5b. Test the fuel-consumption prediction (per car)
+
+1. Integration → **Add car** (a config *subentry* — you can add as many cars as
+   you want). Point **Fuel-level entity** at anything that reports a level; for
+   a quick wiring test, create an `input_number` helper (0–100) and use it with
+   **Level unit = Percent** and a **Tank capacity** (e.g. 50 L). A real test
+   uses your car's own fuel-level entity/attribute (e.g. a `device_tracker`
+   attribute `fuel_level`).
+2. A **`sensor.<car>_days_until_refuel`** should appear (its own device named
+   after the car). Immediately after adding, its state is `unknown` with
+   attribute **`status: learning`** — this is correct: it never guesses before
+   it has learned a couple of tanks.
+3. **Verify the live wiring now** (no waiting needed): in **Developer Tools →
+   States**, change the source entity and confirm the sensor's
+   `current_level_percent` / `current_level_l` attributes track it, and that
+   `cheapest_station` / `cheapest_price` show the cheapest nearby price for the
+   car's fuel. Restart HA and confirm the car + sensor survive (history is
+   stored in `.storage/tankpriser_consumption_<id>`).
+4. **The numeric prediction needs real time.** Each learned "tank" is measured
+   from one refuel to the next, and tanks shorter than ~1 hour are ignored to
+   avoid nonsense — so a few rapid manual changes will *not* produce a number;
+   real car usage over days will. The prediction maths itself is covered by the
+   offline test suite (`scratchpad/test_prediction.py`, 39 assertions). To force
+   a quick end-to-end number for testing only, temporarily lower
+   `MIN_SEGMENT_DAYS` and `MIN_SEGMENTS_FOR_PREDICTION` in `const.py`, then
+   simulate: set the level high, wait, lower it (consumption), then raise it by
+   >15% of the tank (a refuel) — twice — and the sensor should switch to
+   `status: ready` with `days_until_empty`, `avg_consumption`, `confidence`.
+5. **Prediction card:** add a **Tankpriser Prediction** card from the picker (or
+   `type: custom:tankpriser-prediction-card`, `entity:
+   sensor.<car>_days_until_refuel`). It shows the tank gauge, the headline, and
+   a dismissible donation ask (`show_donate: false` to hide it).
+
+> With an **odometer** entity configured, consumption is reported in L/100 km;
+> without one, it falls back to a time-based estimate. Either way the
+> days-until-refuel projection needs real elapsed time to learn.
+
+---
+
 ## 6. Reading logs / debugging
 
 Add to `configuration.yaml` (then restart):

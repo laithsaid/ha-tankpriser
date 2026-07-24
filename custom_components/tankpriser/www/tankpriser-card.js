@@ -1188,11 +1188,269 @@ class TankpriserCardEditor extends HTMLElement {
 
 customElements.define("tankpriser-card-editor", TankpriserCardEditor);
 
+/*
+ * Tankpriser prediction card
+ * Shows when a car will next need refuelling, learned from its fuel level.
+ *
+ * Config:
+ *   type: custom:tankpriser-prediction-card
+ *   entity: sensor.<car>_days_until_refuel
+ *   title: "Passat"            # optional
+ *   show_donate: true          # optional, default true
+ *   donate_url: "..."          # optional; defaults to the sensor's link
+ *
+ * The prediction is free. It genuinely took work to build, so the card asks
+ * for a donation — but never withholds anything and the ask can be hidden.
+ */
+class TankpriserPredictionCard extends HTMLElement {
+  setConfig(config) {
+    if (!config || !config.entity) {
+      throw new Error("Set 'entity' to a sensor.<car>_days_until_refuel");
+    }
+    this._config = {
+      entity: config.entity,
+      title: config.title || "",
+      show_donate: config.show_donate !== false,
+      donate_url: _safeUrl(config.donate_url) || "",
+    };
+    this._built = false;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  getCardSize() {
+    return 3;
+  }
+
+  static getConfigElement() {
+    return document.createElement("tankpriser-prediction-card-editor");
+  }
+
+  static getStubConfig(hass) {
+    const match = hass
+      ? Object.keys(hass.states).find((id) =>
+          id.endsWith("_days_until_refuel")
+        )
+      : "";
+    return { entity: match || "" };
+  }
+
+  _escape(s) {
+    return String(s === null || s === undefined ? "" : s).replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+
+  _fmtDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const lang = (this._hass && this._hass.locale && this._hass.locale.language) || undefined;
+    return d.toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "short" });
+  }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+    const st = this._hass.states[this._config.entity];
+    if (!st) {
+      this.innerHTML = `<ha-card><div class="tp-pred-notice">Entity ${this._escape(
+        this._config.entity
+      )} not found.</div>${this._style()}</ha-card>`;
+      return;
+    }
+
+    const a = st.attributes || {};
+    const learning =
+      a.status !== "ready" ||
+      st.state === "unknown" ||
+      st.state === "unavailable";
+
+    const pct = a.current_level_percent;
+    const litres = a.current_level_l;
+    const bar =
+      pct === null || pct === undefined
+        ? ""
+        : `<div class="tp-pred-bar"><div class="tp-pred-fill" style="width:${Math.max(
+            0,
+            Math.min(100, Number(pct))
+          )}%"></div></div>
+           <div class="tp-pred-level">${this._escape(pct)} %${
+            litres !== null && litres !== undefined
+              ? ` · ${this._escape(litres)} L`
+              : ""
+          }</div>`;
+
+    let head;
+    if (learning) {
+      head = `<div class="tp-pred-head tp-pred-learning">
+          <div class="tp-pred-big">Learning…</div>
+          <div class="tp-pred-sub">Drive a few tanks and I'll predict your next refuel.</div>
+        </div>`;
+    } else {
+      const days = Number(st.state);
+      const shown = Number.isFinite(days)
+        ? days >= 10
+          ? Math.round(days)
+          : days.toFixed(1)
+        : st.state;
+      const when = a.predicted_empty ? this._fmtDate(a.predicted_empty) : "";
+      head = `<div class="tp-pred-head">
+          <div><span class="tp-pred-big">${this._escape(shown)}</span>
+               <span class="tp-pred-unit">days</span></div>
+          <div class="tp-pred-sub">until refuel${
+            when ? ` · ≈ ${this._escape(when)}` : ""
+          }</div>
+        </div>`;
+    }
+
+    const rows = [];
+    if (!learning) {
+      if (a.avg_consumption !== null && a.avg_consumption !== undefined) {
+        rows.push([
+          "Consumption",
+          `${this._escape(a.avg_consumption)} ${this._escape(a.consumption_unit || "")}`,
+        ]);
+      }
+      if (a.confidence !== null && a.confidence !== undefined) {
+        rows.push([
+          "Confidence",
+          `${Math.round(Number(a.confidence) * 100)} %${
+            a.learned_tanks ? ` · ${this._escape(a.learned_tanks)} tanks` : ""
+          }`,
+        ]);
+      }
+      if (a.cheapest_station) {
+        rows.push([
+          `Cheapest ${this._escape((a.fuel_type || "").toLowerCase())}`.trim(),
+          `${this._escape(a.cheapest_station)}${
+            a.cheapest_price !== null && a.cheapest_price !== undefined
+              ? ` · ${this._escape(a.cheapest_price)}`
+              : ""
+          }`,
+        ]);
+      }
+    }
+    const details = rows
+      .map(
+        ([k, v]) =>
+          `<div class="tp-pred-row"><span>${this._escape(k)}</span><b>${v}</b></div>`
+      )
+      .join("");
+
+    const donateUrl =
+      this._config.donate_url || _safeUrl(a.donate_url) || DONATE_URL;
+    const donate = this._config.show_donate
+      ? `<div class="tp-pred-donate">
+           This prediction took real work to build. If it's useful,
+           <a href="${this._escape(donateUrl)}" target="_blank" rel="noopener">please consider a donation 💛</a>
+         </div>`
+      : "";
+
+    this.innerHTML = `
+      <ha-card ${
+        this._config.title ? `header="${this._escape(this._config.title)}"` : ""
+      }>
+        <div class="tp-pred-body">
+          ${head}
+          ${bar}
+          <div class="tp-pred-details">${details}</div>
+          ${donate}
+        </div>
+        ${this._style()}
+      </ha-card>`;
+  }
+
+  _style() {
+    return `<style>
+      .tp-pred-body { padding: 12px 16px 16px; }
+      .tp-pred-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+      .tp-pred-big { font-size: 2.4em; font-weight: 600; line-height: 1; color: var(--primary-text-color); }
+      .tp-pred-unit { font-size: 1em; color: var(--secondary-text-color); margin-left: 4px; }
+      .tp-pred-sub { color: var(--secondary-text-color); font-size: 0.9em; }
+      .tp-pred-learning .tp-pred-big { font-size: 1.6em; color: var(--secondary-text-color); }
+      .tp-pred-bar { height: 8px; border-radius: 4px; background: var(--divider-color); overflow: hidden; margin: 6px 0 4px; }
+      .tp-pred-fill { height: 100%; background: var(--primary-color); border-radius: 4px; }
+      .tp-pred-level { font-size: 0.85em; color: var(--secondary-text-color); margin-bottom: 8px; }
+      .tp-pred-details { display: flex; flex-direction: column; gap: 4px; }
+      .tp-pred-row { display: flex; justify-content: space-between; gap: 12px; font-size: 0.95em; }
+      .tp-pred-row span { color: var(--secondary-text-color); }
+      .tp-pred-row b { color: var(--primary-text-color); text-align: right; }
+      .tp-pred-donate { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider-color);
+                        font-size: 0.9em; color: var(--secondary-text-color); }
+      .tp-pred-donate a { color: var(--primary-color); text-decoration: none; }
+      .tp-pred-notice { padding: 16px; color: var(--secondary-text-color); }
+    </style>`;
+  }
+}
+
+customElements.define("tankpriser-prediction-card", TankpriserPredictionCard);
+
+const PRED_EDITOR_SCHEMA = [
+  { name: "title", selector: { text: {} } },
+  { name: "entity", selector: { entity: { integration: "tankpriser", domain: "sensor" } } },
+  { name: "show_donate", selector: { boolean: {} } },
+  { name: "donate_url", selector: { text: {} } },
+];
+const PRED_EDITOR_LABELS = {
+  title: "Title",
+  entity: "Prediction sensor (…_days_until_refuel)",
+  show_donate: "Show the donation ask",
+  donate_url: "Donation link (optional)",
+};
+
+class TankpriserPredictionCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = { ...config };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = (s) => PRED_EDITOR_LABELS[s.name] || s.name;
+      this._form.addEventListener("value-changed", (ev) => {
+        ev.stopPropagation();
+        this.dispatchEvent(
+          new CustomEvent("config-changed", {
+            detail: { config: { ...ev.detail.value } },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      });
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.schema = PRED_EDITOR_SCHEMA;
+    this._form.data = this._config;
+  }
+}
+
+customElements.define(
+  "tankpriser-prediction-card-editor",
+  TankpriserPredictionCardEditor
+);
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "tankpriser-card",
   name: "Tankpriser Prices",
   description: "Map of local fuel stations with company icons + prices (nearby stations grouped, cluster shows the lowest price), plus an optional price table.",
+  preview: false,
+});
+window.customCards.push({
+  type: "tankpriser-prediction-card",
+  name: "Tankpriser Prediction",
+  description: "Predicts when a car will next need refuelling, learned from its fuel level, with the cheapest nearby price for its fuel.",
   preview: false,
 });
 

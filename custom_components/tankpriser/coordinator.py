@@ -70,6 +70,9 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         self._session = async_get_clientsession(hass)
         # Cached area resolution: (radius_m) -> set of postnumre.
         self._area_cache: tuple[int, set[str]] | None = None
+        # Per-car consumption trackers (subentry_id -> ConsumptionTracker),
+        # populated by __init__.py after the first refresh.
+        self.cars: dict = {}
 
     # -- configuration helpers ---------------------------------------------
     @property

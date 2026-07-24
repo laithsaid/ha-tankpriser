@@ -17,6 +17,64 @@
       "already_configured": "Tankpriser is already set up."
     }
   },
+  "config_subentries": {
+    "car": {
+      "initiate_flow": {
+        "user": "Add car",
+        "reconfigure": "Edit car"
+      },
+      "entry_type": "Car",
+      "step": {
+        "user": {
+          "title": "Add a car",
+          "description": "Predict when this car will need refuelling from the fuel level Home Assistant already knows. The prediction is free — if you find it useful, please consider donating; it took real work to build. 💛",
+          "data": {
+            "name": "Car name",
+            "source_entity": "Fuel-level entity",
+            "level_attribute": "Level attribute (optional)",
+            "level_unit": "Level is measured in",
+            "tank_capacity_l": "Tank capacity (litres)",
+            "odometer_entity": "Odometer entity (optional)",
+            "odometer_attribute": "Odometer attribute (optional)",
+            "fuel_key": "Fuel type"
+          },
+          "data_description": {
+            "source_entity": "The entity that reports the fuel level — a sensor, or e.g. a car device_tracker.",
+            "level_attribute": "Leave empty to use the entity's state. Otherwise the attribute holding the level, e.g. fuel_level. Nested attributes use dots: data.fuel.level.",
+            "tank_capacity_l": "Full tank size in litres. Used to turn a percentage into litres and to estimate range.",
+            "odometer_entity": "Optional. With an odometer we predict in L/100 km; without one we fall back to a time-based estimate.",
+            "odometer_attribute": "Optional. Leave empty to use the odometer entity's state, or name the attribute holding the reading.",
+            "fuel_key": "Which fuel this car uses — so we can show the cheapest nearby price for it."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit car",
+          "description": "Update this car's fuel-level source and settings.",
+          "data": {
+            "name": "Car name",
+            "source_entity": "Fuel-level entity",
+            "level_attribute": "Level attribute (optional)",
+            "level_unit": "Level is measured in",
+            "tank_capacity_l": "Tank capacity (litres)",
+            "odometer_entity": "Odometer entity (optional)",
+            "odometer_attribute": "Odometer attribute (optional)",
+            "fuel_key": "Fuel type"
+          },
+          "data_description": {
+            "source_entity": "The entity that reports the fuel level — a sensor, or e.g. a car device_tracker.",
+            "level_attribute": "Leave empty to use the entity's state. Otherwise the attribute holding the level, e.g. fuel_level. Nested attributes use dots: data.fuel.level.",
+            "tank_capacity_l": "Full tank size in litres. Used to turn a percentage into litres and to estimate range.",
+            "odometer_entity": "Optional. With an odometer we predict in L/100 km; without one we fall back to a time-based estimate.",
+            "odometer_attribute": "Optional. Leave empty to use the odometer entity's state, or name the attribute holding the reading.",
+            "fuel_key": "Which fuel this car uses — so we can show the cheapest nearby price for it."
+          }
+        }
+      },
+      "error": {
+        "name_required": "Give the car a name."
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
@@ -81,6 +139,12 @@
         "cheapest_change": "When the cheapest price changes",
         "below_threshold": "When the cheapest price drops below the threshold",
         "decrease_only": "Only when the cheapest price decreases"
+      }
+    },
+    "level_unit": {
+      "options": {
+        "percent": "Percent of tank (%)",
+        "litres": "Litres"
       }
     }
   }

@@ -128,10 +128,39 @@ When enabled, after each refresh the integration compares prices and calls your
 chosen `notify.*` service per the rule. It also fires a `tankpriser_price_updated`
 event you can use in automations.
 
+## Fuel-consumption prediction (per car)
+
+Tankpriser can also predict **when each of your cars will next need refuelling**,
+learned entirely from a fuel-level entity you already have in Home Assistant.
+It's **free** — if you find it useful, a donation is genuinely appreciated (it
+took real work), but nothing is ever withheld.
+
+**Add a car:** open the integration → **Add car** (you can add as many as you
+like). Point it at any entity that reports the fuel level:
+
+| Field | Notes |
+| --- | --- |
+| Fuel-level entity | A sensor, or e.g. a car `device_tracker` |
+| Level attribute | Leave empty to use the state; otherwise the attribute, e.g. `fuel_level`. Nested paths use dots: `data.fuel.level` |
+| Level unit | Percent of tank, or litres |
+| Tank capacity | Litres — turns a percentage into litres and estimates range |
+| Odometer (optional) | With one we predict in **L/100 km**; without it, a time-based estimate |
+| Fuel type | Used to show the cheapest nearby price for that fuel |
+
+Each car gets a **`sensor.<car>_days_until_refuel`**. While it's still learning
+it reads `unknown` (never a wrong guess); after a couple of refuels it reports
+days-until-refuel with attributes for consumption, confidence, the predicted
+empty date, and the cheapest nearby station for its fuel.
+
+**Prediction card:** add a **Tankpriser Prediction** card (`type:
+custom:tankpriser-prediction-card`, `entity: sensor.<car>_days_until_refuel`)
+for a compact panel with a tank gauge and the details.
+
 ## Data & attributes
 
-Each sensor's state is the **cheapest** price for its fuel; the full list is in
-attributes (`stations`, `cheapest_station`, `average_price`, `station_count`, …).
+Each price sensor's state is the **cheapest** price for its fuel; the full list
+is in attributes (`stations`, `cheapest_station`, `average_price`,
+`station_count`, …).
 
 ## Support / Donate
 

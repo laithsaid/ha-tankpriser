@@ -118,6 +118,51 @@ FUEL_TYPES: Final = {
 }
 DEFAULT_FUEL_TYPES: Final = ["blyfri95", "diesel"]
 
+# --- Consumption prediction (per-car subentries) ---------------------------
+# Each car is a config *subentry* under the single Tankpriser entry, so a user
+# can add as many cars as they like — the only requirement is that HA already
+# has an entity exposing the car's fuel level. The prediction is FREE; we only
+# ask for a donation (see DONATE_URL).
+SUBENTRY_CAR: Final = "car"
+
+CONF_SOURCE_ENTITY: Final = "source_entity"
+CONF_LEVEL_ATTRIBUTE: Final = "level_attribute"
+CONF_LEVEL_UNIT: Final = "level_unit"
+CONF_TANK_CAPACITY: Final = "tank_capacity_l"
+CONF_ODOMETER_ENTITY: Final = "odometer_entity"
+CONF_ODOMETER_ATTRIBUTE: Final = "odometer_attribute"
+CONF_CAR_FUEL: Final = "fuel_key"
+
+# How the source entity expresses the level.
+LEVEL_UNIT_PERCENT: Final = "percent"
+LEVEL_UNIT_LITRES: Final = "litres"
+LEVEL_UNITS: Final = [LEVEL_UNIT_PERCENT, LEVEL_UNIT_LITRES]
+
+# Refuel detection: an upward jump of at least this fraction of the tank marks
+# the end of one consumption segment and the start of the next.
+REFUEL_MIN_JUMP_FRACTION: Final = 0.15
+# Below this many completed segments we report no prediction (state "unknown")
+# rather than guessing from too little data.
+MIN_SEGMENTS_FOR_PREDICTION: Final = 2
+# Exponential weighting of recent tanks vs older ones (0<alpha<=1; higher =
+# more weight on the most recent segment). Used by the estimator.
+EWMA_ALPHA: Final = 0.5
+# Number of learned tanks at which confidence reaches its count-based maximum.
+CONFIDENCE_TARGET_SEGMENTS: Final = 6
+# A segment shorter than this (days) is ignored when computing a daily rate —
+# guards against divide-by-tiny-duration blow-ups from bursty sensor updates.
+MIN_SEGMENT_DAYS: Final = 0.05
+
+# .storage bounds, so the learned history cannot grow without limit.
+STORAGE_VERSION: Final = 1
+STORAGE_KEY_PREFIX: Final = "tankpriser_consumption"
+MAX_RAW_SAMPLES: Final = 500
+MAX_SEGMENTS: Final = 50
+
+# Donation is by free will: the prediction works for everyone, we simply ask.
+# Placeholder until the real Ko-fi / MobilePay handle is wired in (issue 4).
+DONATE_URL: Final = "https://github.com/laithsaid/ha-tankpriser#support-the-project"
+
 # Static path under which the bundled Lovelace card is served. The whole www/
 # directory is exposed, because the card also loads its vendored Leaflet build
 # from www/vendor/ — the browser must never need a public CDN for the map.

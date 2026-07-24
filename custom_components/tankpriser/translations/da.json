@@ -17,6 +17,64 @@
       "already_configured": "Tankpriser er allerede opsat."
     }
   },
+  "config_subentries": {
+    "car": {
+      "initiate_flow": {
+        "user": "Tilføj bil",
+        "reconfigure": "Redigér bil"
+      },
+      "entry_type": "Bil",
+      "step": {
+        "user": {
+          "title": "Tilføj en bil",
+          "description": "Forudsig hvornår bilen skal tankes ud fra det brændstofniveau, Home Assistant allerede kender. Forudsigelsen er gratis — hvis du finder den nyttig, så overvej at donere; der ligger et stort arbejde bag. 💛",
+          "data": {
+            "name": "Bilens navn",
+            "source_entity": "Enhed med brændstofniveau",
+            "level_attribute": "Niveau-attribut (valgfrit)",
+            "level_unit": "Niveauet måles i",
+            "tank_capacity_l": "Tankkapacitet (liter)",
+            "odometer_entity": "Kilometertæller-enhed (valgfrit)",
+            "odometer_attribute": "Kilometertæller-attribut (valgfrit)",
+            "fuel_key": "Brændstoftype"
+          },
+          "data_description": {
+            "source_entity": "Enheden der viser brændstofniveauet — en sensor eller fx bilens device_tracker.",
+            "level_attribute": "Lad stå tomt for at bruge enhedens tilstand. Ellers attributten med niveauet, fx fuel_level. Indlejrede attributter adskilles med punktum: data.fuel.level.",
+            "tank_capacity_l": "Fuld tankstørrelse i liter. Bruges til at omregne en procent til liter og til at estimere rækkevidde.",
+            "odometer_entity": "Valgfrit. Med en kilometertæller forudsiger vi i L/100 km; uden falder vi tilbage til et tidsbaseret estimat.",
+            "odometer_attribute": "Valgfrit. Lad stå tomt for at bruge kilometertællerens tilstand, eller angiv attributten med aflæsningen.",
+            "fuel_key": "Hvilket brændstof bilen bruger — så vi kan vise den billigste pris i nærheden."
+          }
+        },
+        "reconfigure": {
+          "title": "Redigér bil",
+          "description": "Opdatér bilens brændstofkilde og indstillinger.",
+          "data": {
+            "name": "Bilens navn",
+            "source_entity": "Enhed med brændstofniveau",
+            "level_attribute": "Niveau-attribut (valgfrit)",
+            "level_unit": "Niveauet måles i",
+            "tank_capacity_l": "Tankkapacitet (liter)",
+            "odometer_entity": "Kilometertæller-enhed (valgfrit)",
+            "odometer_attribute": "Kilometertæller-attribut (valgfrit)",
+            "fuel_key": "Brændstoftype"
+          },
+          "data_description": {
+            "source_entity": "Enheden der viser brændstofniveauet — en sensor eller fx bilens device_tracker.",
+            "level_attribute": "Lad stå tomt for at bruge enhedens tilstand. Ellers attributten med niveauet, fx fuel_level. Indlejrede attributter adskilles med punktum: data.fuel.level.",
+            "tank_capacity_l": "Fuld tankstørrelse i liter. Bruges til at omregne en procent til liter og til at estimere rækkevidde.",
+            "odometer_entity": "Valgfrit. Med en kilometertæller forudsiger vi i L/100 km; uden falder vi tilbage til et tidsbaseret estimat.",
+            "odometer_attribute": "Valgfrit. Lad stå tomt for at bruge kilometertællerens tilstand, eller angiv attributten med aflæsningen.",
+            "fuel_key": "Hvilket brændstof bilen bruger — så vi kan vise den billigste pris i nærheden."
+          }
+        }
+      },
+      "error": {
+        "name_required": "Giv bilen et navn."
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {
@@ -81,6 +139,12 @@
         "cheapest_change": "Når den laveste pris ændrer sig",
         "below_threshold": "Når den laveste pris kommer under grænsen",
         "decrease_only": "Kun når den laveste pris falder"
+      }
+    },
+    "level_unit": {
+      "options": {
+        "percent": "Procent af tank (%)",
+        "litres": "Liter"
       }
     }
   }

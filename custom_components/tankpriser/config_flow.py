@@ -11,9 +11,11 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    ConfigSubentryFlow,
     OptionsFlow,
+    SubentryFlowResult,
 )
-from homeassistant.const import CONF_API_KEY
+from homeassistant.const import CONF_API_KEY, CONF_NAME
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -26,25 +28,35 @@ from .sources import (
 )
 from .const import (
     CONF_AREA_NAME,
+    CONF_CAR_FUEL,
     CONF_CREDENTIALS,
     CONF_EXCLUDED_STATIONS,
     CONF_FUEL_TYPES,
+    CONF_LEVEL_ATTRIBUTE,
+    CONF_LEVEL_UNIT,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_RULE,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_THRESHOLD,
+    CONF_ODOMETER_ATTRIBUTE,
+    CONF_ODOMETER_ENTITY,
     CONF_PROVIDER,
     CONF_RADIUS,
     CONF_SCAN_INTERVAL,
+    CONF_SOURCE_ENTITY,
+    CONF_TANK_CAPACITY,
     DEFAULT_FUEL_TYPES,
     DEFAULT_NOTIFY_RULE,
     DEFAULT_RADIUS,
     DEFAULT_SCAN_INTERVAL_MIN,
     DOMAIN,
     FUEL_TYPES,
+    LEVEL_UNIT_PERCENT,
+    LEVEL_UNITS,
     MIN_SCAN_INTERVAL_MIN,
     NOTIFY_RULES,
     RADIUS_OPTIONS,
+    SUBENTRY_CAR,
 )
 
 FUEL_SELECT_OPTIONS = [
@@ -61,6 +73,83 @@ FUEL_SELECT = selector.SelectSelector(
         mode=selector.SelectSelectorMode.LIST,
     )
 )
+# Single-fuel picker used by the per-car flow (which fuel to price against).
+CAR_FUEL_SELECT = selector.SelectSelector(
+    selector.SelectSelectorConfig(
+        options=FUEL_SELECT_OPTIONS, mode=selector.SelectSelectorMode.DROPDOWN
+    )
+)
+LEVEL_UNIT_SELECT = selector.SelectSelector(
+    selector.SelectSelectorConfig(options=LEVEL_UNITS, translation_key="level_unit")
+)
+CAPACITY_SELECT = selector.NumberSelector(
+    selector.NumberSelectorConfig(
+        min=1, max=500, step=0.1, unit_of_measurement="L",
+        mode=selector.NumberSelectorMode.BOX,
+    )
+)
+ENTITY_SELECT = selector.EntitySelector()
+
+
+def _clean_car_input(user_input: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Validate and normalise the per-car form; return (data, errors)."""
+    data = dict(user_input)
+    name = str(data.get(CONF_NAME, "")).strip()
+    if not name:
+        return {}, {CONF_NAME: "name_required"}
+    data[CONF_NAME] = name
+
+    # Optional dotted attribute paths: keep only when non-empty.
+    for key in (CONF_LEVEL_ATTRIBUTE, CONF_ODOMETER_ATTRIBUTE):
+        value = str(data.get(key, "")).strip()
+        if value:
+            data[key] = value
+        else:
+            data.pop(key, None)
+
+    # An odometer attribute is meaningless without an odometer entity.
+    if not str(data.get(CONF_ODOMETER_ENTITY, "")).strip():
+        data.pop(CONF_ODOMETER_ENTITY, None)
+        data.pop(CONF_ODOMETER_ATTRIBUTE, None)
+
+    return data, {}
+
+
+def _car_schema(defaults: dict[str, Any]) -> vol.Schema:
+    """Build the add/edit-a-car form, pre-filled from ``defaults``."""
+
+    def suggest(key: str) -> dict[str, Any]:
+        value = defaults.get(key)
+        return {"suggested_value": value} if value not in (None, "") else {}
+
+    return vol.Schema(
+        {
+            vol.Required(CONF_NAME, description=suggest(CONF_NAME)): selector.TextSelector(),
+            vol.Required(
+                CONF_SOURCE_ENTITY, description=suggest(CONF_SOURCE_ENTITY)
+            ): ENTITY_SELECT,
+            vol.Optional(
+                CONF_LEVEL_ATTRIBUTE, description=suggest(CONF_LEVEL_ATTRIBUTE)
+            ): selector.TextSelector(),
+            vol.Required(
+                CONF_LEVEL_UNIT,
+                default=defaults.get(CONF_LEVEL_UNIT, LEVEL_UNIT_PERCENT),
+            ): LEVEL_UNIT_SELECT,
+            vol.Required(
+                CONF_TANK_CAPACITY, description=suggest(CONF_TANK_CAPACITY)
+            ): CAPACITY_SELECT,
+            vol.Optional(
+                CONF_ODOMETER_ENTITY, description=suggest(CONF_ODOMETER_ENTITY)
+            ): ENTITY_SELECT,
+            vol.Optional(
+                CONF_ODOMETER_ATTRIBUTE, description=suggest(CONF_ODOMETER_ATTRIBUTE)
+            ): selector.TextSelector(),
+            vol.Required(
+                CONF_CAR_FUEL,
+                default=defaults.get(CONF_CAR_FUEL, DEFAULT_FUEL_TYPES[0]),
+            ): CAR_FUEL_SELECT,
+        }
+    )
 
 
 class TankpriserConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -113,6 +202,62 @@ class TankpriserConfigFlow(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(entry: ConfigEntry) -> OptionsFlow:
         """Return the options flow handler."""
         return TankpriserOptionsFlow(entry)
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Cars are subentries, so the user can add as many as they want."""
+        return {SUBENTRY_CAR: CarSubentryFlowHandler}
+
+
+class CarSubentryFlowHandler(ConfigSubentryFlow):
+    """Add or edit one car for fuel-consumption prediction.
+
+    A car only needs an entity that already exposes its fuel level (state or an
+    attribute). Odometer is optional — with it we predict in L/100 km, without
+    it we fall back to a time-based estimate.
+    """
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Add a new car."""
+        return await self._async_form(user_input, reconfigure=False)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit an existing car."""
+        return await self._async_form(user_input, reconfigure=True)
+
+    async def _async_form(
+        self, user_input: dict[str, Any] | None, reconfigure: bool
+    ) -> SubentryFlowResult:
+        errors: dict[str, str] = {}
+        defaults: dict[str, Any] = (
+            dict(self._get_reconfigure_subentry().data) if reconfigure else {}
+        )
+
+        if user_input is not None:
+            data, errors = _clean_car_input(user_input)
+            if not errors:
+                if reconfigure:
+                    return self.async_update_and_abort(
+                        self._get_entry(),
+                        self._get_reconfigure_subentry(),
+                        title=data[CONF_NAME],
+                        data=data,
+                    )
+                return self.async_create_entry(title=data[CONF_NAME], data=data)
+            defaults = user_input
+
+        return self.async_show_form(
+            step_id="reconfigure" if reconfigure else "user",
+            data_schema=_car_schema(defaults),
+            errors=errors,
+        )
 
 
 class TankpriserOptionsFlow(OptionsFlow):
