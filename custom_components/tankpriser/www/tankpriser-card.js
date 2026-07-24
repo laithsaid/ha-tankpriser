@@ -470,19 +470,21 @@ class TankpriserCard extends HTMLElement {
         }
         /* car marker: fuel-coloured ring around a car glyph, with a % badge */
         .ff-car-wrap { background: transparent !important; border: 0 !important; }
-        .ff-car {
-          position: relative; transform: translate(-50%, -50%);
-          width:34px; height:34px; border-radius:50%;
+        .ff-car { position: relative; transform: translate(-50%, -50%); width:26px; height:26px; }
+        .ff-car-disc {
+          position: relative; box-sizing: border-box;
+          width:26px; height:26px; border-radius:50%; overflow:hidden;
           background: var(--card-background-color, #fff);
           border:3px solid #888; box-shadow: 0 1px 4px rgba(0,0,0,.45);
           display:flex; align-items:center; justify-content:center;
         }
-        .ff-car-glyph { font-size:17px; line-height:1; }
-        .ff-car-img { width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; }
+        .ff-car-glyph { font-size:13px; line-height:1; }
+        /* Absolutely filled + clipped by the disc, so any photo becomes a circle */
+        .ff-car-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
         .ff-car-pct {
-          position:absolute; bottom:-7px; left:50%; transform:translateX(-50%);
-          font-size:9px; font-weight:700; color:#fff; line-height:1;
-          padding:1px 4px; border-radius:8px; white-space:nowrap;
+          position:absolute; bottom:-8px; left:50%; transform:translateX(-50%);
+          font-size:11px; font-weight:700; color:#fff; line-height:1;
+          padding:1px 5px; border-radius:9px; white-space:nowrap;
           box-shadow: 0 1px 2px rgba(0,0,0,.4);
         }
         .ff-popup-updated { color: var(--secondary-text-color); font-size: 0.9em; }
@@ -889,8 +891,8 @@ class TankpriserCard extends HTMLElement {
         : `<span class="ff-car-glyph">🚗</span>`;
       const icon = L.divIcon({
         className: "ff-car-wrap",
-        html: `<div class="ff-car" style="border-color:${color}">
-                 ${inner}
+        html: `<div class="ff-car">
+                 <div class="ff-car-disc" style="border-color:${color}">${inner}</div>
                  <span class="ff-car-pct" style="background:${color}">${this._escape(pctLabel)}</span>
                </div>`,
         iconSize: null,

@@ -213,8 +213,6 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
         picture = tracker.picture
         if picture:
             attrs["car_picture"] = picture
-        # Temporary diagnostic: what the coordinate resolution sees right now.
-        attrs["location_debug"] = tracker.location_debug()
 
         if prediction is None:
             attrs["status"] = "learning"

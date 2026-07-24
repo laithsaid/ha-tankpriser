@@ -287,18 +287,6 @@ class ConsumptionTracker:
                 return self._last_picture
         return self._last_picture
 
-    def location_debug(self) -> dict:
-        """Snapshot of what the coordinate resolution currently sees."""
-        src = self.hass.states.get(self.source_entity)
-        return {
-            "source_found": src is not None,
-            "source_state": src.state if src else None,
-            "raw_latitude": src.attributes.get("latitude") if src else None,
-            "raw_longitude": src.attributes.get("longitude") if src else None,
-            "resolved": list(self.location),
-            "last_cached": list(self._last_location),
-        }
-
     def _source_and_siblings(self):
         """Yield the source entity's state, then its device siblings' states."""
         source = self.hass.states.get(self.source_entity)
