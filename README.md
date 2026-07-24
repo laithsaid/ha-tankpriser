@@ -95,6 +95,7 @@ request at all.
 | `cluster` | `true` | Group nearby stations |
 | `show_my_location` | `true` | Live GPS dot + the ◎ / ➤ buttons |
 | `follow_me` | `false` | Start with follow-me armed |
+| `show_cars` | `true` | Plot your configured cars on the map, ringed by fuel level (see prediction, below) |
 | `show_list` | shown only when map is off | Set `true` to show the price table too |
 | `highlight_cheapest`, `max_stations`, `show_donate`, `donate_url` | | as before |
 
@@ -171,6 +172,16 @@ is in attributes (`stations`, `cheapest_station`, `average_price`,
 
 Tankpriser is free and open source. If it's useful to you, you can support
 development — see the link in the card footer.
+
+## For developers
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the pieces fit together:
+  the price-aggregation and consumption-prediction subsystems, data flow,
+  caching and external dependencies.
+- [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) — module reference, the
+  prediction algorithm, the storage schema, and how to extend it (add a fuel
+  chain, add a fuel type) plus the test/release workflow.
+- [`TESTING.md`](TESTING.md) — installing and verifying a build in a real HA.
 
 ## Disclaimer
 
