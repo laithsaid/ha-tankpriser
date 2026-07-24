@@ -161,7 +161,7 @@ MAX_SEGMENTS: Final = 50
 
 # Donation is by free will: the prediction works for everyone, we simply ask.
 # Placeholder until the real Ko-fi / MobilePay handle is wired in (issue 4).
-DONATE_URL: Final = "https://github.com/laithsaid/ha-tankpriser#support-the-project"
+DONATE_URL: Final = "https://github.com/laithsaid/ha-tankpriser"
 
 # Static path under which the bundled Lovelace card is served. The whole www/
 # directory is exposed, because the card also loads its vendored Leaflet build
