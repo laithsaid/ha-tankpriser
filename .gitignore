@@ -18,18 +18,3 @@ scratchpad/
 # Never commit signing/private keys
 *.pem
 secrets*
-
-# Local analysis artifacts from the dead fuelfinder.dk source (kept on disk,
-# not published: they are irrelevant to the integration and consist of
-# reverse-engineering scratch work against a third-party site).
-ff.js
-real.js
-real2.js
-getjs.py
-pow.py
-pow2.py
-variants.py
-page.html
-now.html
-resp.html
-issues/
