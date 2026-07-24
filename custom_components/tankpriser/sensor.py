@@ -196,6 +196,11 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
             "donate_url": DONATE_URL,
             # Marks this as a Tankpriser car sensor so the card can plot it.
             "is_car": True,
+            # Diagnostics: exactly which entities/attributes this car is using,
+            # so a missing map pin can be traced without guessing the config.
+            "source_entity": tracker.source_entity,
+            "level_attribute": tracker.level_attribute or "(state)",
+            "odometer_entity": tracker.odometer_entity or "(none)",
         }
         # The car's live position, so the map can show it (if the source
         # entity reports coordinates, e.g. a device_tracker).
