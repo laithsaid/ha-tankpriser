@@ -208,6 +208,11 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
         if lat is not None and lon is not None:
             attrs["latitude"] = lat
             attrs["longitude"] = lon
+        # The car's own picture (if any), so the map marker can use it instead
+        # of a generic car glyph.
+        picture = tracker.picture
+        if picture:
+            attrs["car_picture"] = picture
 
         if prediction is None:
             attrs["status"] = "learning"

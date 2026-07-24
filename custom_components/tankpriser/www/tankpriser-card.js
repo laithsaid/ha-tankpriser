@@ -478,6 +478,7 @@ class TankpriserCard extends HTMLElement {
           display:flex; align-items:center; justify-content:center;
         }
         .ff-car-glyph { font-size:17px; line-height:1; }
+        .ff-car-img { width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; }
         .ff-car-pct {
           position:absolute; bottom:-7px; left:50%; transform:translateX(-50%);
           font-size:9px; font-weight:700; color:#fff; line-height:1;
@@ -871,7 +872,7 @@ class TankpriserCard extends HTMLElement {
     const cars = this._discoverCars();
     // Only rebuild when something changed, so we don't fight the user's pan.
     const sig = cars
-      .map((c) => `${c.id}|${c.lat.toFixed(5)}|${c.lon.toFixed(5)}|${c.a.current_level_percent}|${c.state}`)
+      .map((c) => `${c.id}|${c.lat.toFixed(5)}|${c.lon.toFixed(5)}|${c.a.current_level_percent}|${c.state}|${c.a.car_picture || ""}`)
       .join(";");
     if (sig === this._carSig) return;
     this._carSig = sig;
@@ -881,10 +882,15 @@ class TankpriserCard extends HTMLElement {
       const pct = c.a.current_level_percent;
       const color = this._carColor(pct);
       const pctLabel = pct === null || pct === undefined ? "?" : `${Math.round(pct)}%`;
+      // Use the car's own picture if it has one, else a generic car glyph.
+      const pic = _safeUrl(c.a.car_picture);
+      const inner = pic
+        ? `<img class="ff-car-img" src="${this._escape(pic)}" alt="" referrerpolicy="no-referrer">`
+        : `<span class="ff-car-glyph">🚗</span>`;
       const icon = L.divIcon({
         className: "ff-car-wrap",
         html: `<div class="ff-car" style="border-color:${color}">
-                 <span class="ff-car-glyph">🚗</span>
+                 ${inner}
                  <span class="ff-car-pct" style="background:${color}">${this._escape(pctLabel)}</span>
                </div>`,
         iconSize: null,

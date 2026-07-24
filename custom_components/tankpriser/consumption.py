@@ -54,6 +54,15 @@ _EPSILON_L = 0.05
 _MISSING = (None, "", STATE_UNKNOWN, STATE_UNAVAILABLE)
 
 
+def _coords_of_state(state) -> tuple[float | None, float | None]:
+    """Extract (lat, lon) from a state's attributes, or (None, None)."""
+    lat = to_float(state.attributes.get("latitude"))
+    lon = to_float(state.attributes.get("longitude"))
+    if lat is None or lon is None:
+        return (None, None)
+    return (lat, lon)
+
+
 class ConsumptionTracker:
     """Learns one car's consumption from its fuel-level entity."""
 
@@ -226,40 +235,40 @@ class ConsumptionTracker:
         ``device_tracker``. So the car appears on the map regardless of which
         of the device's entities was picked for the fuel level.
         """
-        coords = self._coords_of(self.source_entity)
-        if coords[0] is not None:
-            return coords
-        return self._coords_from_device()
+        for state in self._source_and_siblings():
+            coords = _coords_of_state(state)
+            if coords[0] is not None:
+                return coords
+        return (None, None)
 
-    def _coords_of(self, entity_id: str | None) -> tuple[float | None, float | None]:
-        if not entity_id:
-            return (None, None)
-        state = self.hass.states.get(entity_id)
-        if state is None:
-            return (None, None)
-        lat = to_float(state.attributes.get("latitude"))
-        lon = to_float(state.attributes.get("longitude"))
-        if lat is None or lon is None:
-            return (None, None)
-        return (lat, lon)
+    @property
+    def picture(self) -> str | None:
+        """The car's ``entity_picture`` (from the source entity or a sibling)."""
+        for state in self._source_and_siblings():
+            pic = state.attributes.get("entity_picture")
+            if pic:
+                return str(pic)
+        return None
 
-    def _coords_from_device(self) -> tuple[float | None, float | None]:
-        """Coordinates from a sibling entity on the source entity's device."""
+    def _source_and_siblings(self):
+        """Yield the source entity's state, then its device siblings' states."""
+        source = self.hass.states.get(self.source_entity)
+        if source is not None:
+            yield source
         try:
             from homeassistant.helpers import entity_registry as er
 
             registry = er.async_get(self.hass)
             entry = registry.async_get(self.source_entity)
             if entry is None or entry.device_id is None:
-                return (None, None)
+                return
             for sibling in er.async_entries_for_device(
                 registry, entry.device_id, include_disabled_entities=True
             ):
                 if sibling.entity_id == self.source_entity:
                     continue
-                coords = self._coords_of(sibling.entity_id)
-                if coords[0] is not None:
-                    return coords
-        except Exception:  # noqa: BLE001 - location is best-effort, never fatal
-            _LOGGER.debug("Device coordinate lookup failed for %s", self.name)
-        return (None, None)
+                state = self.hass.states.get(sibling.entity_id)
+                if state is not None:
+                    yield state
+        except Exception:  # noqa: BLE001 - best-effort, never fatal
+            _LOGGER.debug("Device lookup failed for %s", self.name)
