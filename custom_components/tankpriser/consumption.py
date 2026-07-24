@@ -90,6 +90,10 @@ class ConsumptionTracker:
         self.model: ConsumptionModel = ConsumptionModel(self.capacity_l)
         self._unsub: Callable[[], None] | None = None
         self._listeners: list[Callable[[], None]] = []
+        # Last known position/picture, so the car stays on the map through GPS
+        # dropouts (a parked car often stops reporting coordinates).
+        self._last_location: tuple[float | None, float | None] = (None, None)
+        self._last_picture: str | None = None
 
     # -- lifecycle ----------------------------------------------------------
     async def async_start(self) -> None:
@@ -103,6 +107,10 @@ class ConsumptionTracker:
                     "Discarding unreadable consumption history for %s", self.name
                 )
                 self.model = ConsumptionModel(self.capacity_l)
+            last = raw.get("last_location")
+            if isinstance(last, (list, tuple)) and len(last) == 2:
+                self._last_location = (last[0], last[1])
+            self._last_picture = raw.get("last_picture")
 
         self._ingest_current()
         self._unsub = async_track_state_change_event(
@@ -115,7 +123,7 @@ class ConsumptionTracker:
             self._unsub()
             self._unsub = None
         try:
-            await self._store.async_save(self.model.as_dict())
+            await self._store.async_save(self._data_for_save())
         except Exception:  # noqa: BLE001 - never let teardown raise
             _LOGGER.exception("Failed to persist consumption history for %s", self.name)
 
@@ -189,7 +197,12 @@ class ConsumptionTracker:
 
     @callback
     def _data_for_save(self) -> dict:
-        return self.model.as_dict()
+        data = self.model.as_dict()
+        if self._last_location[0] is not None:
+            data["last_location"] = list(self._last_location)
+        if self._last_picture:
+            data["last_picture"] = self._last_picture
+        return data
 
     # -- testing / maintenance ---------------------------------------------
     async def seed_demo(
@@ -199,14 +212,14 @@ class ConsumptionTracker:
         self.model.seed_demo(
             dt_util.utcnow().timestamp(), tanks, litres_per_day, days_per_tank
         )
-        await self._store.async_save(self.model.as_dict())
+        await self._store.async_save(self._data_for_save())
         self._notify()
 
     async def reset(self) -> None:
         """Wipe learned history back to nothing (returns to 'learning')."""
         self.model = ConsumptionModel(self.capacity_l)
         self._ingest_current()  # keep the current level as the first sample
-        await self._store.async_save(self.model.as_dict())
+        await self._store.async_save(self._data_for_save())
         self._notify()
 
     # -- prediction ---------------------------------------------------------
@@ -238,8 +251,9 @@ class ConsumptionTracker:
         for state in self._source_and_siblings():
             coords = _coords_of_state(state)
             if coords[0] is not None:
+                self._last_location = coords  # remember through dropouts
                 return coords
-        return (None, None)
+        return self._last_location
 
     @property
     def picture(self) -> str | None:
@@ -247,8 +261,9 @@ class ConsumptionTracker:
         for state in self._source_and_siblings():
             pic = state.attributes.get("entity_picture")
             if pic:
-                return str(pic)
-        return None
+                self._last_picture = str(pic)
+                return self._last_picture
+        return self._last_picture
 
     def _source_and_siblings(self):
         """Yield the source entity's state, then its device siblings' states."""
