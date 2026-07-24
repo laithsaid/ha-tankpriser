@@ -22,7 +22,7 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
-from homeassistant.util import dt as dt_util
+from homeassistant.util import dt as dt_util, slugify
 
 from .const import (
     CONF_CAR_FUEL,
@@ -250,10 +250,29 @@ class ConsumptionTracker:
         """
         for state in self._source_and_siblings():
             coords = _coords_of_state(state)
+            if coords[0] is None:
+                # A parked car often drops precise coords but its state becomes
+                # a zone name ("home", …); use that zone's location instead.
+                coords = self._zone_coords(state.state)
             if coords[0] is not None:
                 self._last_location = coords  # remember through dropouts
                 return coords
         return self._last_location
+
+    def _zone_coords(self, label) -> tuple[float | None, float | None]:
+        """Coordinates of the zone named ``label`` (a device_tracker's state)."""
+        if not label or label in _MISSING or label == "not_home":
+            return (None, None)
+        zone = self.hass.states.get(f"zone.{slugify(str(label))}")
+        if zone is None:
+            wanted = str(label).casefold()
+            for candidate in self.hass.states.async_all("zone"):
+                if str(candidate.attributes.get("friendly_name", "")).casefold() == wanted:
+                    zone = candidate
+                    break
+        if zone is None:
+            return (None, None)
+        return _coords_of_state(zone)
 
     @property
     def picture(self) -> str | None:
