@@ -149,6 +149,10 @@ class ConsumptionTracker:
     @callback
     def _handle_event(self, event: Event) -> None:
         self._ingest_current()
+        # Refresh dependent sensors on ANY source change — including a
+        # position-only update where the fuel level did not move — so the car's
+        # coordinates/picture on the map stay current.
+        self._notify()
 
     def _read(self, entity_id: str | None, attribute: str | None):
         """Current value of an entity's state or a (possibly nested) attribute."""
@@ -193,7 +197,6 @@ class ConsumptionTracker:
             self._store.async_delay_save(self._data_for_save, 0)
         else:
             self._store.async_delay_save(self._data_for_save, SAVE_DELAY_SECONDS)
-        self._notify()
 
     @callback
     def _data_for_save(self) -> dict:
@@ -283,6 +286,18 @@ class ConsumptionTracker:
                 self._last_picture = str(pic)
                 return self._last_picture
         return self._last_picture
+
+    def location_debug(self) -> dict:
+        """Snapshot of what the coordinate resolution currently sees."""
+        src = self.hass.states.get(self.source_entity)
+        return {
+            "source_found": src is not None,
+            "source_state": src.state if src else None,
+            "raw_latitude": src.attributes.get("latitude") if src else None,
+            "raw_longitude": src.attributes.get("longitude") if src else None,
+            "resolved": list(self.location),
+            "last_cached": list(self._last_location),
+        }
 
     def _source_and_siblings(self):
         """Yield the source entity's state, then its device siblings' states."""
