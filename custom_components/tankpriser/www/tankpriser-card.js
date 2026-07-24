@@ -758,6 +758,11 @@ class TankpriserCard extends HTMLElement {
     // toggling the HA theme flips the map too, on the next refresh.
     this._applyTiles(L);
 
+    // Cars move and refuel independently of station prices, so update them
+    // every time — before the station-signature early-return below, or a car
+    // that populates after prices settle would never get drawn.
+    this._updateCars(L);
+
     // Only rebuild markers when the data changed, so we never disturb zoom/pan.
     const sig = stations
       .map((s) => `${s.name}|${s.lat}|${s.lon}|${s.price}|${s.updated || ""}`)
@@ -816,8 +821,6 @@ class TankpriserCard extends HTMLElement {
         this._map.setView([56.0, 10.5], 6); // Denmark, until data arrives
       }
     }
-
-    this._updateCars(L);
   }
 
   // -- cars on the map -------------------------------------------------------
