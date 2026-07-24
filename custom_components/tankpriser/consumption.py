@@ -218,8 +218,23 @@ class ConsumptionTracker:
 
     @property
     def location(self) -> tuple[float | None, float | None]:
-        """Current lat/lon of the source entity, if it reports coordinates."""
-        state = self.hass.states.get(self.source_entity)
+        """Current lat/lon of the car.
+
+        Prefer the source entity's own coordinates; if it has none (e.g. the
+        fuel level comes from a plain sensor), fall back to any other entity on
+        the *same device* that reports a position — typically the car's
+        ``device_tracker``. So the car appears on the map regardless of which
+        of the device's entities was picked for the fuel level.
+        """
+        coords = self._coords_of(self.source_entity)
+        if coords[0] is not None:
+            return coords
+        return self._coords_from_device()
+
+    def _coords_of(self, entity_id: str | None) -> tuple[float | None, float | None]:
+        if not entity_id:
+            return (None, None)
+        state = self.hass.states.get(entity_id)
         if state is None:
             return (None, None)
         lat = to_float(state.attributes.get("latitude"))
@@ -227,3 +242,24 @@ class ConsumptionTracker:
         if lat is None or lon is None:
             return (None, None)
         return (lat, lon)
+
+    def _coords_from_device(self) -> tuple[float | None, float | None]:
+        """Coordinates from a sibling entity on the source entity's device."""
+        try:
+            from homeassistant.helpers import entity_registry as er
+
+            registry = er.async_get(self.hass)
+            entry = registry.async_get(self.source_entity)
+            if entry is None or entry.device_id is None:
+                return (None, None)
+            for sibling in er.async_entries_for_device(
+                registry, entry.device_id, include_disabled_entities=True
+            ):
+                if sibling.entity_id == self.source_entity:
+                    continue
+                coords = self._coords_of(sibling.entity_id)
+                if coords[0] is not None:
+                    return coords
+        except Exception:  # noqa: BLE001 - location is best-effort, never fatal
+            _LOGGER.debug("Device coordinate lookup failed for %s", self.name)
+        return (None, None)
