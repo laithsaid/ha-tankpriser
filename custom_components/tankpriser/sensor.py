@@ -184,6 +184,7 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
         prediction = tracker.predict()
         fuel_key = tracker.fuel_key
         attrs: dict = {
+            "car_name": tracker.name,
             "current_level_l": (
                 round(tracker.current_litres, 1)
                 if tracker.current_litres is not None
@@ -193,7 +194,15 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
             "tank_capacity_l": tracker.capacity_l,
             "fuel_type": FUEL_TYPES.get(fuel_key, (None,))[0] if fuel_key else None,
             "donate_url": DONATE_URL,
+            # Marks this as a Tankpriser car sensor so the card can plot it.
+            "is_car": True,
         }
+        # The car's live position, so the map can show it (if the source
+        # entity reports coordinates, e.g. a device_tracker).
+        lat, lon = tracker.location
+        if lat is not None and lon is not None:
+            attrs["latitude"] = lat
+            attrs["longitude"] = lon
 
         if prediction is None:
             attrs["status"] = "learning"

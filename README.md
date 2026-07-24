@@ -156,6 +156,11 @@ empty date, and the cheapest nearby station for its fuel.
 custom:tankpriser-prediction-card`, `entity: sensor.<car>_days_until_refuel`)
 for a compact panel with a tank gauge and the details.
 
+**On the map:** if a car's source entity reports coordinates (e.g. a
+`device_tracker`), it's also plotted on the main map card, ringed by fuel level
+(**green when full → red when empty**) with the percentage on the marker. On by
+default when the map is shown; turn it off with `show_cars: false`.
+
 ## Data & attributes
 
 Each price sensor's state is the **cheapest** price for its fuel; the full list

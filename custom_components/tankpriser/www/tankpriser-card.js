@@ -19,6 +19,9 @@
  *                                        #   national map when you have no entity
  *   cluster: true                        # optional, default true — group nearby
  *                                        #   stations; cluster shows lowest price
+ *   show_cars: true                      # optional, default true — plot your
+ *                                        #   configured cars, ringed by fuel
+ *                                        #   level (green full → red empty)
  *   show_my_location: true               # optional, default true — live GPS dot
  *   follow_me: false                     # optional, default false — start with
  *                                        #   follow-me armed (➤ button toggles it)
@@ -284,10 +287,16 @@ class TankpriserCard extends HTMLElement {
       // Start with follow-me armed. Off by default: it takes control of the map
       // and keeps the GPS in high-accuracy mode, so you ask for it explicitly.
       follow_me: config.follow_me === true,
+      // Plot your configured cars on the map, ringed by fuel level (green full →
+      // red empty). Optional explicit list; otherwise every car is auto-detected.
+      show_cars: config.show_cars !== false,
+      cars: Array.isArray(config.cars) ? config.cars : null,
     };
     this._built = false;
     this._map = null;
     this._markerLayer = null;
+    this._carLayer = null;
+    this._carSig = null;
     this._fitted = false;
     this._mapSig = null;
     this._national = null;      // national station list (fetched over websocket)
@@ -458,6 +467,22 @@ class TankpriserCard extends HTMLElement {
           transform: translate(-50%, -50%);
           background:#1f6feb; border:2px solid #fff;
           box-shadow: 0 0 0 1px rgba(0,0,0,.35);
+        }
+        /* car marker: fuel-coloured ring around a car glyph, with a % badge */
+        .ff-car-wrap { background: transparent !important; border: 0 !important; }
+        .ff-car {
+          position: relative; transform: translate(-50%, -50%);
+          width:34px; height:34px; border-radius:50%;
+          background: var(--card-background-color, #fff);
+          border:3px solid #888; box-shadow: 0 1px 4px rgba(0,0,0,.45);
+          display:flex; align-items:center; justify-content:center;
+        }
+        .ff-car-glyph { font-size:17px; line-height:1; }
+        .ff-car-pct {
+          position:absolute; bottom:-7px; left:50%; transform:translateX(-50%);
+          font-size:9px; font-weight:700; color:#fff; line-height:1;
+          padding:1px 4px; border-radius:8px; white-space:nowrap;
+          box-shadow: 0 1px 2px rgba(0,0,0,.4);
         }
         .ff-popup-updated { color: var(--secondary-text-color); font-size: 0.9em; }
         .ff-section { margin-bottom: 12px; }
@@ -790,6 +815,97 @@ class TankpriserCard extends HTMLElement {
       } else {
         this._map.setView([56.0, 10.5], 6); // Denmark, until data arrives
       }
+    }
+
+    this._updateCars(L);
+  }
+
+  // -- cars on the map -------------------------------------------------------
+  // Find the Tankpriser car sensors (sensor.*_days_until_refuel) that carry a
+  // position. An explicit `cars:` list wins; otherwise every car is shown.
+  _discoverCars() {
+    if (!this._hass) return [];
+    const states = this._hass.states;
+    let ids;
+    if (this._config.cars) {
+      ids = this._config.cars;
+    } else {
+      ids = Object.keys(states).filter(
+        (id) => states[id] && states[id].attributes && states[id].attributes.is_car
+      );
+    }
+    const cars = [];
+    for (const id of ids) {
+      const st = states[id];
+      if (!st) continue;
+      const a = st.attributes || {};
+      const lat = Number(a.latitude);
+      const lon = Number(a.longitude);
+      if (!isFinite(lat) || !isFinite(lon)) continue; // no position → skip
+      cars.push({ id, state: st.state, a, lat, lon });
+    }
+    return cars;
+  }
+
+  // Fuel level → ring colour: 100% green, ~50% orange, 0% red.
+  _carColor(pct) {
+    if (pct === null || pct === undefined || isNaN(pct)) return "var(--disabled-text-color, #888)";
+    const p = Math.max(0, Math.min(100, Number(pct)));
+    const hue = (p / 100) * 120; // 0 = red, 120 = green
+    return `hsl(${hue.toFixed(0)}, 75%, 45%)`;
+  }
+
+  _updateCars(L) {
+    if (!this._map) return;
+    if (!this._carLayer) {
+      this._carLayer = L.layerGroup().addTo(this._map);
+    }
+    if (!this._config.show_cars) {
+      this._carLayer.clearLayers();
+      return;
+    }
+
+    const cars = this._discoverCars();
+    // Only rebuild when something changed, so we don't fight the user's pan.
+    const sig = cars
+      .map((c) => `${c.id}|${c.lat.toFixed(5)}|${c.lon.toFixed(5)}|${c.a.current_level_percent}|${c.state}`)
+      .join(";");
+    if (sig === this._carSig) return;
+    this._carSig = sig;
+
+    this._carLayer.clearLayers();
+    for (const c of cars) {
+      const pct = c.a.current_level_percent;
+      const color = this._carColor(pct);
+      const pctLabel = pct === null || pct === undefined ? "?" : `${Math.round(pct)}%`;
+      const icon = L.divIcon({
+        className: "ff-car-wrap",
+        html: `<div class="ff-car" style="border-color:${color}">
+                 <span class="ff-car-glyph">🚗</span>
+                 <span class="ff-car-pct" style="background:${color}">${this._escape(pctLabel)}</span>
+               </div>`,
+        iconSize: null,
+      });
+      const marker = L.marker([c.lat, c.lon], { icon, zIndexOffset: 1000 });
+
+      const name = c.a.car_name || "Car";
+      const days =
+        c.a.status === "ready" && c.state !== "unknown" && c.state !== "unavailable"
+          ? `${this._escape(c.state)} days until refuel`
+          : "Still learning your consumption";
+      const litres =
+        c.a.current_level_l != null
+          ? ` (${this._escape(c.a.current_level_l)} L)`
+          : "";
+      const cheapest = c.a.cheapest_station
+        ? `<br>Cheapest ${this._escape((c.a.fuel_type || "").toLowerCase())}: ${this._escape(
+            c.a.cheapest_station
+          )}${c.a.cheapest_price != null ? ` · ${this._escape(c.a.cheapest_price)}` : ""}`
+        : "";
+      marker.bindPopup(
+        `<b>${this._escape(name)}</b><br>Fuel: <b>${this._escape(pctLabel)}</b>${litres}<br>${days}${cheapest}`
+      );
+      this._carLayer.addLayer(marker);
     }
   }
 
@@ -1128,6 +1244,7 @@ const EDITOR_SCHEMA = [
   { name: "cluster", selector: { boolean: {} } },
   { name: "show_my_location", selector: { boolean: {} } },
   { name: "follow_me", selector: { boolean: {} } },
+  { name: "show_cars", selector: { boolean: {} } },
   { name: "show_list", selector: { boolean: {} } },
 ];
 
@@ -1142,6 +1259,7 @@ const EDITOR_LABELS = {
   cluster: "Group nearby stations",
   show_my_location: "Show my position on the map",
   follow_me: "Start with follow-me on",
+  show_cars: "Show my cars (ringed by fuel level)",
   show_list: "Show price list",
 };
 
@@ -1286,8 +1404,8 @@ class TankpriserPredictionCard extends HTMLElement {
     let head;
     if (learning) {
       head = `<div class="tp-pred-head tp-pred-learning">
-          <div class="tp-pred-big">Learning…</div>
-          <div class="tp-pred-sub">Drive a few tanks and I'll predict your next refuel.</div>
+          <div class="tp-pred-big">Estimating…</div>
+          <div class="tp-pred-sub">Available after a few refuels — still learning your consumption.</div>
         </div>`;
     } else {
       const days = Number(st.state);

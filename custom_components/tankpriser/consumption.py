@@ -197,3 +197,15 @@ class ConsumptionTracker:
         if current is None or not self.capacity_l:
             return None
         return round(current / self.capacity_l * 100, 1)
+
+    @property
+    def location(self) -> tuple[float | None, float | None]:
+        """Current lat/lon of the source entity, if it reports coordinates."""
+        state = self.hass.states.get(self.source_entity)
+        if state is None:
+            return (None, None)
+        lat = to_float(state.attributes.get("latitude"))
+        lon = to_float(state.attributes.get("longitude"))
+        if lat is None or lon is None:
+            return (None, None)
+        return (lat, lon)
