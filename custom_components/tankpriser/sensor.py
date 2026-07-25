@@ -374,6 +374,36 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         out.sort(key=lambda s: (s["price"], s["distance_km"]))
         return out[:NEARBY_MAX_STATIONS]
 
+    def _spoken(self, ranked: list[dict]) -> str:
+        """The ranked list as a sentence, ready to be read aloud.
+
+        Built here rather than left to the user's template so a Siri Shortcut is
+        one line instead of a Jinja loop — and so the phrasing is right: Danish
+        wants a decimal comma, and "16,79 kroner" read out beats "16.79".
+        """
+        danish = str(getattr(self.hass.config, "language", "") or "").lower().startswith("da")
+        if not ranked:
+            return "Ingen stationer i nærheden." if danish else "No stations nearby."
+
+        def number(value: float, decimals: int = 2) -> str:
+            text = f"{value:.{decimals}f}"
+            return text.replace(".", ",") if danish else text
+
+        lines = []
+        for index, station in enumerate(ranked[:3], start=1):
+            where = " ".join(p for p in (station["company"], station["city"]) if p)
+            if danish:
+                lines.append(
+                    f"Nummer {index}: {where}, {number(station['price'])} kroner, "
+                    f"{number(station['distance_km'], 1)} kilometer."
+                )
+            else:
+                lines.append(
+                    f"Number {index}: {where}, {number(station['price'])} kroner, "
+                    f"{number(station['distance_km'], 1)} kilometres."
+                )
+        return " ".join(lines)
+
     @property
     def native_value(self) -> float | None:
         ranked = self._ranked()
@@ -389,6 +419,8 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
             "tracked_entity": self.coordinator.nearby_tracker,
             "radius_km": self.coordinator.nearby_radius_km,
             "station_count": len(ranked),
+            # Ready to hand to "Speak Text" in a Siri Shortcut, in HA's language.
+            "spoken": self._spoken(ranked),
             "stations": ranked,
         }
         if best is not None:

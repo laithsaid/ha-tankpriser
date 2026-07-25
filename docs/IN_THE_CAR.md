@@ -22,6 +22,7 @@ sensor.tankpriser_blyfri_95_e10_cheapest_nearby
     cheapest_station: "Q8 Hummeltoftevej 45"
     distance_km: 1.2
     latitude / longitude          ← only when the position is exact
+    spoken: "Nummer 1: Q8 Virum, 16,79 kroner, 1,2 kilometer. Nummer 2: …"
     stations: [ {name, company, city, price, list_price, discount_ore,
                  distance_km, latitude, longitude, coord_approx}, … ]
 ```
@@ -51,76 +52,114 @@ Works with no extra setup beyond the above.
    without coordinates rather than sending you to a postnummer centre.
 3. Your car's `…_days_until_refuel` sensor works as a favourite too.
 
-## CarPlay
+## CarPlay + Siri — the full walkthrough
 
 CarPlay shows only actionable domains — `button`, `cover`, `input_boolean`,
-`input_button`, `light`, `lock`, `scene`, `script`, `switch`. **No sensors.** So
-prices cannot be *displayed*; the way in is **voice**, via a Siri Shortcut.
+`input_button`, `light`, `lock`, `scene`, `script`, `switch`. **No sensors, no
+map.** So prices cannot be *displayed* in CarPlay by anything, ours included.
+What works is **voice**, and it works well: you ask, Siri reads out the three
+cheapest with distances, you say which one, and navigation starts.
 
-### The shortcut: ask, choose, navigate
+Apple does not let an integration install a Shortcut on your phone, so this part
+is built by hand — once, in about five minutes. Everything hard (ranking,
+distances, discounts, the spoken sentence, the coordinates) is already done by
+the sensor; you are wiring six actions together.
 
-Build this once in the Shortcuts app. Name it something you can say cleanly —
-"Billigste benzin".
+### Before you start
 
-| # | Action | Configure |
-| --- | --- | --- |
-| 1 | Home Assistant · **Update location** | a fresh fix before measuring distance |
-| 2 | Home Assistant · **Render template** | template A below |
-| 3 | **Speak Text** | the result of step 2 |
-| 4 | **Dictate Text** | you say "nummer to" or "Shell" |
-| 5 | Home Assistant · **Render template** | template B, with the *Dictated Text* variable inserted |
-| 6 | **Open URLs** | the result of step 5 |
+- The `…_cheapest_nearby` sensor exists (see the top of this page) and shows a
+  price in **Developer tools → States**. Copy its exact entity id.
+- The Home Assistant app is signed in on the iPhone.
+- Google Maps is installed. (Prefer Apple Maps? See *Variants* below.)
 
-Then, in the car: press the wheel's voice button, say **"Billigste benzin"**,
-listen, say which one, and Google Maps starts the route on the CarPlay screen.
+### Part 1 — build the shortcut
 
-**Template A** — read out the three cheapest:
+Do this sitting down, not in the car.
 
-```jinja
-{% set s = state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations') %}
-{% if s %}{% for st in s[:3] %}Nummer {{ loop.index }}: {{ st.company }} {{ st.city }},
-{{ st.price }} kroner, {{ st.distance_km }} kilometer. {% endfor %}
-{% else %}Ingen stationer i nærheden.{% endif %}
-```
+1. Open the **Shortcuts** app → **+** (top right).
+2. Tap the shortcut's name at the top → **Rename** → call it
+   **Billigste benzin**. *This is the phrase you will say to Siri*, so pick
+   something you pronounce cleanly and that sounds unlike your other shortcuts.
+3. **Add action** → search `Home Assistant` → **Update location**.
+   *Why first: it forces a fresh GPS fix, so the distances describe where you
+   are, not where you were when the app last checked in.*
+4. **Add action** → search `Home Assistant` → **Render template**. Paste this,
+   replacing the entity id with yours:
 
-**Template B** — pick what you said, return a Maps URL. Replace `SPOKEN` with the
-Dictated Text variable:
+   ```jinja
+   {{ state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'spoken') }}
+   ```
 
-```jinja
-{% set said = "SPOKEN" | lower %}
-{% set s = state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations')[:3] %}
-{% set words = {1: ['1','en','et','one'], 2: ['2','to','two'], 3: ['3','tre','three']} %}
-{% set ns = namespace(pick=s[0]) %}
-{% for st in s %}
-  {% if words[loop.index] | select('in', said) | list or st.company | lower in said %}
-    {% set ns.pick = st %}
-  {% endif %}
-{% endfor %}
-https://www.google.com/maps/dir/?api=1&destination={{ ns.pick.latitude }},{{ ns.pick.longitude }}
-```
+   That attribute is already a finished sentence — *"Nummer 1: Q8 Virum, 16,79
+   kroner, 1,2 kilometer. Nummer 2: …"* — in your Home Assistant language.
+5. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
+   **Render template** from the variable bar above the keyboard. Expand the
+   action (tap the ⌄) and turn **Wait Until Finished** on, so it finishes
+   reading before it starts listening.
+6. **Add action** → search `Dictate` → **Dictate Text**. Expand it and set
+   **Stop Listening → After Pause**.
+7. **Add action** → **Render template** again. Paste the template below. Where it
+   says `SPOKEN`, select the word, delete it, and insert the **Dictated Text**
+   variable from the bar above the keyboard.
 
-### Why it matches on numbers and chains
+   ```jinja
+   {% set said = "SPOKEN" | lower %}
+   {% set s = state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations')[:3] %}
+   {% set words = {1: ['1','en','et','one'], 2: ['2','to','two'], 3: ['3','tre','three']} %}
+   {% set ns = namespace(pick=s[0]) %}
+   {% for st in s %}
+     {% if words[loop.index] | select('in', said) | list or st.company | lower in said %}
+       {% set ns.pick = st %}
+     {% endif %}
+   {% endfor %}
+   https://www.google.com/maps/dir/?api=1&destination={{ ns.pick.latitude }},{{ ns.pick.longitude }}
+   ```
 
-Not on station names. "Hummeltoftevej" and "Dronningemaen" are exactly the words
-speech recognition gets wrong, and getting them wrong while driving is the worst
-time for it. Numbers and chain names ("Shell", "Q8", "OK") recognise reliably,
-and if it hears neither, the fallback is the cheapest — a sensible answer rather
-than none.
+8. **Add action** → search `Open URLs` → **Open URLs**, and set its input to the
+   *second* **Render template** result.
+9. **Done**.
 
-### Simpler variants
+### Part 2 — test it parked, on the phone
 
-- **No conversation:** drop steps 4–5 and route straight to the cheapest. Two
-  spoken words, one destination.
-- **Assist prompt instead:** CarPlay's Quick Access can hold saved Assist
-  prompts, if you would rather ask Assist and just hear the answer. That cannot
-  start navigation — Assist has no way to open Google Maps.
+Say **"Hey Siri, Billigste benzin"** with the engine off.
 
-### What to verify in the driveway
+Expected: it speaks three stations → pauses to listen → you say **"nummer to"**
+(or **"Shell"**) → Google Maps opens with the route.
 
-Whether **Dictate Text** and **Open URLs** render and launch on *your* head unit
-is iOS- and car-specific. Everything upstream (Siri triggering the shortcut, the
-template rendering, Speak Text) is not in doubt. Test it parked before you rely
-on it at 110 km/h.
+### Part 3 — in the car
+
+Connect CarPlay, press the **voice button on the steering wheel**, and say
+**"Billigste benzin"**. The Shortcuts app itself never appears on the CarPlay
+screen — voice is the only trigger, and that is by Apple's design, not a
+limitation of this integration.
+
+### If something does not work
+
+| What happens | Why, and what to do |
+| --- | --- |
+| Siri: *"I don't see an app for that"* | The shortcut name is being misheard. Rename it to something more distinct and say it exactly. |
+| *"Ingen stationer i nærheden"* | No station within the radius, or the tracked device has no position. Check the sensor in Developer tools → States: `station_count`, `tracked_entity`, `radius_km`. |
+| Speaks nothing at all | The entity id in the template is wrong — it follows your **area name**, not always `tankpriser_…`. Copy it from Developer tools → States. |
+| Speaks, then nothing happens | Google Maps is not installed, or the last station has no coordinates (approximate positions are deliberately omitted). Try the Apple Maps variant. |
+| Distances look stale | The **Update location** action is missing or not first. |
+| It picks the wrong station | Say the **chain** ("Shell", "Q8", "OK") instead of the number — it matches either. If it hears neither, it routes to the cheapest on purpose, rather than failing. |
+
+### Variants
+
+- **Apple Maps instead of Google:** change the last line of template B to
+  `http://maps.apple.com/?daddr={{ ns.pick.latitude }},{{ ns.pick.longitude }}&dirflg=d`.
+- **No conversation, just take me there:** delete actions 6 and 7 and point
+  **Open URLs** at a template that returns the URL for `stations[0]`. Two spoken
+  words, one destination.
+- **Just tell me, do not navigate:** keep actions 1–5 only. This variant also
+  works as a saved **Assist prompt** in CarPlay's Quick Access tab.
+
+### What I could not verify for you
+
+Whether **Dictate Text** and **Open URLs** behave on *your* head unit is iOS- and
+car-specific — some units are fussier than others. Everything before that (Siri
+triggering by name, the template rendering, Speak Text) is not in doubt. That is
+why Part 2 exists: test it in the driveway before trusting it at 110 km/h.
 
 ---
 

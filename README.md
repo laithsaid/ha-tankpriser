@@ -136,9 +136,12 @@ Neither CarPlay nor Android Auto will let Home Assistant draw a map, so the card
 cannot appear there. Nominate a device under **Configure → Area & fuel types →
 "Rank stations near this device"** and you get a `…_cheapest_nearby` sensor per
 fuel: Android Auto shows its price while driving and can **navigate straight to
-the cheapest station**, and a Siri Shortcut can read out the three cheapest and
-route you to the one you say out loud. Setup and the shortcut are in
-[`docs/IN_THE_CAR.md`](docs/IN_THE_CAR.md).
+the cheapest station**, and **Siri can read out the three
+cheapest and navigate to the one you name** — ask "billigste benzin", hear
+*"Nummer 1: Q8 Virum, 16,79 kroner, 1,2 kilometer…"*, say "nummer to", and
+Google Maps starts the route on the CarPlay screen. Apple does not let an
+integration install a Shortcut for you, so that part is built by hand once —
+[`docs/IN_THE_CAR.md`](docs/IN_THE_CAR.md) walks through it action by action.
 
 **Card options:**
 
