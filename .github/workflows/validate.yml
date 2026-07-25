@@ -7,6 +7,35 @@ on:
     - cron: "0 6 * * 1"
 
 jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The card's own tests. The DOM ones matter most: a syntax check cannot
+      # catch a call to a function that no longer exists, which is exactly how
+      # v0.10.0b3 shipped with no cars on the map at all.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install test dependencies
+        run: npm install --no-package-lock
+      - name: Card tests
+        run: npm test
+
+      # The Python side needs no Home Assistant: the pure logic is lifted out
+      # of the modules with ast (see the docstrings in tests/).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Integration tests
+        run: |
+          python tests/test_geocode.py
+          python tests/test_card_registration.py
+      - name: Byte-compile the integration
+        run: python -m compileall -q custom_components/tankpriser
+
   hassfest:
     name: Hassfest
     runs-on: ubuntu-latest

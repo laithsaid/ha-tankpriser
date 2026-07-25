@@ -328,6 +328,32 @@ lines from `custom_components.tankpriser`. Common messages:
 
 ---
 
+## 6b. Automated tests
+
+The repo tests itself. These run on every push (the **Tests** job in
+`.github/workflows/validate.yml`) and take a few seconds locally:
+
+```bash
+npm install          # once — pulls jsdom, used only by the tests
+npm test             # the card: helpers + a real DOM
+
+python tests/test_geocode.py            # address parsing + geocode cache policy
+python tests/test_card_registration.py  # the Lovelace resource registration
+```
+
+`tests/map.test.js` is the one worth knowing about: it loads the *real* card
+together with the vendored Leaflet and markercluster into a jsdom document and
+asserts what actually reaches the map — two cars apart draw two markers, two cars
+on identical coordinates draw one grouped marker, a real click on that group
+reveals both cars with their legs, a lone car is drawn, and hiding a car removes
+it. A syntax check cannot catch a call to a function that no longer exists, which
+is how v0.10.0b3 shipped with no cars at all.
+
+The Python tests need **no** Home Assistant installed: the pure logic is lifted
+out of the modules with `ast` (each file's docstring explains the trade-off).
+
+---
+
 ## 7. (Optional) Validate the repo like CI does
 
 If you have Docker, you can run the same checks GitHub Actions runs:
