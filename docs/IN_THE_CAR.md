@@ -141,24 +141,28 @@ Do this sitting down, not in the car.
    Done correctly the line reads — with a blue chip *inside* the quotes:
 
    ```jinja
-   {% set said = "[Dictated Text]" | lower %}
+   {%- set said = "[Dictated Text]" | lower -%}
    ```
 
    **Keep the quotes.** They are what makes it a text value in the template; a
    bare variable there breaks the template.
 
    ```jinja
-   {% set said = "SPOKEN" | lower %}
-   {% set s = state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations')[:3] %}
-   {% set words = {1: ['1','en','et','one'], 2: ['2','to','two'], 3: ['3','tre','three']} %}
-   {% set ns = namespace(pick=s[0]) %}
-   {% for st in s %}
-     {% if words[loop.index] | select('in', said) | list or st.company | lower in said %}
-       {% set ns.pick = st %}
-     {% endif %}
-   {% endfor %}
+   {%- set said = "SPOKEN" | lower -%}
+   {%- set s = state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations')[:3] -%}
+   {%- set words = {1: ['1','en','et','one'], 2: ['2','to','two'], 3: ['3','tre','three']} -%}
+   {%- set ns = namespace(pick=s[0]) -%}
+   {%- for st in s -%}
+     {%- if words[loop.index] | select('in', said) | list or st.company | lower in said -%}
+       {%- set ns.pick = st -%}
+     {%- endif -%}
+   {%- endfor -%}
    https://www.google.com/maps/dir/?api=1&destination={{ ns.pick.latitude }},{{ ns.pick.longitude }}
    ```
+
+   The `-` in every `{%- … -%}` is not decoration: without it each tag leaves its
+   newline behind and the action returns thirteen blank lines followed by the
+   URL, instead of just the URL. Paste the block whole, including the dashes.
 
 8. **Add action** → search `Open URLs` → **Open URLs**, and set its input to the
    *second* **Render template** result.
@@ -197,6 +201,10 @@ limitation of this integration.
 
 - **Apple Maps instead of Google:** change the last line of template B to
   `http://maps.apple.com/?daddr={{ ns.pick.latitude }},{{ ns.pick.longitude }}&dirflg=d`.
+- **Check what the template returns** before wiring it to Open URLs: in Home
+  Assistant, **Developer tools → Template**, paste the block with `SPOKEN`
+  replaced by e.g. `nummer to`. The result pane must show one line — the URL and
+  nothing else.
 - **No conversation, just take me there:** delete actions 6 and 7 and point
   **Open URLs** at a template that returns the URL for `stations[0]`. Two spoken
   words, one destination.
