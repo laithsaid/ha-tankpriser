@@ -140,8 +140,28 @@ adding anything — then there is only ever one new thing to debug.
    The `-` in `{%- … -%}` is not decoration: without it the tag leaves its
    newline behind and the action returns a blank line followed by the URL,
    instead of just the URL.
-7. **Add action** → search `Open URLs` → **Open URLs**, and set its input to the
-   *second* **Render template** result.
+7. **Add action** → search `Open URLs` → **Open URLs**.
+
+   Take Apple's plain **Open URLs**, *not* "Open URLs in Chrome" or any other
+   app's version. Chrome would open the link as a **web page**, and Chrome is
+   not a CarPlay app, so nothing would reach the car screen. The plain action
+   lets iOS hand a `google.com/maps` link to the **Google Maps app**, which is
+   what CarPlay can show.
+
+   Its input must be the **second** Render template — the one returning the URL:
+
+   ```
+   Open URLs   [Render template]
+   ```
+
+   - Already showing a `Render template` chip? Leave it: Shortcuts fills in the
+     action directly above, which is the right one.
+   - Empty? Tap the field and pick **Render template** from the variable bar
+     above the keyboard.
+   - Getting a **"Select Variable"** list? It is asking *which* earlier result to
+     use, not for a name you invent. Two entries are called *Render template*;
+     pick the **lower** one. The first is the spoken sentence, and opening that
+     as a URL does nothing.
 8. **Done**.
 
 ### Part 2 — test it parked, on the phone
@@ -216,6 +236,8 @@ variable and it holds whatever you said that time.
 | It always routes to the first station | Either you are on the Part 1 version (which does that by design), or the **Dictated Text** variable never got inserted — the line must show a coloured chip inside the quotes, not the literal word `SPOKEN`. |
 | A template action returns a date/time | Apple's default `{{ now() }}` was left in place — clear the field completely before pasting. |
 | Speaks, then nothing happens | Google Maps is not installed, or the last station has no coordinates (approximate positions are deliberately omitted). Try the Apple Maps variant. |
+| A web page opens instead of the map app | "Open URLs **in Chrome**" (or another browser's action) was used instead of Apple's plain **Open URLs**. A browser cannot hand the link on to Google Maps, and is not a CarPlay app. |
+| Nothing opens, and the spoken sentence appeared as a URL | **Open URLs** is pointing at the *first* Render template. Point it at the lower one. |
 | Distances look stale | The **Update location** action is missing or not first. |
 | It picks the wrong station | Say the **chain** ("Shell", "Q8", "OK") instead of the number — it matches either. If it hears neither, it routes to the cheapest on purpose, rather than failing. |
 
