@@ -29,6 +29,12 @@ sensor.tankpriser_blyfri_95_e10_cheapest_nearby
 It re-ranks whenever the tracked device moves, not only when prices refresh —
 otherwise the distances would describe where you were half an hour ago.
 
+> **Check your own entity id before pasting the templates below.** Home Assistant
+> builds it from the *area name* you chose when adding the integration, so it is
+> `sensor.tankpriser_…` only if you kept the default. If you named the area
+> "Silkeborg" it is `sensor.silkeborg_blyfri_95_e10_cheapest_nearby`.
+> **Developer tools → States**, filter `cheapest_nearby`, and copy what you see.
+
 ---
 
 ## Android Auto
