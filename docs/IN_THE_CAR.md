@@ -112,8 +112,10 @@ Do this sitting down, not in the car.
 3. **Add action** → search `Home Assistant` → **Update location**.
    *Why first: it forces a fresh GPS fix, so the distances describe where you
    are, not where you were when the app last checked in.*
-4. **Add action** → search `Home Assistant` → **Render template**. Paste this,
-   replacing the entity id with yours:
+4. **Add action** → search `Home Assistant` → **Render template**. The action
+   appears with two fields: **Server** (leave it on your Home Assistant) and
+   **Template**, pre-filled with Apple's example `{{ now() }}`. Select that
+   example, delete it, and paste this instead — with your own entity id:
 
    ```jinja
    {{ state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'spoken') }}
@@ -127,9 +129,23 @@ Do this sitting down, not in the car.
    reading before it starts listening.
 6. **Add action** → search `Dictate` → **Dictate Text**. Expand it and set
    **Stop Listening → After Pause**.
-7. **Add action** → **Render template** again. Paste the template below. Where it
-   says `SPOKEN`, select the word, delete it, and insert the **Dictated Text**
-   variable from the bar above the keyboard.
+7. **Add action** → **Render template** again. Clear its `{{ now() }}` the same
+   way and paste the template below.
+
+   `SPOKEN` in it is a placeholder for *you* to replace — Shortcuts will not show
+   you that word anywhere. Double-tap **SPOKEN** to select just that word, delete
+   it, leave the cursor between the two `"` quotes, and tap **Dictated Text** in
+   the variable bar above the keyboard (or long-press → **Insert Variable** →
+   *Dictated Text*).
+
+   Done correctly the line reads — with a blue chip *inside* the quotes:
+
+   ```jinja
+   {% set said = "[Dictated Text]" | lower %}
+   ```
+
+   **Keep the quotes.** They are what makes it a text value in the template; a
+   bare variable there breaks the template.
 
    ```jinja
    {% set said = "SPOKEN" | lower %}
@@ -171,6 +187,8 @@ limitation of this integration.
 | Siri: *"I don't see an app for that"* | The shortcut name is being misheard. Rename it to something more distinct and say it exactly. |
 | *"Ingen stationer i nærheden"* | No station within the radius, or the tracked device has no position. Check the sensor in Developer tools → States: `station_count`, `tracked_entity`, `radius_km`. |
 | Speaks nothing at all | The entity id in the template is wrong — it follows your **area name**, not always `tankpriser_…`. Copy it from Developer tools → States. |
+| It always routes to the first station | The **Dictated Text** variable did not get inserted in step 7, so nothing matches and it falls back to the cheapest. Open the action: the line must show a blue chip inside the quotes, not the literal word `SPOKEN`. |
+| A template action returns a date/time | Apple's default `{{ now() }}` was left in place — clear the field completely before pasting. |
 | Speaks, then nothing happens | Google Maps is not installed, or the last station has no coordinates (approximate positions are deliberately omitted). Try the Apple Maps variant. |
 | Distances look stale | The **Update location** action is missing or not first. |
 | It picks the wrong station | Say the **chain** ("Shell", "Q8", "OK") instead of the number — it matches either. If it hears neither, it routes to the cheapest on purpose, rather than failing. |
