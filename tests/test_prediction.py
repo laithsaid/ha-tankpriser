@@ -92,25 +92,34 @@ def test_a_parked_car_predicts_nothing() -> None:
     assert predict(model, 39.9) is None
 
 
-def test_one_days_driving_is_not_enough_on_its_own() -> None:
-    """A single long trip must not be projected as a daily habit."""
+def test_a_short_window_is_not_enough_on_its_own() -> None:
+    """A burst of driving must not be projected as a daily habit.
+
+    EARLY_MIN_DAYS is 3 precisely because someone who drives irregularly would
+    otherwise have one busy day define their whole rate.
+    """
     model = Model(CAP)
     model.add_reading(0, 60.0)
     drive(model, 0, 60.0, 45.0, 0.4)  # 15 L in under half a day
     assert predict(model, 45.0) is None
 
+    later = Model(CAP)
+    later.add_reading(0, 60.0)
+    drive(later, 0, 60.0, 45.0, 2.0)  # still short of the 3-day window
+    assert predict(later, 45.0) is None
+
 
 def test_early_estimate_from_the_open_tank() -> None:
     model = Model(CAP)
     model.add_reading(0, 60.0)
-    drive(model, 0, 60.0, 45.0, 3.0)  # 15 L over 3 days = 5 L/day
-    result = predict(model, 45.0)
-    assert result is not None, "3 days and a quarter tank is enough to answer"
+    drive(model, 0, 60.0, 40.0, 4.0)  # 20 L over 4 days = 5 L/day
+    result = predict(model, 40.0)
+    assert result is not None, "4 days and a third of a tank is enough to answer"
     assert result.basis == "current tank"
     assert result.is_early is True
     assert result.segments == 0, "no tank has completed yet"
     assert round(result.avg_consumption, 1) == 5.0
-    assert round(result.days_until_empty, 0) == 9.0  # 45 L / 5 L per day
+    assert round(result.days_until_empty, 0) == 8.0  # 40 L / 5 L per day
     assert 0 < result.confidence <= const.EARLY_CONFIDENCE_CAP
 
 
@@ -120,12 +129,16 @@ def test_one_completed_tank_is_still_early() -> None:
     model.add_reading(0, 60.0)
     end = drive(model, 0, 60.0, 10.0, 10.0)
     full_tank(model, end + 60)
-    drive(model, end + 60, 60.0, 50.0, 2.0)
+    drive(model, end + 60, 60.0, 50.0, 2.0)  # too short to count on its own
     result = predict(model, 50.0)
-    assert result is not None
+    assert result is not None, "one completed tank is still worth answering from"
     assert result.segments == 1
-    assert result.basis == "current tank"
+    assert result.basis == "one tank"
     assert result.confidence <= const.EARLY_CONFIDENCE_CAP
+
+    # Once the open tank clears the window it is folded in, and says so.
+    drive(model, end + 60, 60.0, 40.0, 5.0)
+    assert predict(model, 40.0).basis == "current tank"
 
 
 # -- tier 2: completed tanks -------------------------------------------------
@@ -146,22 +159,56 @@ def test_two_tanks_make_it_ready() -> None:
     assert result.confidence > const.EARLY_CONFIDENCE_CAP
 
 
-def test_the_open_tank_keeps_calibrating_between_refuels() -> None:
-    """Habit change must show up without waiting for the next fill-up."""
+def _two_calm_tanks() -> tuple[object, float]:
+    """A car with two completed tanks at a steady 5 L/day. Returns (model, ts)."""
     model = Model(CAP)
     model.add_reading(0, 60.0)
-    ts = drive(model, 0, 60.0, 10.0, 10.0)      # two calm tanks: 5 L/day
+    ts = drive(model, 0, 60.0, 10.0, 10.0)
     full_tank(model, ts + 60)
     ts = drive(model, ts + 60, 60.0, 10.0, 10.0)
     full_tank(model, ts + 60)
-    calm = predict(model, 60.0).days_until_empty
+    return model, ts + 60
 
-    # Now drive twice as hard on the open tank.
-    drive(model, ts + 60, 60.0, 40.0, 2.0)      # 20 L in 2 days = 10 L/day
-    busy = predict(model, 40.0)
+
+def test_the_open_tank_keeps_calibrating_between_refuels() -> None:
+    """Habit change must show up without waiting for the next fill-up."""
+    model, ts = _two_calm_tanks()
+    calm = predict(model, 60.0)
+    assert round(calm.avg_consumption, 1) == 5.0
+
+    # Now drive twice as hard, for long enough that it means something.
+    drive(model, ts, 60.0, 20.0, 4.0)           # 40 L in 4 days = 10 L/day
+    busy = predict(model, 20.0)
     assert busy.basis == "tanks", "completed tanks still make it 'ready'"
     assert busy.avg_consumption > 5.0, "the open tank must pull the rate up"
-    assert busy.days_until_empty < calm
+    # ...but only in proportion to the 4 days it covers against a 10-day tank,
+    # not as though it were a whole tank's worth of evidence.
+    assert busy.avg_consumption < 10.0
+
+
+def test_bursty_driving_does_not_swing_the_prediction() -> None:
+    """The case that motivated the weighting: drive hard one day, then park.
+
+    Before weighting by time covered, a single 20 L Saturday took a settled
+    12-day prediction down to 3.2 days — the open tank got the same EWMA weight
+    as a completed tank despite covering one day of it.
+    """
+    model, ts = _two_calm_tanks()
+    settled = predict(model, 60.0).days_until_empty
+    assert round(settled) == 12
+
+    # One big day out, then the car sits on the drive for a week.
+    model.add_reading(ts + DAY, 40.0)           # 20 L in a single day
+    after_trip = predict(model, 40.0).days_until_empty
+    assert after_trip < settled, "a heavy day should shorten the estimate"
+    assert after_trip > settled / 2, (
+        f"but not halve it on one day's evidence (got {after_trip})"
+    )
+
+    for day in range(2, 9):                     # parked, level unchanged
+        model.add_reading(ts + day * DAY, 40.0)
+    after_week = predict(model, 40.0).days_until_empty
+    assert after_week > after_trip, "a quiet week should stretch it back out"
 
 
 def test_odometer_gives_litres_per_100km() -> None:

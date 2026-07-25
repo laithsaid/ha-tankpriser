@@ -149,10 +149,19 @@ MIN_SEGMENTS_FOR_PREDICTION: Final = 2
 # and burnt this much of the tank. Without the second condition a car parked for
 # three days would report a rate of ~0 L/day, i.e. "empty in nine years"; with
 # only the second, a single big trip would be projected as a daily habit.
-EARLY_MIN_DAYS: Final = 1.0
+# Three days rather than one: for someone who drives in bursts, a one-day window
+# is a single trip, not a habit.
+EARLY_MIN_DAYS: Final = 3.0
 EARLY_MIN_CONSUMED_FRACTION: Final = 0.05
 # One partial tank is a guess, not a measurement — never claim more than this.
 EARLY_CONFIDENCE_CAP: Final = 0.3
+# When completed tanks exist, the tank in progress is blended in with a weight of
+# (its days) / (a typical tank's days), capped at 1. Irregular driving is the
+# reason: without this a single 20 L Saturday would carry the same weight as a
+# whole tank and swing a 12-day prediction to 3, then back again once the car sat
+# still for a week. A short window now nudges; it earns its say as it lengthens.
+# The fallback is only used if completed tanks somehow have no duration.
+TYPICAL_TANK_DAYS_FALLBACK: Final = 10.0
 # Exponential weighting of recent tanks vs older ones (0<alpha<=1; higher =
 # more weight on the most recent segment). Used by the estimator.
 EWMA_ALPHA: Final = 0.5

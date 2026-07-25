@@ -317,7 +317,8 @@ lines from `custom_components.tankpriser`. Common messages:
 | `DAWA radius lookup failed … using postnummer only` | DAWA was unreachable; falls back to just your postnummer until it recovers |
 | `Area 8600 10 km -> N postnumre` | Normal debug line confirming the radius resolved |
 | No sensors created | No fuel types selected |
-| A car's sensor stays `unknown` (`status: learning`) | It has not seen real driving yet: it needs ≥1 day *and* ≥5 % of the tank consumed since the last refuel. A parked car never qualifies — that guard is what stops "empty in nine years" |
+| A car's sensor stays `unknown` (`status: learning`) | It has not seen real driving yet: it needs ≥3 days *and* ≥5 % of the tank consumed since the last refuel. A parked car never qualifies — that guard is what stops "empty in nine years" |
+| The number moves after a long trip | Expected, and deliberately damped: the tank in progress is weighted by the time it covers, so a busy day nudges the estimate rather than halving it |
 | A car shows `~N days` / `status: estimating` | Working as intended: an early estimate from the tank in progress, confidence capped at 0.3. It becomes `ready` after two completed tanks |
 | Want a prediction now, for testing | `tankpriser.seed_demo_history` fabricates completed tanks; `tankpriser.reset_history` clears them |
 | Card missing from picker | Browser cache — hard refresh; check the resource loaded (Dev console: “TANKPRISER-CARD loaded”) |

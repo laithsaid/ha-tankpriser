@@ -323,19 +323,29 @@ calibrating between refuels, not only at them.
 
 - Completed tanks need `duration_days ≥ MIN_SEGMENT_DAYS` (~72 min); guards
   divide-by-tiny.
-- The **open tank** counts only once it has both run `EARLY_MIN_DAYS` (1 day) and
-  burnt `EARLY_MIN_CONSUMED_FRACTION` (5 %) of the tank. Both gates are load-
-  bearing: without the first, one long trip an hour after a fill-up is projected
-  as a daily habit; without the second, a car parked for three days reports
-  ~0 L/day, i.e. "empty in nine years".
+- The **open tank** counts only once it has both run `EARLY_MIN_DAYS` (3 days)
+  and burnt `EARLY_MIN_CONSUMED_FRACTION` (5 %) of the tank. Both gates are
+  load-bearing: without the first, one long trip an hour after a fill-up is
+  projected as a daily habit; without the second, a car parked for three days
+  reports ~0 L/day, i.e. "empty in nine years".
+- **How much the open tank counts** is decided by `_blend_daily_rate`, and this
+  is what makes irregular driving safe. It is *not* appended to the EWMA — that
+  gave a one-day window the same weight as a completed tank, and a single 20 L
+  Saturday took a settled 12-day prediction to 3.2 days, then back to 10 once
+  the car sat still for a week. Instead it is blended in proportion to the time
+  it covers against a typical tank's duration:
+  `rate = (1 − w)·ewma(completed) + w·open`, `w = min(1, open.days / typical)`.
+  A short window nudges; a nearly-finished tank dominates, which is the point at
+  which it has earned that.
 - **Two tiers**, reported as `Prediction.basis` and surfaced by the sensor as
   `status`:
 
   | Completed tanks | `basis` | `status` | Confidence |
   | --- | --- | --- | --- |
   | ≥ `MIN_SEGMENTS_FOR_PREDICTION` (2) | `tanks` | `ready` | earned from the completed tanks |
-  | fewer, but the open tank qualifies | `current tank` | `estimating` | capped at `EARLY_CONFIDENCE_CAP` (0.3) |
-  | fewer, open tank does not qualify | — | `learning` | `None` returned; state `unknown` |
+  | fewer, open tank qualifies | `current tank` | `estimating` | capped at `EARLY_CONFIDENCE_CAP` (0.3) |
+  | one, open tank does not qualify | `one tank` | `estimating` | capped |
+  | none, open tank does not qualify | — | `learning` | `None` returned; state `unknown` |
 
 - **Daily rate** = `_ewma([o.litres_per_day for o in observations])` —
   exponentially weighted, `EWMA_ALPHA = 0.5`, newest heaviest.

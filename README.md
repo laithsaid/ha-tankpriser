@@ -193,13 +193,18 @@ for the first number:
 
 | `status` | State | When |
 | --- | --- | --- |
-| `learning` | `unknown` | Right after adding the car. It needs to see real driving — at least a day, and at least 5 % of the tank gone — before it will guess. A car sitting on the drive tells it nothing. |
-| `estimating` | a number, shown as `~9 days` | From the tank you are on *now*. Rough, confidence capped at 0.3, and it moves as it learns. |
+| `learning` | `unknown` | Right after adding the car. It needs to see real driving — at least **3 days**, and at least 5 % of the tank gone — before it will guess. A car sitting on the drive tells it nothing. |
+| `estimating` | a number, shown as `~9 days` | From the tank you are on *now*, or from a single completed tank. Rough, confidence capped at 0.3, and it moves as it learns. |
 | `ready` | a number | Two or more completed tanks (i.e. two refuels) back it up. |
 
-The tank in progress always counts as the newest, heaviest-weighted observation,
-so the estimate keeps calibrating **between** fill-ups: change how much you drive
-and it follows within a couple of days instead of waiting for the next refuel.
+**If you drive irregularly** — hard some days, not at all on others — this still
+works, and the arithmetic is built around it. A completed tank already averages
+your busy and quiet days together, which is why two of them count as `ready`. The
+tank in progress is folded in continuously so the estimate tracks a change in
+your habits within days rather than waiting for your next fill-up, but it is
+weighted by *how much time it covers*: one busy Saturday nudges the number, it
+does not take it over. Only when the open tank approaches a full tank's worth of
+driving does it carry a full tank's worth of influence.
 
 **Prediction card:** add a **Tankpriser Prediction** card (`type:
 custom:tankpriser-prediction-card`, `entity: sensor.<car>_days_until_refuel`)
