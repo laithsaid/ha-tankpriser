@@ -65,18 +65,47 @@ is built by hand — once, in about five minutes. Everything hard (ranking,
 distances, discounts, the spoken sentence, the coordinates) is already done by
 the sensor; you are wiring six actions together.
 
+### Where each part happens
+
+Three different places, which is the easiest thing to get lost in:
+
+| Part | Where you do it |
+| --- | --- |
+| Nominate the device to measure from | **Home Assistant** — browser or app |
+| Build the shortcut (Part 1 below) | **Your iPhone**, in Apple's **Shortcuts** app |
+| Use it | **In the car**, by voice only |
+
+The **Shortcuts app is Apple's, and comes with iOS** — a dark icon with two
+overlapping rounded squares. Quickest way to find it: swipe down on the home
+screen and type `Shortcuts`. If it is not there it was deleted at some point;
+reinstall it free from the App Store.
+
+Two things that are easy to assume otherwise:
+
+- **Shortcuts has no CarPlay screen.** You cannot build, edit or even see
+  shortcuts on the car display; in the car, voice is the only way to run one.
+  That is Apple's design, not a limit of this integration.
+- **The Home Assistant actions live inside Shortcuts**, not the other way round.
+  When a step says *search "Home Assistant"*, you are searching the Shortcuts
+  action picker. Those actions are there because the Home Assistant app is
+  installed and signed in on that same iPhone — you never open the HA app while
+  building this.
+
 ### Before you start
 
 - The `…_cheapest_nearby` sensor exists (see the top of this page) and shows a
-  price in **Developer tools → States**. Copy its exact entity id.
-- The Home Assistant app is signed in on the iPhone.
-- Google Maps is installed. (Prefer Apple Maps? See *Variants* below.)
+  price in **Developer tools → States**. Copy its exact entity id — you will
+  paste it into two templates.
+- The Home Assistant app is installed and signed in **on the iPhone** (not just
+  on the desktop).
+- Google Maps is installed on the iPhone. (Prefer Apple Maps? See *Variants*.)
 
 ### Part 1 — build the shortcut
 
 Do this sitting down, not in the car.
 
-1. Open the **Shortcuts** app → **+** (top right).
+1. On the **iPhone**, open Apple's **Shortcuts** app and tap **+** (top right)
+   to create a new, empty shortcut.
 2. Tap the shortcut's name at the top → **Rename** → call it
    **Billigste benzin**. *This is the phrase you will say to Siri*, so pick
    something you pronounce cleanly and that sounds unlike your other shortcuts.
@@ -120,6 +149,8 @@ Do this sitting down, not in the car.
 9. **Done**.
 
 ### Part 2 — test it parked, on the phone
+
+*(Still on the iPhone. The car is not involved yet.)*
 
 Say **"Hey Siri, Billigste benzin"** with the engine off.
 
