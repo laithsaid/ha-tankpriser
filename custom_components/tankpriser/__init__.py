@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import Event, HomeAssistant
@@ -149,15 +150,14 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     url = f"{CARD_URL}?v={version}"
 
     if not _STATIC_PATH_REGISTERED:
-        try:
-            from homeassistant.components.http import StaticPathConfig
-
-            await hass.http.async_register_static_paths(
-                [StaticPathConfig(CARD_BASE_URL, www_path, False)]
-            )
-        except ImportError:
-            # Older cores fall back to the sync registration helper.
-            hass.http.register_static_path(CARD_BASE_URL, www_path, False)
+        # No fallback for cores that lack StaticPathConfig: hacs.json requires
+        # 2025.2 and it has existed since 2024.7, so the old
+        # hass.http.register_static_path path could never run — and Home
+        # Assistant has since deleted that method, so a "safety net" calling it
+        # would only turn a clear ImportError into a puzzling AttributeError.
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(CARD_BASE_URL, www_path, False)]
+        )
         _STATIC_PATH_REGISTERED = True
 
     if not _EXTRA_JS_REGISTERED:
@@ -193,11 +193,9 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> bo
     if lovelace is None:
         return False  # lovelace not set up (yet)
 
-    # `hass.data["lovelace"]` became a dataclass in 2024.5; older cores use a dict.
     resources = getattr(lovelace, "resources", None)
-    if resources is None and isinstance(lovelace, dict):
-        resources = lovelace.get("resources")
-    # ResourceYAMLCollection has no create/update: YAML mode, leave it alone.
+    # This is not a version check: ResourceYAMLCollection has no create/update,
+    # so a dashboard in YAML mode owns its resource list and we leave it alone.
     if resources is None or not hasattr(resources, "async_create_item"):
         return False
 
