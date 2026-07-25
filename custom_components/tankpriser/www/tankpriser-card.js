@@ -46,6 +46,17 @@ const VENDOR = "/tankpriser/vendor";
 // Where "Support the project" points unless a dashboard overrides it.
 const DONATE_URL = "https://github.com/laithsaid/ha-tankpriser";
 
+// The integration publishes this file both as a frontend extra_module_url and
+// as a Lovelace resource. Normally that is one and the same URL, so the browser
+// runs it once — but a leftover hand-added resource (a different URL, or an old
+// copy under /local/) makes it run twice, and a bare customElements.define()
+// then throws "name has already been used". That exception aborts the rest of
+// the file, which is how a *second* copy could take out the editor and the
+// prediction card. Defining defensively keeps a duplicate load harmless.
+function _define(tag, cls) {
+  if (!customElements.get(tag)) customElements.define(tag, cls);
+}
+
 // Only http(s) links may be rendered. A dashboard config is trusted, but
 // "javascript:..." in donate_url would run in Home Assistant's origin, and
 // dashboard YAML gets copied between users.
@@ -1207,7 +1218,7 @@ class TankpriserCard extends HTMLElement {
   }
 }
 
-customElements.define("tankpriser-card", TankpriserCard);
+_define("tankpriser-card", TankpriserCard);
 
 // -- visual editor ----------------------------------------------------------
 const EDITOR_SCHEMA = [
@@ -1315,7 +1326,7 @@ class TankpriserCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("tankpriser-card-editor", TankpriserCardEditor);
+_define("tankpriser-card-editor", TankpriserCardEditor);
 
 /*
  * Tankpriser prediction card
@@ -1515,7 +1526,7 @@ class TankpriserPredictionCard extends HTMLElement {
   }
 }
 
-customElements.define("tankpriser-prediction-card", TankpriserPredictionCard);
+_define("tankpriser-prediction-card", TankpriserPredictionCard);
 
 const PRED_EDITOR_SCHEMA = [
   { name: "title", selector: { text: {} } },
@@ -1564,19 +1575,23 @@ class TankpriserPredictionCardEditor extends HTMLElement {
   }
 }
 
-customElements.define(
-  "tankpriser-prediction-card-editor",
-  TankpriserPredictionCardEditor
-);
+_define("tankpriser-prediction-card-editor", TankpriserPredictionCardEditor);
 
 window.customCards = window.customCards || [];
-window.customCards.push({
+// Same reason as _define: a duplicate load must not list the cards twice in the
+// "add card" picker.
+function _listCard(card) {
+  if (!window.customCards.some((c) => c && c.type === card.type)) {
+    window.customCards.push(card);
+  }
+}
+_listCard({
   type: "tankpriser-card",
   name: "Tankpriser Prices",
   description: "Map of local fuel stations with company icons + prices (nearby stations grouped, cluster shows the lowest price), plus an optional price table.",
   preview: false,
 });
-window.customCards.push({
+_listCard({
   type: "tankpriser-prediction-card",
   name: "Tankpriser Prediction",
   description: "Predicts when a car will next need refuelling, learned from its fuel level, with the cheapest nearby price for its fuel.",

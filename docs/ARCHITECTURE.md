@@ -48,7 +48,7 @@ Everything is configured from the UI; there is no `configuration.yaml`.
 
 | File | Responsibility |
 | --- | --- |
-| `__init__.py` | Entry/component setup: registers the card static path, the websocket command and services; creates the coordinator and the per-car trackers; migration and unload. |
+| `__init__.py` | Entry/component setup: registers the card (static path + frontend module + Lovelace resource — see below), the websocket command and services; creates the coordinator and the per-car trackers; migration and unload. |
 | `const.py` | All constants: endpoints, fuel-type table, config keys, tuning values, `DONATE_URL`. Pure (no HA imports), so `prediction.py` can import from it. |
 | `sources.py` | Fuel-price **providers**. Each chain is a `Provider` record; `fetch_all()` fetches the active ones concurrently through a shared TTL cache and normalises them into `Station` records. |
 | `geo.py` | DAWA (Danish address API) helpers: resolve *postnummer + radius* → set of postnumre; look up postnummer centre coordinates. Process-life caches. |
@@ -63,6 +63,28 @@ Everything is configured from the UI; there is no `configuration.yaml`.
 | `diagnostics.py` | Redacted config-entry diagnostics (credentials + area name + notify target redacted; postnummer kept). |
 | `www/tankpriser-card.js` | Two custom cards: the price card (list + Leaflet map + car markers) and the prediction card. Leaflet is vendored under `www/vendor/`. |
 | `brand/`, `translations/`, `strings.json` | Bundled brand icons, and the flow/selector translations (en + da). |
+
+### How the card reaches the browser
+
+`www/` is served under `/tankpriser/`, and the card JS is published to clients
+**twice**, because the two routes reach different clients:
+
+| Route | Reaches | Misses |
+| --- | --- | --- |
+| `frontend.add_extra_js_url` — a `<script type="module">` written into `index.html` as it is served | any client that fetches a *fresh* `index.html` | clients holding an older `index.html`: the companion apps keep that document for days (pull-to-refresh does not refetch it), and one fetched early in a restart has no tag at all |
+| A **Lovelace resource** (storage-mode dashboards only) — fetched over the live websocket every time a dashboard opens | exactly those stale clients, plus new devices/users on their first open | YAML-mode dashboards, whose resource list belongs to `configuration.yaml` |
+
+Both point at the same `…/tankpriser-card.js?v=<version>` URL, so the browser's
+module map runs the file once. The `?v=` on the stored resource is kept in step
+with the installed version on every setup, so an update is never masked by a
+browser cache. A duplicate load (e.g. a hand-added resource left over from
+before) is harmless: the file defines its elements defensively.
+
+Symptom when this goes wrong: the card renders as Home Assistant's
+"Configuration error" card — dark, with a red `!` — because the custom element
+was never defined. The frontend hides that error for 2 s and rebuilds the card
+by itself if the element defines late, so an error that *persists* means the
+script never loaded on that client at all.
 
 ## Subsystem 1 — fuel prices (data flow)
 

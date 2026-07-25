@@ -312,6 +312,7 @@ lines from `custom_components.tankpriser`. Common messages:
 | `Area 8600 10 km -> N postnumre` | Normal debug line confirming the radius resolved |
 | No sensors created | No fuel types selected |
 | Card missing from picker | Browser cache — hard refresh; check the resource loaded (Dev console: “TANKPRISER-CARD loaded”) |
+| Card shows “Configuration error” (dark card, red `!`) on one device | That client never loaded the card JS. Check **Settings → Dashboards → ⋮ → Resources** contains `/tankpriser/tankpriser-card.js?v=<version>`; the integration adds it on setup. Open `<your-ha-url>/tankpriser/tankpriser-card.js` on the device — JavaScript means the server side is fine and the client needs the resource entry (or an app cache clear) |
 | Map empty / “Map unavailable” | Browser has no internet to load Leaflet, or no stations have coordinates |
 
 ---

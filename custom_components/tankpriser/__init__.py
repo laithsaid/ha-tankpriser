@@ -6,8 +6,8 @@ import logging
 import os
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
@@ -26,7 +26,11 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 # async_setup (to register the websocket command and the card early).
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
-_CARD_REGISTERED = False
+# Each half of "publishing the card" is tracked separately: they fail
+# independently, and a failed one must be retried rather than latched.
+_STATIC_PATH_REGISTERED = False
+_EXTRA_JS_REGISTERED = False
+_RESOURCE_REGISTERED = False
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -39,11 +43,23 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     entry was still setting up (or retrying) got a page with no card script,
     and every dashboard using it rendered "Configuration error" until that
     client fetched a fresh index.html — which mobile apps rarely do, since
-    pull-to-refresh reuses the cached document.
+    pull-to-refresh reuses the cached document. See `_async_register_card` for
+    why that is no longer the only delivery route.
     """
     async_register_ws(hass)
     async_register_services(hass)
     await _async_register_card(hass)
+
+    # `lovelace` may still be setting up when we get here (it is not a
+    # dependency of ours — the card must also work without it). Try the
+    # resource registration again once everything is up.
+    if not _RESOURCE_REGISTERED:
+
+        async def _retry(_event: Event) -> None:
+            await _async_register_card(hass)
+
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _retry)
+
     return True
 
 
@@ -59,6 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Tankpriser from a config entry."""
     # Belt and braces: `async_setup` normally did this already, but an entry can
     # be added to a running instance whose component setup predates this code.
+    # Only the parts that have not succeeded yet are retried.
     await _async_register_card(hass)
 
     coordinator = TankpriserCoordinator(hass, entry)
@@ -106,38 +123,104 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
-    """Serve and auto-register the bundled Lovelace card once."""
-    global _CARD_REGISTERED  # noqa: PLW0603
-    if _CARD_REGISTERED:
-        return
+    """Serve the bundled Lovelace card and make every client load it.
+
+    The card is published two ways on purpose, because they reach different
+    clients:
+
+    * `add_extra_js_url` writes a <script> tag into index.html *as it is
+      served*. A client that already holds an index.html from before the
+      integration existed — or from a moment early in a restart, before this
+      component was set up — never sees that tag. The Home Assistant apps hold
+      on to that document for days (pull-to-refresh does not refetch it), so
+      those clients render "Configuration error" indefinitely while every other
+      device shows the card fine.
+    * A Lovelace *resource* is fetched over the live websocket every time a
+      dashboard opens, so it reaches exactly those stale clients. This is what
+      HACS-installed cards use and it is the one that fixes first-open on a new
+      phone, a new user, or after a restart.
+    """
+    global _STATIC_PATH_REGISTERED, _EXTRA_JS_REGISTERED, _RESOURCE_REGISTERED  # noqa: PLW0603
 
     # Serve the whole www/ directory: the card lives at CARD_URL and its
     # vendored Leaflet build under CARD_BASE_URL/vendor/.
     www_path = os.path.join(os.path.dirname(__file__), "www")
     version = _card_version(hass)
+    url = f"{CARD_URL}?v={version}"
 
-    try:
-        from homeassistant.components.http import StaticPathConfig
+    if not _STATIC_PATH_REGISTERED:
+        try:
+            from homeassistant.components.http import StaticPathConfig
 
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(CARD_BASE_URL, www_path, False)]
-        )
-    except ImportError:
-        # Older cores fall back to the sync registration helper.
-        hass.http.register_static_path(CARD_BASE_URL, www_path, False)
+            await hass.http.async_register_static_paths(
+                [StaticPathConfig(CARD_BASE_URL, www_path, False)]
+            )
+        except ImportError:
+            # Older cores fall back to the sync registration helper.
+            hass.http.register_static_path(CARD_BASE_URL, www_path, False)
+        _STATIC_PATH_REGISTERED = True
 
-    try:
-        from homeassistant.components.frontend import add_extra_js_url
+    if not _EXTRA_JS_REGISTERED:
+        try:
+            from homeassistant.components.frontend import add_extra_js_url
 
-        add_extra_js_url(hass, f"{CARD_URL}?v={version}")
-    except Exception:  # noqa: BLE001
-        _LOGGER.warning(
-            "Could not auto-register the Tankpriser card; add %s as a "
-            "dashboard resource manually if the card does not appear.",
-            CARD_URL,
-        )
+            add_extra_js_url(hass, url)
+            _EXTRA_JS_REGISTERED = True
+        except Exception:  # noqa: BLE001
+            # Not latched: a later call (entry setup, HA started) tries again.
+            _LOGGER.warning(
+                "Could not add the Tankpriser card to the frontend; add %s as a "
+                "dashboard resource manually if the card does not appear.",
+                CARD_URL,
+            )
 
-    _CARD_REGISTERED = True
+    if not _RESOURCE_REGISTERED:
+        try:
+            _RESOURCE_REGISTERED = await _async_register_lovelace_resource(hass, url)
+        except Exception:  # noqa: BLE001 - never block setup over a dashboard nicety
+            _LOGGER.debug("Could not register the Tankpriser Lovelace resource", exc_info=True)
+
+
+async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
+    """Add (or update) the card in the Lovelace resource list.
+
+    Returns True when the resource list holds our current URL. Storage-mode
+    dashboards only: in YAML mode the resource list is owned by
+    configuration.yaml and must not be written to, and there the index.html
+    injection above is the whole story.
+    """
+    lovelace = hass.data.get("lovelace")
+    if lovelace is None:
+        return False  # lovelace not set up (yet)
+
+    # `hass.data["lovelace"]` became a dataclass in 2024.5; older cores use a dict.
+    resources = getattr(lovelace, "resources", None)
+    if resources is None and isinstance(lovelace, dict):
+        resources = lovelace.get("resources")
+    # ResourceYAMLCollection has no create/update: YAML mode, leave it alone.
+    if resources is None or not hasattr(resources, "async_create_item"):
+        return False
+
+    # The collection lazy-loads; async_items() is empty until it has.
+    if not getattr(resources, "loaded", True):
+        await resources.async_load()
+        resources.loaded = True
+
+    for item in resources.async_items():
+        item_url = str(item.get("url", ""))
+        if item_url.split("?")[0] != CARD_URL:
+            continue
+        # Ours already: keep the ?v= in step with the installed version, so an
+        # update is not masked by a browser cache holding the old file.
+        if item_url != url:
+            await resources.async_update_item(
+                item["id"], {"res_type": "module", "url": url}
+            )
+        return True
+
+    await resources.async_create_item({"res_type": "module", "url": url})
+    _LOGGER.debug("Registered the Tankpriser card as a Lovelace resource: %s", url)
+    return True
 
 
 def _card_version(hass: HomeAssistant) -> str:
