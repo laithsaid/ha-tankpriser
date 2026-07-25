@@ -161,8 +161,9 @@ minimum:
 ```
 custom_components/tankpriser/
   __init__.py  manifest.json  const.py  config_flow.py  coordinator.py
-  geo.py  sources.py  notifications.py  sensor.py  strings.json
-  translations/  www/
+  geo.py  geocode.py  sources.py  notifications.py  sensor.py  strings.json
+  consumption.py  prediction.py  services.py  services.yaml  diagnostics.py
+  websocket.py  translations/  www/
 ```
 
 Don't copy `__pycache__/` if it came along — harmless, but stale.
