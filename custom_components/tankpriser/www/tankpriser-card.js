@@ -157,57 +157,9 @@ function _saveHidden(hass, hidden) {
 // Lets two Tankpriser cards on the same dashboard stay in step.
 const CARS_CHANGED = "tankpriser-cars-changed";
 
-// -- overlapping car markers ------------------------------------------------
-// Two cars parked at home usually report the *same* coordinates, not merely
-// close ones: with no GPS fix of their own they both fall back to the centre of
-// the same zone. Stacked markers hide each other completely — you cannot even
-// tell there are two. So a group sharing a spot is fanned out around it, each
-// with a leader line back to the one real position.
-//
-// The offsets are in pixels and live inside the marker's own icon (CSS), not in
-// the marker's latlng: that keeps the fan the same size at every zoom level
-// without re-placing anything when the map zooms.
-const SAME_SPOT_M = 30; // closer than this counts as "the same place"
-
-// Equirectangular approximation — plenty at these distances, and it avoids
-// pulling in a real geodesic for what is a layout decision.
-function _metresApart(a, b) {
-  const lat = ((a.lat + b.lat) / 2) * (Math.PI / 180);
-  return Math.hypot(
-    (a.lat - b.lat) * 111320,
-    (a.lon - b.lon) * 111320 * Math.cos(lat)
-  );
-}
-
-// Greedy grouping against each group's first member. n is tiny (your cars), and
-// the input is name-sorted, so the same car keeps the same slot in the fan
-// between renders instead of hopping around.
-function _groupBySpot(cars) {
-  const groups = [];
-  for (const car of cars) {
-    const group = groups.find((g) => _metresApart(g[0], car) <= SAME_SPOT_M);
-    if (group) group.push(car);
-    else groups.push([car]);
-  }
-  return groups;
-}
-
-// Where each member of a group of `count` sits, in pixels from the real spot.
-// First one straight up, then evenly around the circle. The radius grows with
-// the group so neighbouring discs (26 px) never touch.
-function _fanOffsets(count) {
-  if (count < 2) return [[0, 0]];
-  const radius = 18 + 6 * count;
-  const offsets = [];
-  for (let i = 0; i < count; i++) {
-    const angle = (-90 + (i * 360) / count) * (Math.PI / 180);
-    offsets.push([
-      Math.round(Math.cos(angle) * radius),
-      Math.round(Math.sin(angle) * radius),
-    ]);
-  }
-  return offsets;
-}
+// Cars live in their own map pane, above the station pins: a car must never be
+// buried under a forecourt marker that happens to share its patch of road.
+const CAR_PANE = "tankpriserCars";
 
 const CDN_LEAFLET = "https://unpkg.com/leaflet@1.9.4/dist";
 const CDN_CLUSTER = "https://unpkg.com/leaflet.markercluster@1.5.3/dist";
@@ -939,7 +891,10 @@ class TankpriserCard extends HTMLElement {
     if (!this._mapEl) return;
     let L;
     try {
-      L = this._config.cluster ? await loadCluster() : await loadLeaflet();
+      // The cluster plugin is also what groups two cars parked in the same
+      // place, so it is needed even when station clustering is switched off.
+      const needCluster = this._config.cluster || this._config.show_cars;
+      L = needCluster ? await loadCluster() : await loadLeaflet();
     } catch (e) {
       // Not permanent: the loader forgets the failure, so the next hass update
       // retries. Leave a notice in the meantime.
@@ -1171,27 +1126,20 @@ class TankpriserCard extends HTMLElement {
     const inner = pic
       ? `<img class="ff-car-img" src="${this._escape(pic)}" alt="" referrerpolicy="no-referrer">`
       : `<span class="ff-car-glyph">🚗</span>`;
-    const body = `<div class="ff-car">
-               <div class="ff-car-disc" style="border-color:${color}">${inner}</div>
-               <span class="ff-car-pct" style="background:${color}">${this._escape(pctLabel)}</span>
-             </div>`;
-    // Alone at its position: exactly the markup it has always had. Sharing:
-    // a dot on the real spot, a leader line, and the car at the end of it.
-    const fanned = dx !== 0 || dy !== 0;
-    const html = fanned
-      ? `<div class="ff-car-fan">
-           <span class="ff-car-lead" style="width:${Math.round(Math.hypot(dx, dy))}px;` +
-        `transform:rotate(${((Math.atan2(dy, dx) * 180) / Math.PI).toFixed(1)}deg)"></span>
-           <span class="ff-car-anchor"></span>
-           <span class="ff-car-off" style="left:${dx}px;top:${dy}px">${body}</span>
-         </div>`
-      : body;
     const icon = L.divIcon({
       className: "ff-car-wrap",
-      html,
+      html: `<div class="ff-car">
+               <div class="ff-car-disc" style="border-color:${color}">${inner}</div>
+               <span class="ff-car-pct" style="background:${color}">${this._escape(pctLabel)}</span>
+             </div>`,
       iconSize: null,
     });
-    const marker = L.marker([c.lat, c.lon], { icon, zIndexOffset: 1000 });
+    const marker = L.marker([c.lat, c.lon], {
+      icon,
+      zIndexOffset: 1000,
+      pane: CAR_PANE,
+    });
+    marker.options.ffCar = c; // the cluster icon reads the cars it holds
 
     const name = c.a.car_name || "Car";
     const days =
@@ -1225,10 +1173,37 @@ class TankpriserCard extends HTMLElement {
       });
       popup.appendChild(hide);
     }
-    // The marker keeps the car's true position and only its *icon* is drawn to
-    // one side, so a fanned popup has to be nudged over to the visible disc.
-    marker.bindPopup(popup, fanned ? { offset: [dx, dy] } : {});
+    marker.bindPopup(popup);
     this._carLayer.addLayer(marker);
+  }
+
+  // The marker shown in place of several cars at one spot: each car's face,
+  // ringed by its fuel level, in a single pill. Tapping it spiderfies.
+  _carClusterIcon(L, cluster) {
+    const cars = cluster
+      .getAllChildMarkers()
+      .map((marker) => marker.options.ffCar)
+      .filter(Boolean);
+    const MAX = 3; // beyond that the faces get too small to tell apart
+    const faces = cars
+      .slice(0, MAX)
+      .map((c) => {
+        const color = this._carColor(c.a.current_level_percent);
+        const pic = _safeUrl(c.a.car_picture);
+        const inner = pic
+          ? `<img class="ff-car-img" src="${this._escape(pic)}" alt="" referrerpolicy="no-referrer">`
+          : `<span class="ff-ccar-glyph">🚗</span>`;
+        return `<span class="ff-ccar" style="border-color:${color}">${inner}</span>`;
+      })
+      .join("");
+    const extra = cars.length - Math.min(cars.length, MAX);
+    return L.divIcon({
+      className: "ff-car-wrap",
+      html:
+        `<div class="ff-ccars">${faces}` +
+        `${extra > 0 ? `<span class="ff-cmore">+${extra}</span>` : ""}</div>`,
+      iconSize: null,
+    });
   }
 
   // -- car picker (🚗 control) ------------------------------------------------

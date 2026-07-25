@@ -104,15 +104,25 @@ gets a plain notice that the position is approximate instead. Handing an
 estimate to a navigator is the one failure mode worth designing against: it
 looks authoritative all the way to the wrong forecourt.
 
-**Cars sharing a position** are fanned out around it, each with a leader line
-back to a dot on the real spot. Cars at home usually have *identical*
-coordinates, not merely close ones — with no fix of their own they fall back to
-the same zone centre — so without this one car is completely invisible under the
-other. The offsets are pixel values applied *inside the marker's icon* (CSS),
-not to the marker's latlng: the marker stays on the true position, so the fan
-keeps its size and shape at every zoom level with no re-placement on `zoomend`,
-and the popup is nudged by the same offset to meet the disc you can see. A car
-alone at its spot renders exactly the markup it did before the feature existed.
+**Cars sharing a position** go through `Leaflet.markercluster`, the same plugin
+the station pins use: the group is one marker showing each car's face, and a tap
+spiderfies them apart. Cars at home usually have *identical* coordinates, not
+merely close ones — with no fix of their own they fall back to the same zone
+centre — so without this one car is completely invisible under the other.
+
+An earlier attempt offset the overlapping markers by a few pixels with a leader
+line back to the real spot. It was rejected for a good reason: moving a marker
+off its true position only relocates the collision, and the car landed on top of
+a station pin instead. Clustering leaves every marker where it belongs.
+
+Options that matter: `zoomToBoundsOnClick: false` with
+`spiderfyOnEveryZoom: true`, because two cars at one zone centre have no bounds
+to zoom to — the default would zoom in repeatedly and re-cluster them, so a
+single tap has to spiderfy at any zoom. `maxClusterRadius` is 26 px (tighter
+than the stations' 48) so cars separate as soon as they are genuinely apart.
+Cars also get their own map pane above the station pins, so a car is never
+buried under a forecourt. The plugin is therefore loaded whenever `show_cars` is
+on, even if station clustering is off.
 
 **Hidden cars** live in `localStorage`, keyed by `hass.user.id`. A dashboard
 config is shared by everyone who can see the dashboard, so it cannot hold "just

@@ -322,7 +322,7 @@ lines from `custom_components.tankpriser`. Common messages:
 | `Tankpriser geocoding pass done: N of M addresses new or changed` | Normal info line: Q8/F24 street addresses resolved against DAWA. Once per install, then a re-verification pass every 180 days. The map refreshes itself if anything changed |
 | `Tankpriser: <address> moved to lat,lon` | A re-verification found a different position for a station that had one — worth a look, but it just works |
 | A Q8/F24 pin has a dashed border and **no** navigate button | Its position is only estimated (DAWA could not match the address exactly, e.g. a motorway plaza). The popup says so; navigating to an estimate would take you confidently to the wrong place |
-| Two cars drawn side by side with thin lines to one dot | Working as intended: they share a position (usually both at the same zone centre), so they are fanned out around the real spot rather than stacked |
+| One marker showing two car faces | Working as intended: those cars share a position (usually the same zone centre), so they are grouped like nearby stations. Tap it to spread them apart, tap a car for its popup |
 | 🚗 button missing | Fewer than two cars exist, `show_cars: false`, or `car_picker: false` |
 | Hidden car came back | The filter lives in this device's `localStorage` under the logged-in user — clearing site data, a different browser profile, or a different HA user each start fresh |
 
