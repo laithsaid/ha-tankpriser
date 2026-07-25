@@ -104,6 +104,13 @@ gets a plain notice that the position is approximate instead. Handing an
 estimate to a navigator is the one failure mode worth designing against: it
 looks authoritative all the way to the wrong forecourt.
 
+**The car icon** is Material Design's `mdi:car` path, inlined as an SVG with
+`fill="currentColor"`. Not an emoji (a different cartoon per platform, and its
+own colours fighting a marker already colour-coded by fuel level), and not
+`<ha-icon>` (a custom element inside a Leaflet `divIcon`, resolved after the
+marker is built). Inlined, it needs no font, no request and no element
+resolution, and it inherits the theme's text colour.
+
 **Cars sharing a position** go through `Leaflet.markercluster`, the same plugin
 the station pins use: the group is one marker showing each car's face, and a tap
 spiderfies them apart. Cars at home usually have *identical* coordinates, not

@@ -96,6 +96,11 @@ stations are. Tap it and they spread apart on their legs so you can pick one.
 Cars are drawn above the station pins, so a car is never buried under a
 forecourt marker.
 
+A car with no photo of its own is drawn with Material Design's `mdi:car`,
+inlined into the card — the same icon Home Assistant would draw, in the theme's
+own text colour, rather than an emoji that renders as a different cartoon on
+every platform.
+
 **Hiding a car, just for you.** A dashboard is shared by everyone who can see
 it, so the card config cannot hold a per-person choice. Instead the 🚗 button
 lists every car with a checkbox, and a car's own popup has *"Skjul denne bil

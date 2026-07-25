@@ -22,7 +22,7 @@
  *   show_cars: true                      # optional, default true — plot your
  *                                        #   configured cars, ringed by fuel
  *                                        #   level (green full → red empty)
- *   car_picker: true                     # optional, default true — 🚗 control to
+ *   car_picker: true                     # optional, default true — car button to
  *                                        #   hide cars on THIS device only
  *                                        #   (remembered per device + HA user)
  *   navigation: auto                     # optional: auto (default) | geo | apple
@@ -160,6 +160,27 @@ const CARS_CHANGED = "tankpriser-cars-changed";
 // Cars live in their own map pane, above the station pins: a car must never be
 // buried under a forecourt marker that happens to share its patch of road.
 const CAR_PANE = "tankpriserCars";
+
+// Material Design's "car" (mdi:car), inlined. An emoji was the obvious first
+// choice and the wrong one: it renders as a different cartoon on every platform,
+// carries its own colours into a marker that is already colour-coded by fuel
+// level, and looks nothing like the rest of Home Assistant. This is the same
+// icon HA itself would draw, needs no icon font, no network request and no
+// <ha-icon> inside a Leaflet marker, and `currentColor` makes it follow the
+// theme's text colour.
+const CAR_PATH =
+  "M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5," +
+  "13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A" +
+  "1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72," +
+  "5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 " +
+  "0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z";
+
+function _carSvg(size) {
+  return (
+    `<svg class="ff-carsvg" viewBox="0 0 24 24" width="${size}" height="${size}" ` +
+    `aria-hidden="true" focusable="false"><path fill="currentColor" d="${CAR_PATH}"/></svg>`
+  );
+}
 
 const CDN_LEAFLET = "https://unpkg.com/leaflet@1.9.4/dist";
 const CDN_CLUSTER = "https://unpkg.com/leaflet.markercluster@1.5.3/dist";
@@ -394,7 +415,7 @@ class TankpriserCard extends HTMLElement {
       // red empty). Optional explicit list; otherwise every car is auto-detected.
       show_cars: config.show_cars !== false,
       cars: Array.isArray(config.cars) ? config.cars : null,
-      // The 🚗 control for hiding cars on this device. The dashboard config
+      // The car-button control for hiding cars on this device. The dashboard config
       // still decides which cars exist here (show_cars / cars:); this only
       // narrows that down per device.
       car_picker: config.car_picker !== false,
@@ -599,7 +620,7 @@ class TankpriserCard extends HTMLElement {
         }
         .ff-mapctl a:hover { background: var(--secondary-background-color, #f4f4f4); }
         .ff-mapctl a.busy { opacity:.5; }
-        /* car picker: the 🚗 button and its drop-down list. The Leaflet bar's own
+        /* car picker: the car button and its drop-down list. The Leaflet bar's own
            frame is dropped, or its border would box in the open panel too. */
         .ff-carctl { background: transparent; box-shadow: none; border: 0; }
         .ff-carctl a.ff-carbtn {
@@ -651,8 +672,10 @@ class TankpriserCard extends HTMLElement {
           background: var(--card-background-color, #fff);
           border:3px solid #888; box-shadow: 0 1px 4px rgba(0,0,0,.45);
           display:flex; align-items:center; justify-content:center;
+          color: var(--primary-text-color, #111);
         }
-        .ff-car-glyph { font-size:13px; line-height:1; }
+        /* the inlined mdi:car takes its colour from the element around it */
+        .ff-carsvg { display:block; }
         /* Absolutely filled + clipped by the disc, so any photo becomes a circle */
         .ff-car-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
         /* cars sharing a spot: one marker showing each car's face, tapped to
@@ -669,9 +692,9 @@ class TankpriserCard extends HTMLElement {
           width:22px; height:22px; border-radius:50%; margin-left:-7px;
           border:2px solid #888; background: var(--card-background-color, #fff);
           display:flex; align-items:center; justify-content:center;
+          color: var(--primary-text-color, #111);
         }
         .ff-ccar:first-child { margin-left:0; }
-        .ff-ccar-glyph { font-size:11px; line-height:1; }
         .ff-ccars .ff-cmore { margin:0 2px 0 3px; }
         .ff-car-pct {
           position:absolute; bottom:-8px; left:50%; transform:translateX(-50%);
@@ -1147,7 +1170,7 @@ class TankpriserCard extends HTMLElement {
     const pic = _safeUrl(c.a.car_picture);
     const inner = pic
       ? `<img class="ff-car-img" src="${this._escape(pic)}" alt="" referrerpolicy="no-referrer">`
-      : `<span class="ff-car-glyph">🚗</span>`;
+      : _carSvg(16);
     const icon = L.divIcon({
       className: "ff-car-wrap",
       html: `<div class="ff-car">
@@ -1187,7 +1210,7 @@ class TankpriserCard extends HTMLElement {
       hide.href = "#";
       hide.className = "ff-carhide";
       hide.textContent = "Skjul denne bil her";
-      hide.title = "Kun på denne enhed — hentes frem igen med 🚗";
+      hide.title = "Kun på denne enhed — hentes frem igen med bil-knappen";
       hide.addEventListener("click", (ev) => {
         ev.preventDefault();
         if (this._map) this._map.closePopup();
@@ -1214,7 +1237,7 @@ class TankpriserCard extends HTMLElement {
         const pic = _safeUrl(c.a.car_picture);
         const inner = pic
           ? `<img class="ff-car-img" src="${this._escape(pic)}" alt="" referrerpolicy="no-referrer">`
-          : `<span class="ff-ccar-glyph">🚗</span>`;
+          : _carSvg(13);
         return `<span class="ff-ccar" style="border-color:${color}">${inner}</span>`;
       })
       .join("");
@@ -1228,7 +1251,7 @@ class TankpriserCard extends HTMLElement {
     });
   }
 
-  // -- car picker (🚗 control) ------------------------------------------------
+  // -- car picker (car button) ------------------------------------------------
   // Tapping a car's "hide" needs a way back, and a silent filter is worse than
   // no filter: the button shows "visible/total" whenever something is hidden.
   _addCarControl(L) {
@@ -1287,8 +1310,8 @@ class TankpriserCard extends HTMLElement {
     const shown = list.filter((c) => !c.hidden).length;
     button.innerHTML =
       shown === list.length
-        ? "🚗"
-        : `🚗<span class="ff-carn">${shown}/${list.length}</span>`;
+        ? _carSvg(18)
+        : `${_carSvg(18)}<span class="ff-carn">${shown}/${list.length}</span>`;
     const label = `Vælg biler (${shown} af ${list.length} vises)`;
     button.title = label;
     button.setAttribute("aria-label", label);
