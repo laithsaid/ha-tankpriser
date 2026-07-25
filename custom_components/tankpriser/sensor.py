@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
+from typing import Final
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -25,6 +27,7 @@ from .const import (
     DOMAIN,
     FUEL_TYPES,
     NEARBY_MAX_STATIONS,
+    SPOKEN_STATIONS,
 )
 from .consumption import ConsumptionTracker
 from .coordinator import TankpriserCoordinator
@@ -337,7 +340,11 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
             return None
 
     def _ranked(self) -> list[dict]:
-        """Stations within the radius, cheapest first, each with its distance."""
+        """Every station within the radius, cheapest first, with its distance.
+
+        Deliberately *not* truncated here: ``station_count`` must report how
+        many stations are actually in range. Callers slice for what they show.
+        """
         data = self.coordinator.data
         origin = self._origin()
         if data is None or origin is None:
@@ -372,37 +379,12 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         # Cheapest first — that is the question being asked. Distance breaks a
         # tie, because two stations at the same price are not equally useful.
         out.sort(key=lambda s: (s["price"], s["distance_km"]))
-        return out[:NEARBY_MAX_STATIONS]
+        return out
 
     def _spoken(self, ranked: list[dict]) -> str:
-        """The ranked list as a sentence, ready to be read aloud.
-
-        Built here rather than left to the user's template so a Siri Shortcut is
-        one line instead of a Jinja loop — and so the phrasing is right: Danish
-        wants a decimal comma, and "16,79 kroner" read out beats "16.79".
-        """
-        danish = str(getattr(self.hass.config, "language", "") or "").lower().startswith("da")
-        if not ranked:
-            return "Ingen stationer i nærheden." if danish else "No stations nearby."
-
-        def number(value: float, decimals: int = 2) -> str:
-            text = f"{value:.{decimals}f}"
-            return text.replace(".", ",") if danish else text
-
-        lines = []
-        for index, station in enumerate(ranked[:3], start=1):
-            where = " ".join(p for p in (station["company"], station["city"]) if p)
-            if danish:
-                lines.append(
-                    f"Nummer {index}: {where}, {number(station['price'])} kroner, "
-                    f"{number(station['distance_km'], 1)} kilometer."
-                )
-            else:
-                lines.append(
-                    f"Number {index}: {where}, {number(station['price'])} kroner, "
-                    f"{number(station['distance_km'], 1)} kilometres."
-                )
-        return " ".join(lines)
+        """The three cheapest as a sentence, in Home Assistant's language."""
+        language = str(getattr(self.hass.config, "language", "") or "")
+        return spoken_sentence(ranked, danish=language.lower().startswith("da"))
 
     @property
     def native_value(self) -> float | None:
@@ -418,10 +400,14 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
             "fuel_key": self._fuel_key,
             "tracked_entity": self.coordinator.nearby_tracker,
             "radius_km": self.coordinator.nearby_radius_km,
+            # How many are in range, not how many are listed below — the list is
+            # capped and a count that silently equalled the cap read as "there
+            # are only 8 stations near you", which was never true.
             "station_count": len(ranked),
+            "listed_count": min(len(ranked), NEARBY_MAX_STATIONS),
             # Ready to hand to "Speak Text" in a Siri Shortcut, in HA's language.
             "spoken": self._spoken(ranked),
-            "stations": ranked,
+            "stations": ranked[:NEARBY_MAX_STATIONS],
         }
         if best is not None:
             attrs["cheapest_station"] = best["name"]
@@ -439,6 +425,78 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
+
+
+# Spelled out because "all 3 cost" is read aloud as "all three cost" by some
+# voices and "all digit three" by others; the word is unambiguous.
+_COUNT_WORDS: Final = {
+    True: {2: "to", 3: "tre"},
+    False: {2: "two", 3: "three"},
+}
+
+# "OK Nordre Ringvej 110" -> "OK Nordre Ringvej". Trailing house number, with an
+# optional letter ("12B"), and nothing else — a name ending in a digit that is
+# part of the brand ("Circle K 24/7") has no leading space before the number.
+_HOUSE_NUMBER: Final = re.compile(r",?\s+\d+\s*[A-Za-z]?$")
+
+
+def _spoken_place(station: dict) -> str:
+    """How one station is named out loud.
+
+    The station name, minus its house number: "one hundred and ten" is three
+    syllables that cannot help you choose, and the map action is what actually
+    navigates. Falls back to company and city for a source that gave no name —
+    ambiguous when a chain has several forecourts in one town, but better than
+    a silent gap.
+    """
+    short = _HOUSE_NUMBER.sub("", station.get("name") or "").strip()
+    if short:
+        return short
+    return " ".join(p for p in (station.get("company"), station.get("city")) if p)
+
+
+def spoken_sentence(ranked: list[dict], danish: bool) -> str:
+    """The cheapest few stations as a sentence, ready to be read aloud.
+
+    Built here rather than left to the user's template so a Siri Shortcut is one
+    line instead of a Jinja loop — and so the phrasing is right: Danish wants a
+    decimal comma, and "16,79 kroner" read out beats "16.79".
+
+    Module level and pure so it can be tested without Home Assistant.
+    """
+    if not ranked:
+        return "Ingen stationer i nærheden." if danish else "No stations nearby."
+
+    def number(value: float, decimals: int = 2) -> str:
+        text = f"{value:.{decimals}f}"
+        return text.replace(".", ",") if danish else text
+
+    top = ranked[:SPOKEN_STATIONS]
+    # A chain often prices every forecourt identically — OK does, nationally —
+    # and then repeating the figure per station spends the listener's attention
+    # on the one number that never varies. Say it once up front and leave each
+    # station with the only thing that does differ: how far away it is.
+    same_price = len(top) > 1 and len({s["price"] for s in top}) == 1
+    lines: list[str] = []
+    if same_price:
+        count = _COUNT_WORDS[danish].get(len(top), str(len(top)))
+        price = number(top[0]["price"])
+        lines.append(
+            f"Alle {count} koster {price} kroner."
+            if danish
+            else f"All {count} cost {price} kroner."
+        )
+
+    label = "Nummer" if danish else "Number"
+    unit = "kilometer" if danish else "kilometres"
+    for index, station in enumerate(top, start=1):
+        distance = f"{number(station['distance_km'], 1)} {unit}."
+        if same_price:
+            tail = distance
+        else:
+            tail = f"{number(station['price'])} kroner, {distance}"
+        lines.append(f"{label} {index}: {_spoken_place(station)}, {tail}")
+    return " ".join(lines)
 
 
 def _icon_for(fuel_key: str) -> str:

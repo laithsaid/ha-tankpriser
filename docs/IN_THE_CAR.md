@@ -22,9 +22,22 @@ sensor.tankpriser_blyfri_95_e10_cheapest_nearby
     cheapest_station: "Q8 Hummeltoftevej 45"
     distance_km: 1.2
     latitude / longitude          ← only when the position is exact
-    spoken: "Nummer 1: Q8 Virum, 16,79 kroner, 1,2 kilometer. Nummer 2: …"
+    station_count: 23             ← how many are in range
+    listed_count: 8               ← how many `stations` holds (capped)
+    spoken: "Nummer 1: Q8 Hummeltoftevej, 16,79 kroner, 1,2 kilometer. …"
     stations: [ {name, company, city, price, list_price, discount_ore,
                  distance_km, latitude, longitude, coord_approx}, … ]
+```
+
+`spoken` names the three cheapest, using each station's road (the house number
+is dropped — it is unusable when heard and the map action navigates anyway).
+When all three carry the same price, which happens whenever one chain's national
+price sweeps the top — OK does this constantly — it is stated once instead of
+three times, leaving each station with the only figure that differs:
+
+```
+"Alle tre koster 16,19 kroner. Nummer 1: OK Nordre Ringvej, 1,9 kilometer.
+ Nummer 2: OK Vestre Ringvej, 2,1 kilometer. Nummer 3: OK Julsøvej, 7,5 kilometer."
 ```
 
 It re-ranks whenever the tracked device moves, not only when prices refresh —
@@ -99,6 +112,12 @@ Two things that are easy to assume otherwise:
 - The Home Assistant app is installed and signed in **on the iPhone** (not just
   on the desktop).
 - Google Maps is installed on the iPhone. (Prefer Apple Maps? See *Variants*.)
+- **Settings → Siri & Search → Siri Responses** is set to **Prefer Spoken
+  Responses**. On the default *Automatic*, Siri prints its answer instead of
+  speaking it whenever the ring switch is silent — and a shortcut whose whole
+  point is being heard while driving then does nothing useful.
+- Note which **language** Siri is set to, in the same settings screen. The
+  shortcut's name has to be words in *that* language or Siri will not match it.
 
 ### Part 1 — the simple version, five actions
 
@@ -111,6 +130,9 @@ adding anything — then there is only ever one new thing to debug.
 2. Tap the shortcut's name at the top → **Rename** → call it
    **Billigste benzin**. *This is the phrase you will say to Siri*, so pick
    something you pronounce cleanly and that sounds unlike your other shortcuts.
+   It must be words in **Siri's own language**: a Danish name spoken to an
+   English Siri gets transcribed as nonsense, matches nothing, and Siri quietly
+   web-searches it instead. On an English Siri, call it *Cheap fuel*.
 3. **Add action** → search `Home Assistant` → **Update location**.
    *Why first: it forces a fresh GPS fix, so the distances describe where you
    are, not where you were when the app last checked in.*
@@ -123,8 +145,11 @@ adding anything — then there is only ever one new thing to debug.
    {{ state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'spoken') }}
    ```
 
-   That attribute is already a finished sentence — *"Nummer 1: Q8 Virum, 16,79
-   kroner, 1,2 kilometer. Nummer 2: …"* — in your Home Assistant language.
+   That attribute is already a finished sentence — *"Nummer 1: Q8
+   Hummeltoftevej, 16,79 kroner, 1,2 kilometer. Nummer 2: …"* — in your Home
+   Assistant language. Danish phrasing follows Home Assistant's language
+   setting, not the iPhone's: on an English Home Assistant you get "kilometres"
+   and a decimal point, which Siri reads as "sixteen point one nine".
 5. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
    **Render template** from the variable bar above the keyboard. Expand the
    action (tap the ⌄) and turn **Wait Until Finished** on, so it finishes
@@ -180,16 +205,21 @@ limitation of this integration.
 
 ### Part 4 — optional: choose the station out loud
 
-Only once Part 2 works. This adds one idea: **a variable**.
+Only once Part 2 works — *including under Siri*, not just when you tap it. This
+adds one idea: **a variable**.
 
-**Dictated Text is not text you type.** It is a chip that gets filled in *at the
-moment you run the shortcut*, with whatever you actually said out loud. Type
-`nummer 2` into the template and it would pick station 2 forever; insert the
-variable and it holds whatever you said that time.
+**Use Ask for Input, not Dictate Text.** Both collect something you say, but
+only one survives Siri. When Siri launches a shortcut it keeps the microphone
+for the whole run, so a **Dictate Text** action asks for a microphone it cannot
+have: the shortcut spins for a while and then ends silently, with no error.
+**Ask for Input** has Siri do the asking, so it never needs the handover — and
+when you tap the shortcut instead, it falls back to an on-screen prompt. Whatever
+you say arrives as a variable called **Provided Input**.
 
-1. Between **Speak Text** and the second **Render template**, add
-   **Dictate Text** (search `Dictate`). Expand it → **Stop Listening → After
-   Pause**. Whatever you say here is automatically named **Dictated Text**.
+1. Between **Speak Text** and the second **Render template**, add **Ask for
+   Input** (search `Ask`). Set **Input type** to `Text` and the **Prompt** to
+   something short — *"Hvilken?"* — because Siri reads the prompt aloud before
+   listening.
 2. Replace the second Render template's contents with:
 
    ```jinja
@@ -207,33 +237,39 @@ variable and it holds whatever you said that time.
 
 3. `SPOKEN` is a placeholder *for you to replace* — Shortcuts never shows you
    that word. Double-tap **SPOKEN** to select just that word, delete it, leave
-   the cursor **between the two `"` quotes**, and tap **Dictated Text** in the
+   the cursor **between the two `"` quotes**, and tap **Provided Input** in the
    variable bar above the keyboard (or long-press → **Insert Variable** →
-   *Dictated Text*).
+   *Provided Input*).
 
    How to tell it worked: a variable is a **coloured pill you can tap**, not
    plain black letters.
 
    ```
-   "nummer 2"          typed text      -> always station 2
-   "SPOKEN"            left as-is      -> never matches -> always the cheapest
-   "[Dictated Text]"   the variable    -> whatever you said, each run
+   "nummer 2"           typed text     -> always station 2
+   "SPOKEN"             left as-is     -> never matches -> always the cheapest
+   "[Provided Input]"   the variable   -> whatever you said, each run
    ```
 
    At run time, saying *"nummer to"* makes Home Assistant receive
    `{%- set said = "nummer to" | lower -%}`.
 
-4. Test parked again: say **"nummer tre"**. If Google Maps opens the *third*
-   station rather than the cheapest, the variable is wired correctly.
+4. Test parked again, **via Siri** — say the shortcut's name, then *"nummer
+   tre"* when it asks. If Google Maps opens the *third* station rather than the
+   cheapest, the variable is wired correctly. Tapping the shortcut tests the
+   template but not the voice path, and the voice path is the one that has to
+   work in the car.
 
 ### If something does not work
 
 | What happens | Why, and what to do |
 | --- | --- |
 | Siri: *"I don't see an app for that"* | The shortcut name is being misheard. Rename it to something more distinct and say it exactly. |
+| Siri web-searches the phrase instead of running anything | Siri could not match what it heard to any shortcut, so it fell back to a search. Almost always a language mismatch: **Settings → Siri & Search → Language**. A Danish shortcut name spoken to an English Siri transcribes as nonsense. Either set Siri to Dansk, or rename the shortcut to words in Siri's language. Saying *"kør \<name\>"* / *"run \<name\>"* also helps Siri treat it as a shortcut rather than a query. |
+| It runs, spins for a while, then ends silently — no speech, no map | A **Dictate Text** action. Siri holds the microphone for the whole run and never hands it over, so the action waits for audio that never arrives. Replace it with **Ask for Input** (Part 4). To confirm this is it, duplicate the shortcut, delete the dictation action, and run the copy from Siri. |
+| It shows the text instead of reading it aloud | Not the shortcut — **Settings → Siri & Search → Siri Responses**. On *Automatic* Siri prints rather than speaks whenever the ring switch is silent. Set **Prefer Spoken Responses**, and check the physical silent switch. Matters most in CarPlay, where printed text is useless. |
 | *"Ingen stationer i nærheden"* | No station within the radius, or the tracked device has no position. Check the sensor in Developer tools → States: `station_count`, `tracked_entity`, `radius_km`. |
 | Speaks nothing at all | The entity id in the template is wrong — it follows your **area name**, not always `tankpriser_…`. Copy it from Developer tools → States. |
-| It always routes to the first station | Either you are on the Part 1 version (which does that by design), or the **Dictated Text** variable never got inserted — the line must show a coloured chip inside the quotes, not the literal word `SPOKEN`. |
+| It always routes to the first station | Either you are on the Part 1 version (which does that by design), or the **Provided Input** variable never got inserted — the line must show a coloured chip inside the quotes, not the literal word `SPOKEN`. |
 | A template action returns a date/time | Apple's default `{{ now() }}` was left in place — clear the field completely before pasting. |
 | Speaks, then nothing happens | Google Maps is not installed, or the last station has no coordinates (approximate positions are deliberately omitted). Try the Apple Maps variant. |
 | A web page opens instead of the map app | "Open URLs **in Chrome**" (or another browser's action) was used instead of Apple's plain **Open URLs**. A browser cannot hand the link on to Google Maps, and is not a CarPlay app. |

@@ -75,6 +75,9 @@ DEFAULT_NEARBY_RADIUS_KM: Final = 15
 # How many stations the nearby sensor lists. Enough to choose from out loud,
 # few enough that an attribute stays small.
 NEARBY_MAX_STATIONS: Final = 8
+# How many of those the `spoken` sentence names. Three is what a driver can hold
+# in their head long enough to answer "number two".
+SPOKEN_STATIONS: Final = 3
 # Per-chain API keys, stored in the config entry's *data* (not options):
 # {provider_key: credential}. Redacted from diagnostics, never logged.
 CONF_CREDENTIALS: Final = "credentials"
