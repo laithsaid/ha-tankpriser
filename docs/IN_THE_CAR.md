@@ -100,9 +100,11 @@ Two things that are easy to assume otherwise:
   on the desktop).
 - Google Maps is installed on the iPhone. (Prefer Apple Maps? See *Variants*.)
 
-### Part 1 — build the shortcut
+### Part 1 — the simple version, five actions
 
-Do this sitting down, not in the car.
+Build this first. It asks, reads out the three cheapest, and routes you to the
+cheapest one. No dictation, no variables. Get it working end to end before
+adding anything — then there is only ever one new thing to debug.
 
 1. On the **iPhone**, open Apple's **Shortcuts** app and tap **+** (top right)
    to create a new, empty shortcut.
@@ -126,26 +128,49 @@ Do this sitting down, not in the car.
 5. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
    **Render template** from the variable bar above the keyboard. Expand the
    action (tap the ⌄) and turn **Wait Until Finished** on, so it finishes
-   reading before it starts listening.
-6. **Add action** → search `Dictate` → **Dictate Text**. Expand it and set
-   **Stop Listening → After Pause**.
-7. **Add action** → **Render template** again. Clear its `{{ now() }}` the same
-   way and paste the template below.
-
-   `SPOKEN` in it is a placeholder for *you* to replace — Shortcuts will not show
-   you that word anywhere. Double-tap **SPOKEN** to select just that word, delete
-   it, leave the cursor between the two `"` quotes, and tap **Dictated Text** in
-   the variable bar above the keyboard (or long-press → **Insert Variable** →
-   *Dictated Text*).
-
-   Done correctly the line reads — with a blue chip *inside* the quotes:
+   reading before anything else happens.
+6. **Add action** → **Render template** again. Clear its `{{ now() }}` and paste
+   this — again with your entity id. It returns the route to the cheapest:
 
    ```jinja
-   {%- set said = "[Dictated Text]" | lower -%}
+   {%- set s = state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations')[0] -%}
+   https://www.google.com/maps/dir/?api=1&destination={{ s.latitude }},{{ s.longitude }}
    ```
 
-   **Keep the quotes.** They are what makes it a text value in the template; a
-   bare variable there breaks the template.
+   The `-` in `{%- … -%}` is not decoration: without it the tag leaves its
+   newline behind and the action returns a blank line followed by the URL,
+   instead of just the URL.
+7. **Add action** → search `Open URLs` → **Open URLs**, and set its input to the
+   *second* **Render template** result.
+8. **Done**.
+
+### Part 2 — test it parked, on the phone
+
+*(Still on the iPhone. The car is not involved yet.)*
+
+Say **"Hey Siri, Billigste benzin"** with the engine off. Expected: it speaks
+three stations, then Google Maps opens with a route to the first one.
+
+### Part 3 — in the car
+
+Connect CarPlay, press the **voice button on the steering wheel**, and say
+**"Billigste benzin"**. The Shortcuts app itself never appears on the CarPlay
+screen — voice is the only trigger, and that is by Apple's design, not a
+limitation of this integration.
+
+### Part 4 — optional: choose the station out loud
+
+Only once Part 2 works. This adds one idea: **a variable**.
+
+**Dictated Text is not text you type.** It is a chip that gets filled in *at the
+moment you run the shortcut*, with whatever you actually said out loud. Type
+`nummer 2` into the template and it would pick station 2 forever; insert the
+variable and it holds whatever you said that time.
+
+1. Between **Speak Text** and the second **Render template**, add
+   **Dictate Text** (search `Dictate`). Expand it → **Stop Listening → After
+   Pause**. Whatever you say here is automatically named **Dictated Text**.
+2. Replace the second Render template's contents with:
 
    ```jinja
    {%- set said = "SPOKEN" | lower -%}
@@ -160,29 +185,26 @@ Do this sitting down, not in the car.
    https://www.google.com/maps/dir/?api=1&destination={{ ns.pick.latitude }},{{ ns.pick.longitude }}
    ```
 
-   The `-` in every `{%- … -%}` is not decoration: without it each tag leaves its
-   newline behind and the action returns thirteen blank lines followed by the
-   URL, instead of just the URL. Paste the block whole, including the dashes.
+3. `SPOKEN` is a placeholder *for you to replace* — Shortcuts never shows you
+   that word. Double-tap **SPOKEN** to select just that word, delete it, leave
+   the cursor **between the two `"` quotes**, and tap **Dictated Text** in the
+   variable bar above the keyboard (or long-press → **Insert Variable** →
+   *Dictated Text*).
 
-8. **Add action** → search `Open URLs` → **Open URLs**, and set its input to the
-   *second* **Render template** result.
-9. **Done**.
+   How to tell it worked: a variable is a **coloured pill you can tap**, not
+   plain black letters.
 
-### Part 2 — test it parked, on the phone
+   ```
+   "nummer 2"          typed text      -> always station 2
+   "SPOKEN"            left as-is      -> never matches -> always the cheapest
+   "[Dictated Text]"   the variable    -> whatever you said, each run
+   ```
 
-*(Still on the iPhone. The car is not involved yet.)*
+   At run time, saying *"nummer to"* makes Home Assistant receive
+   `{%- set said = "nummer to" | lower -%}`.
 
-Say **"Hey Siri, Billigste benzin"** with the engine off.
-
-Expected: it speaks three stations → pauses to listen → you say **"nummer to"**
-(or **"Shell"**) → Google Maps opens with the route.
-
-### Part 3 — in the car
-
-Connect CarPlay, press the **voice button on the steering wheel**, and say
-**"Billigste benzin"**. The Shortcuts app itself never appears on the CarPlay
-screen — voice is the only trigger, and that is by Apple's design, not a
-limitation of this integration.
+4. Test parked again: say **"nummer tre"**. If Google Maps opens the *third*
+   station rather than the cheapest, the variable is wired correctly.
 
 ### If something does not work
 
@@ -191,7 +213,7 @@ limitation of this integration.
 | Siri: *"I don't see an app for that"* | The shortcut name is being misheard. Rename it to something more distinct and say it exactly. |
 | *"Ingen stationer i nærheden"* | No station within the radius, or the tracked device has no position. Check the sensor in Developer tools → States: `station_count`, `tracked_entity`, `radius_km`. |
 | Speaks nothing at all | The entity id in the template is wrong — it follows your **area name**, not always `tankpriser_…`. Copy it from Developer tools → States. |
-| It always routes to the first station | The **Dictated Text** variable did not get inserted in step 7, so nothing matches and it falls back to the cheapest. Open the action: the line must show a blue chip inside the quotes, not the literal word `SPOKEN`. |
+| It always routes to the first station | Either you are on the Part 1 version (which does that by design), or the **Dictated Text** variable never got inserted — the line must show a coloured chip inside the quotes, not the literal word `SPOKEN`. |
 | A template action returns a date/time | Apple's default `{{ now() }}` was left in place — clear the field completely before pasting. |
 | Speaks, then nothing happens | Google Maps is not installed, or the last station has no coordinates (approximate positions are deliberately omitted). Try the Apple Maps variant. |
 | Distances look stale | The **Update location** action is missing or not first. |
