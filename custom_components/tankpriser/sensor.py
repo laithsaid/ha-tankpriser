@@ -215,10 +215,16 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
             attrs["car_picture"] = picture
 
         if prediction is None:
+            # Nothing to go on at all: no completed tank, and the tank in
+            # progress has not yet burnt enough to imply a rate.
             attrs["status"] = "learning"
             return attrs
 
-        attrs["status"] = "ready"
+        # "estimating" means the number is real but leans on the tank in
+        # progress, so it will move as tanks complete. The card shows it with a
+        # caveat rather than hiding it — a rough answer beats none.
+        attrs["status"] = "estimating" if prediction.is_early else "ready"
+        attrs["basis"] = prediction.basis
         attrs["avg_consumption"] = prediction.avg_consumption
         attrs["consumption_unit"] = prediction.consumption_unit
         attrs["learned_tanks"] = prediction.segments

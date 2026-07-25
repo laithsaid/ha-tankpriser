@@ -24,13 +24,15 @@ jobs:
       - name: Card tests
         run: npm test
 
-      # The Python side needs no Home Assistant: the pure logic is lifted out
-      # of the modules with ast (see the docstrings in tests/).
+      # The Python side needs no Home Assistant. prediction.py imports cleanly
+      # on its own; for the modules that do import HA, the pure logic is lifted
+      # out with ast (see the docstrings in tests/).
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - name: Integration tests
         run: |
+          python tests/test_prediction.py
           python tests/test_geocode.py
           python tests/test_card_registration.py
       - name: Byte-compile the integration

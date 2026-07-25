@@ -10,9 +10,15 @@ The model is simple on purpose:
 * Feed it normalised fuel-*litre* readings over time (:meth:`ConsumptionModel.add_reading`).
 * An upward jump of at least ``REFUEL_MIN_JUMP_FRACTION`` of the tank is a
   refuel; it closes the current tank into a completed :class:`Segment`.
-* :func:`predict` turns the completed segments into a days-until-empty estimate
-  using an exponentially-weighted average of recent tanks (recent weighted
-  higher), reporting L/100 km when an odometer is available and L/day otherwise.
+* :func:`predict` turns those tanks into a days-until-empty estimate using an
+  exponentially-weighted average (recent weighted higher), reporting L/100 km
+  when an odometer is available and L/day otherwise.
+
+The tank **in progress** counts as an observation too, once it has run long
+enough and burnt enough fuel to mean something. Without that, nothing could be
+predicted until two refuels had happened — weeks of `unknown` while the data
+needed for a rough answer was already in hand. Estimates resting on a partial
+tank say so (``Prediction.basis``) and have their confidence capped.
 """
 
 from __future__ import annotations
@@ -23,6 +29,9 @@ from typing import Any
 
 from .const import (
     CONFIDENCE_TARGET_SEGMENTS,
+    EARLY_CONFIDENCE_CAP,
+    EARLY_MIN_CONSUMED_FRACTION,
+    EARLY_MIN_DAYS,
     EWMA_ALPHA,
     LEVEL_UNIT_PERCENT,
     MAX_SEGMENTS,
@@ -170,9 +179,17 @@ class Prediction:
     days_until_empty: float | None
     avg_consumption: float | None
     consumption_unit: str
-    segments: int
+    segments: int  # completed tanks behind the number
     confidence: float
     method: str  # "odometer" | "time"
+    # "tanks" once MIN_SEGMENTS_FOR_PREDICTION tanks are complete; until then
+    # "current tank", meaning the number leans on the tank in progress and will
+    # move as it is refined.
+    basis: str = "tanks"
+
+    @property
+    def is_early(self) -> bool:
+        return self.basis != "tanks"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -182,7 +199,27 @@ class Prediction:
             "segments": self.segments,
             "confidence": self.confidence,
             "method": self.method,
+            "basis": self.basis,
         }
+
+
+@dataclass
+class _Observation:
+    """One stretch of driving the estimator can learn a rate from.
+
+    A completed tank is one; so is the tank currently in progress. Unifying them
+    is the point — the open tank then falls out of the same weighting as the
+    newest (and therefore heaviest) data point, instead of being ignored until a
+    refuel happens to close it.
+    """
+
+    consumed_litres: float
+    days: float
+    distance_km: float | None
+
+    @property
+    def litres_per_day(self) -> float:
+        return self.consumed_litres / self.days
 
 
 # --- the model --------------------------------------------------------------
@@ -262,6 +299,16 @@ class ConsumptionModel:
     def current_litres(self) -> float | None:
         return self.samples[-1].litres if self.samples else None
 
+    @property
+    def open_tank_start(self) -> Sample | None:
+        """The reading the tank in progress started from.
+
+        Exposed because the estimator learns from the open tank as well as from
+        completed ones — that is what lets it answer before two refuels have
+        happened.
+        """
+        return self._segment_start
+
     def seed_demo(
         self,
         now_ts: float,
@@ -325,6 +372,8 @@ def _ewma(values: list[float], alpha: float = EWMA_ALPHA) -> float:
 def _confidence(rates: list[float]) -> float:
     """0..1 from how many tanks we have and how consistent they are."""
     n = len(rates)
+    if n == 0:
+        return 0.0
     count_factor = min(1.0, n / CONFIDENCE_TARGET_SEGMENTS)
     mean = sum(rates) / n
     if mean <= 0:
@@ -335,28 +384,70 @@ def _confidence(rates: list[float]) -> float:
     return round(max(0.0, min(1.0, count_factor * consistency)), 2)
 
 
+def _open_observation(model: ConsumptionModel) -> _Observation | None:
+    """The tank in progress, if it has enough signal to learn a rate from.
+
+    Both gates matter. Without the time one, a single long trip an hour after a
+    fill-up would be projected as a daily habit; without the consumption one, a
+    car parked for days would report a rate near zero — "empty in nine years".
+    """
+    start = model.open_tank_start
+    latest = model.samples[-1] if model.samples else None
+    if start is None or latest is None or latest.ts <= start.ts:
+        return None
+
+    days = (latest.ts - start.ts) / _SECONDS_PER_DAY
+    consumed = start.litres - latest.litres
+    if days < EARLY_MIN_DAYS:
+        return None
+    if consumed < EARLY_MIN_CONSUMED_FRACTION * model.capacity_l:
+        return None
+
+    distance = None
+    if start.odo is not None and latest.odo is not None and latest.odo > start.odo:
+        distance = latest.odo - start.odo
+    return _Observation(consumed, days, distance)
+
+
 def predict(
     model: ConsumptionModel, current_litres: float | None
 ) -> Prediction | None:
-    """Estimate days until empty from the learned tanks, or ``None`` if cold.
+    """Estimate days until empty, or ``None`` when there is nothing to go on.
+
+    Two tiers, because waiting for two refuels means weeks of `unknown` when the
+    tank in progress can already answer the question roughly:
+
+    * ``MIN_SEGMENTS_FOR_PREDICTION`` completed tanks or more → ``basis="tanks"``.
+    * Fewer than that, but the open tank has real consumption in it →
+      ``basis="current tank"``: the same arithmetic, confidence capped, and the
+      caller is expected to present it as provisional.
+
+    Either way the tank in progress is included as the *newest* observation, so
+    the estimate keeps calibrating between refuels rather than only at them.
 
     Days-until-empty always uses a time-based (L/day) rate — it is the only
-    thing that can project a calendar date. When every recent tank also has an
-    odometer distance we additionally report efficiency as L/100 km.
+    thing that can project a calendar date. When every observation also carries
+    an odometer distance we additionally report efficiency as L/100 km.
     """
-    usable = [s for s in model.segments if s.duration_days >= MIN_SEGMENT_DAYS]
-    if len(usable) < MIN_SEGMENTS_FOR_PREDICTION:
-        return None
+    completed = [
+        _Observation(s.consumed_litres, s.duration_days, s.distance_km)
+        for s in model.segments
+        if s.duration_days >= MIN_SEGMENT_DAYS
+    ]
+    open_tank = _open_observation(model)
+    ready = len(completed) >= MIN_SEGMENTS_FOR_PREDICTION
+    if not ready and open_tank is None:
+        return None  # genuinely nothing to go on yet
 
-    daily_rates = [s.consumed_litres / s.duration_days for s in usable]
-    daily_rate = _ewma(daily_rates)
+    # Oldest → newest, so the EWMA leans on the most recent driving.
+    observations = completed + ([open_tank] if open_tank is not None else [])
+    daily_rate = _ewma([o.litres_per_day for o in observations])
 
-    # Prefer odometer efficiency when all usable tanks carry a distance.
-    distances = [s.distance_km for s in usable]
-    if all(d is not None for d in distances):
+    # Prefer odometer efficiency when every observation carries a distance.
+    if observations and all(o.distance_km for o in observations):
         per_100 = [
-            100.0 * s.consumed_litres / d  # type: ignore[operator]
-            for s, d in zip(usable, distances)
+            100.0 * o.consumed_litres / o.distance_km  # type: ignore[operator]
+            for o in observations
         ]
         avg_consumption: float | None = round(_ewma(per_100), 2)
         consumption_unit = "L/100 km"
@@ -372,11 +463,20 @@ def predict(
     if current_litres is not None and daily_rate > 0:
         days = round(current_litres / daily_rate, 1)
 
+    # Confidence is earned by *completed* tanks: an estimate resting on one
+    # partial tank must not look as trustworthy as one resting on six.
+    confidence = _confidence([o.litres_per_day for o in completed])
+    if not ready:
+        confidence = min(
+            EARLY_CONFIDENCE_CAP, max(confidence, round(EARLY_CONFIDENCE_CAP / 2, 2))
+        )
+
     return Prediction(
         days_until_empty=days,
         avg_consumption=avg_consumption,
         consumption_unit=consumption_unit,
-        segments=len(usable),
-        confidence=_confidence(daily_rates),
+        segments=len(completed),
+        confidence=confidence,
         method=method,
+        basis="tanks" if ready else "current tank",
     )

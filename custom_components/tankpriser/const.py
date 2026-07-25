@@ -141,9 +141,18 @@ LEVEL_UNITS: Final = [LEVEL_UNIT_PERCENT, LEVEL_UNIT_LITRES]
 # Refuel detection: an upward jump of at least this fraction of the tank marks
 # the end of one consumption segment and the start of the next.
 REFUEL_MIN_JUMP_FRACTION: Final = 0.15
-# Below this many completed segments we report no prediction (state "unknown")
-# rather than guessing from too little data.
+# At this many completed segments the prediction is called "ready". Below it we
+# still answer — from the tank currently in progress — but say so (status
+# "estimating") and cap the confidence.
 MIN_SEGMENTS_FOR_PREDICTION: Final = 2
+# The tank in progress counts as an observation once it has BOTH run this long
+# and burnt this much of the tank. Without the second condition a car parked for
+# three days would report a rate of ~0 L/day, i.e. "empty in nine years"; with
+# only the second, a single big trip would be projected as a daily habit.
+EARLY_MIN_DAYS: Final = 1.0
+EARLY_MIN_CONSUMED_FRACTION: Final = 0.05
+# One partial tank is a guess, not a measurement — never claim more than this.
+EARLY_CONFIDENCE_CAP: Final = 0.3
 # Exponential weighting of recent tanks vs older ones (0<alpha<=1; higher =
 # more weight on the most recent segment). Used by the estimator.
 EWMA_ALPHA: Final = 0.5

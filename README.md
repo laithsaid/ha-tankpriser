@@ -186,10 +186,20 @@ like). Point it at any entity that reports the fuel level:
 | Odometer (optional) | With one we predict in **L/100 km**; without it, a time-based estimate |
 | Fuel type | Used to show the cheapest nearby price for that fuel |
 
-Each car gets a **`sensor.<car>_days_until_refuel`**. While it's still learning
-it reads `unknown` (never a wrong guess); after a couple of refuels it reports
-days-until-refuel with attributes for consumption, confidence, the predicted
-empty date, and the cheapest nearby station for its fuel.
+Each car gets a **`sensor.<car>_days_until_refuel`**, with attributes for
+consumption, confidence, the predicted empty date, and the cheapest nearby
+station for its fuel. It answers in three stages, so you are not waiting weeks
+for the first number:
+
+| `status` | State | When |
+| --- | --- | --- |
+| `learning` | `unknown` | Right after adding the car. It needs to see real driving — at least a day, and at least 5 % of the tank gone — before it will guess. A car sitting on the drive tells it nothing. |
+| `estimating` | a number, shown as `~9 days` | From the tank you are on *now*. Rough, confidence capped at 0.3, and it moves as it learns. |
+| `ready` | a number | Two or more completed tanks (i.e. two refuels) back it up. |
+
+The tank in progress always counts as the newest, heaviest-weighted observation,
+so the estimate keeps calibrating **between** fill-ups: change how much you drive
+and it follows within a couple of days instead of waiting for the next refuel.
 
 **Prediction card:** add a **Tankpriser Prediction** card (`type:
 custom:tankpriser-prediction-card`, `entity: sensor.<car>_days_until_refuel`)

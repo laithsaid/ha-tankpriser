@@ -44,6 +44,7 @@ custom_components/tankpriser/
 tests/
   card.test.js       card helpers (navigate URLs, car filter, cluster icon)
   map.test.js        the card + Leaflet + markercluster in a jsdom DOM
+  test_prediction.py refuel detection + the two-tier estimator
   test_geocode.py    address parsing + geocode cache policy
   test_card_registration.py   the Lovelace resource registration
 package.json         jsdom, for the tests only — the integration ships no JS deps
@@ -311,20 +312,44 @@ A `Segment` exposes `consumed_litres`, `duration_days`, and `distance_km`
 (from the odometer deltas, if any).
 
 ### Estimator (`predict(model, current_litres)`)
-- Uses only segments with `duration_days ≥ MIN_SEGMENT_DAYS` (~72 min); guards
+
+Everything the estimator learns from is an `_Observation`
+(`consumed_litres`, `days`, `distance_km`). Completed tanks become one each; so
+does **the tank in progress**, via `_open_observation(model)`. Unifying them is
+the whole trick: waiting for two refuels meant weeks of `unknown` while the data
+for a rough answer was already in the model, and because the open tank is
+appended *last* it carries the most EWMA weight — so the estimate keeps
+calibrating between refuels, not only at them.
+
+- Completed tanks need `duration_days ≥ MIN_SEGMENT_DAYS` (~72 min); guards
   divide-by-tiny.
-- `< MIN_SEGMENTS_FOR_PREDICTION` (2) usable tanks → returns `None`
-  (cold start; the sensor is `unknown`).
-- **Daily rate** = `_ewma(consumed / duration_days)` — exponentially weighted,
-  `EWMA_ALPHA = 0.5`, recent tanks heavier. `days_until_empty =
-  current_litres / daily_rate`. Days always uses this time rate (the only thing
-  that projects a calendar date).
-- **Reported efficiency**: if *every* usable tank has an odometer distance →
+- The **open tank** counts only once it has both run `EARLY_MIN_DAYS` (1 day) and
+  burnt `EARLY_MIN_CONSUMED_FRACTION` (5 %) of the tank. Both gates are load-
+  bearing: without the first, one long trip an hour after a fill-up is projected
+  as a daily habit; without the second, a car parked for three days reports
+  ~0 L/day, i.e. "empty in nine years".
+- **Two tiers**, reported as `Prediction.basis` and surfaced by the sensor as
+  `status`:
+
+  | Completed tanks | `basis` | `status` | Confidence |
+  | --- | --- | --- | --- |
+  | ≥ `MIN_SEGMENTS_FOR_PREDICTION` (2) | `tanks` | `ready` | earned from the completed tanks |
+  | fewer, but the open tank qualifies | `current tank` | `estimating` | capped at `EARLY_CONFIDENCE_CAP` (0.3) |
+  | fewer, open tank does not qualify | — | `learning` | `None` returned; state `unknown` |
+
+- **Daily rate** = `_ewma([o.litres_per_day for o in observations])` —
+  exponentially weighted, `EWMA_ALPHA = 0.5`, newest heaviest.
+  `days_until_empty = current_litres / daily_rate`. Days always uses this time
+  rate (the only thing that projects a calendar date).
+- **Reported efficiency**: if *every* observation has an odometer distance →
   `L/100 km` (method `odometer`); else the daily rate as `L/day` (method
-  `time`).
+  `time`). `Segment.distance_km` returns `None` for a non-positive delta, so a
+  stalled odometer drops the whole car back to the time method rather than
+  dividing by zero.
 - **Confidence** (0–1) = `min(1, n / CONFIDENCE_TARGET_SEGMENTS) × 1/(1+CV)`
-  where CV is the coefficient of variation of the rates — more tanks and more
-  consistent tanks raise it.
+  where CV is the coefficient of variation — computed over **completed tanks
+  only**, so an estimate resting on one partial tank cannot look as trustworthy
+  as one resting on six.
 
 `seed_demo(now_ts, tanks, litres_per_day, days_per_tank)` fabricates segments so
 a prediction appears immediately (used by the `seed_demo_history` service).
@@ -465,6 +490,7 @@ only matters for the HACS default store.)
 ```bash
 npm install                             # once: jsdom, for the card tests
 npm test                                # tests/card.test.js + tests/map.test.js
+python tests/test_prediction.py         # refuel detection + the estimator
 python tests/test_geocode.py
 python tests/test_card_registration.py
 ```

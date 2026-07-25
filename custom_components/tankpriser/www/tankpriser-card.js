@@ -1187,10 +1187,12 @@ class TankpriserCard extends HTMLElement {
     marker.options.ffCar = c; // the cluster icon reads the cars it holds
 
     const name = c.a.car_name || "Car";
-    const days =
-      c.a.status === "ready" && c.state !== "unknown" && c.state !== "unavailable"
-        ? `${this._escape(c.state)} days until refuel`
-        : "Still learning your consumption";
+    const hasDays = c.state !== "unknown" && c.state !== "unavailable";
+    const days = !hasDays
+      ? "Still learning your consumption"
+      : c.a.status === "estimating"
+        ? `~${this._escape(c.state)} days until refuel (early estimate)`
+        : `${this._escape(c.state)} days until refuel`;
     const litres =
       c.a.current_level_l != null
         ? ` (${this._escape(c.a.current_level_l)} L)`
@@ -1860,10 +1862,12 @@ class TankpriserPredictionCard extends HTMLElement {
     }
 
     const a = st.attributes || {};
-    const learning =
-      a.status !== "ready" ||
-      st.state === "unknown" ||
-      st.state === "unavailable";
+    const noValue = st.state === "unknown" || st.state === "unavailable";
+    // Three states now: nothing to say yet, a provisional number from the tank
+    // in progress, and a number backed by completed tanks. Hiding the middle one
+    // meant weeks of "Estimating…" while a usable answer already existed.
+    const learning = noValue || a.status === "learning" || !a.status;
+    const early = !learning && a.status === "estimating";
 
     const pct = a.current_level_percent;
     const litres = a.current_level_l;
@@ -1883,8 +1887,8 @@ class TankpriserPredictionCard extends HTMLElement {
     let head;
     if (learning) {
       head = `<div class="tp-pred-head tp-pred-learning">
-          <div class="tp-pred-big">Estimating…</div>
-          <div class="tp-pred-sub">Available after a few refuels — still learning your consumption.</div>
+          <div class="tp-pred-big">Learning…</div>
+          <div class="tp-pred-sub">A day or two of driving is enough for a first estimate.</div>
         </div>`;
     } else {
       const days = Number(st.state);
@@ -1895,11 +1899,17 @@ class TankpriserPredictionCard extends HTMLElement {
         : st.state;
       const when = a.predicted_empty ? this._fmtDate(a.predicted_empty) : "";
       head = `<div class="tp-pred-head">
-          <div><span class="tp-pred-big">${this._escape(shown)}</span>
+          <div><span class="tp-pred-big">${early ? "~" : ""}${this._escape(shown)}</span>
                <span class="tp-pred-unit">days</span></div>
           <div class="tp-pred-sub">until refuel${
             when ? ` · ≈ ${this._escape(when)}` : ""
           }</div>
+          ${
+            early
+              ? `<div class="tp-pred-early">Early estimate from the tank you are
+                   on now — it will settle as tanks complete.</div>`
+              : ""
+          }
         </div>`;
     }
 
@@ -1968,6 +1978,7 @@ class TankpriserPredictionCard extends HTMLElement {
       .tp-pred-unit { font-size: 1em; color: var(--secondary-text-color); margin-left: 4px; }
       .tp-pred-sub { color: var(--secondary-text-color); font-size: 0.9em; }
       .tp-pred-learning .tp-pred-big { font-size: 1.6em; color: var(--secondary-text-color); }
+      .tp-pred-early { color: var(--warning-color, #b8860b); font-size: 0.85em; margin-top: 2px; }
       .tp-pred-bar { height: 8px; border-radius: 4px; background: var(--divider-color); overflow: hidden; margin: 6px 0 4px; }
       .tp-pred-fill { height: 100%; background: var(--primary-color); border-radius: 4px; }
       .tp-pred-level { font-size: 0.85em; color: var(--secondary-text-color); margin-bottom: 8px; }
