@@ -13,7 +13,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from . import geo
+from . import geo, geocode
 from .const import CONF_CREDENTIALS, DOMAIN
 from .sources import fetch_all
 
@@ -39,7 +39,16 @@ async def ws_stations(hass: HomeAssistant, connection, msg) -> None:
     session = async_get_clientsession(hass)
     stations = await fetch_all(session, _credentials(hass))
 
-    # Stations without provider coordinates (Q8/F24) get their postnummer centre.
+    # Stations without provider coordinates (Q8/F24): use the geocoded street
+    # address where we have one, and kick off the lookups for any we do not.
+    # Same cache the coordinator fills, so this normally costs nothing.
+    geocoder = geocode.async_get(hass)
+    await geocoder.async_load()
+    unresolved = geocoder.apply([s for s in stations if s.latitude is None])
+    if unresolved:
+        geocoder.async_schedule(session, unresolved)
+
+    # Whatever is still unplaced falls back to its postnummer centre.
     missing = {s.postnummer for s in stations if s.latitude is None}
     centers = await geo.centers_for(session, missing) if missing else {}
 

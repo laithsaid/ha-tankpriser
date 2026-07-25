@@ -22,6 +22,13 @@
  *   show_cars: true                      # optional, default true — plot your
  *                                        #   configured cars, ringed by fuel
  *                                        #   level (green full → red empty)
+ *   car_picker: true                     # optional, default true — 🚗 control to
+ *                                        #   hide cars on THIS device only
+ *                                        #   (remembered per device + HA user)
+ *   navigation: auto                     # optional: auto (default) | geo | apple
+ *                                        #   | google | osm | off. "Navigate here"
+ *                                        #   in a station popup; auto uses the
+ *                                        #   device's own navigator
  *   show_my_location: true               # optional, default true — live GPS dot
  *   follow_me: false                     # optional, default false — start with
  *                                        #   follow-me armed (➤ button toggles it)
@@ -69,6 +76,87 @@ function _safeUrl(url) {
     return "";
   }
 }
+// -- navigation ------------------------------------------------------------
+// Which maps URL a "Navigate here" link should use. Sniffing the platform is
+// the only way to get one link that lands in a real navigator everywhere:
+//   Android  geo: — the OS shows *its* chooser, so whatever the user installed
+//                   (Google Maps, Waze, HERE, Organic Maps) is offered.
+//   iOS      Apple Maps. It is always installed, and iOS has no geo: handler
+//            at all, so a geo: link there is simply a dead tap.
+//   desktop  Google Maps in a new tab.
+function _platform() {
+  const ua = navigator.userAgent || "";
+  // iPadOS reports itself as Macintosh; touch points give it away.
+  if (/iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {
+    return "ios";
+  }
+  return /Android/.test(ua) ? "android" : "desktop";
+}
+
+// Number(null) and Number("") are both 0, which would silently place a
+// coordinate-less station or car off the coast of Africa. Anything that is not a
+// real number has to come back as null and be skipped.
+function _coord(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  return isFinite(num) ? num : null;
+}
+
+// Destination link for one station. Only ever called for a station with a
+// *known* position (see _navHtml): an estimated pin must not be offered as a
+// destination, or the navigator would drive you confidently to the wrong place.
+function _navUrl(station, mode) {
+  const lat = _coord(station.lat);
+  const lon = _coord(station.lon);
+  if (lat === null || lon === null || station.approx) return "";
+  const label = encodeURIComponent([station.name, station.city].filter(Boolean).join(", "));
+  const target = !mode || mode === "auto" ? _platform() : mode;
+
+  if (target === "android" || target === "geo") {
+    // geo:lat,lon?q=… — the label keeps the pin named in the chosen app.
+    return `geo:${lat},${lon}?q=${lat},${lon}(${label})`;
+  }
+  if (target === "ios" || target === "apple") {
+    return `https://maps.apple.com/?daddr=${lat},${lon}&dirflg=d`;
+  }
+  if (target === "osm") {
+    return `https://www.openstreetmap.org/directions?to=${lat},${lon}`;
+  }
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+}
+
+// -- per-device car filter -------------------------------------------------
+// Which cars *this* device hides. A dashboard config is shared by everyone who
+// can see the dashboard, so a "just for me" filter cannot live there. The HA
+// user id is part of the key as well, so two accounts on one tablet do not
+// inherit each other's choice.
+function _hiddenKey(hass) {
+  const uid = (hass && hass.user && hass.user.id) || "anon";
+  return `tankpriser.hidden_cars.${uid}`;
+}
+
+function _loadHidden(hass) {
+  try {
+    const raw = window.localStorage.getItem(_hiddenKey(hass));
+    const list = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(list) ? list : []);
+  } catch (e) {
+    return new Set(); // private mode / storage disabled: no filter, no crash
+  }
+}
+
+function _saveHidden(hass, hidden) {
+  try {
+    window.localStorage.setItem(_hiddenKey(hass), JSON.stringify([...hidden]));
+  } catch (e) {
+    // Out of quota or storage blocked: the filter still applies to this view,
+    // it just will not survive a reload. Nothing worth breaking the card over.
+  }
+}
+
+// Lets two Tankpriser cards on the same dashboard stay in step.
+const CARS_CHANGED = "tankpriser-cars-changed";
+
 const CDN_LEAFLET = "https://unpkg.com/leaflet@1.9.4/dist";
 const CDN_CLUSTER = "https://unpkg.com/leaflet.markercluster@1.5.3/dist";
 
@@ -302,12 +390,23 @@ class TankpriserCard extends HTMLElement {
       // red empty). Optional explicit list; otherwise every car is auto-detected.
       show_cars: config.show_cars !== false,
       cars: Array.isArray(config.cars) ? config.cars : null,
+      // The 🚗 control for hiding cars on this device. The dashboard config
+      // still decides which cars exist here (show_cars / cars:); this only
+      // narrows that down per device.
+      car_picker: config.car_picker !== false,
+      // "Navigate here" in the station popup. auto = per platform (see
+      // _navUrl); force with geo | apple | google | osm, or "off".
+      navigation: ["off", "geo", "apple", "google", "osm"].includes(config.navigation)
+        ? config.navigation
+        : "auto",
     };
     this._built = false;
     this._map = null;
     this._markerLayer = null;
     this._carLayer = null;
     this._carSig = null;
+    this._pickerSig = null;
+    this._hidden = null;        // cars hidden on this device (loaded with hass)
     this._fitted = false;
     this._mapSig = null;
     this._national = null;      // national station list (fetched over websocket)
@@ -319,6 +418,8 @@ class TankpriserCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    // Needs hass: the stored filter is keyed by the logged-in user.
+    if (this._hidden === null) this._hidden = _loadHidden(hass);
     this._subscribeUpdates();
     this._update();
   }
@@ -328,9 +429,20 @@ class TankpriserCard extends HTMLElement {
     if (this._config && this._config.show_map && this._config.show_my_location) {
       this._startWatchingPosition();
     }
+    // A second Tankpriser card on the same view shares the filter.
+    this._onCarsChanged = (ev) => {
+      if (!this._hass || !ev.detail || ev.detail.key !== _hiddenKey(this._hass)) return;
+      this._hidden = _loadHidden(this._hass);
+      this._refreshCars();
+    };
+    window.addEventListener(CARS_CHANGED, this._onCarsChanged);
   }
 
   disconnectedCallback() {
+    if (this._onCarsChanged) {
+      window.removeEventListener(CARS_CHANGED, this._onCarsChanged);
+      this._onCarsChanged = null;
+    }
     // Stop the GPS watch as soon as the card leaves the screen; a live watch is
     // the one genuinely battery-hungry thing this card does.
     this._stopWatchingPosition();
@@ -422,6 +534,22 @@ class TankpriserCard extends HTMLElement {
           color: var(--primary-text-color, #111);
         }
         .leaflet-popup-content a { color: var(--primary-color); }
+        /* "Navigate here" — a proper tap target, not a link in a wall of text */
+        .ff-nav { margin-top: 8px; }
+        .ff-nav a {
+          display:inline-block; padding:5px 11px; border-radius:14px;
+          background: var(--primary-color); color: var(--text-primary-color, #fff);
+          text-decoration:none; font-weight:600; white-space:nowrap;
+        }
+        .ff-carhide {
+          display:inline-block; margin-top:8px; font-size:0.9em;
+          color: var(--secondary-text-color); text-decoration:none;
+        }
+        /* why there is no navigate button on an estimated pin */
+        .ff-nav-est {
+          margin-top:8px; font-size:0.9em; font-style:italic;
+          color: var(--warning-color, #b8860b);
+        }
         .ff-pin-wrap, .ff-cluster-wrap { background: transparent !important; border: 0 !important; }
         /* station marker: company icon + price */
         .ff-pin {
@@ -467,6 +595,37 @@ class TankpriserCard extends HTMLElement {
         }
         .ff-mapctl a:hover { background: var(--secondary-background-color, #f4f4f4); }
         .ff-mapctl a.busy { opacity:.5; }
+        /* car picker: the 🚗 button and its drop-down list. The Leaflet bar's own
+           frame is dropped, or its border would box in the open panel too. */
+        .ff-carctl { background: transparent; box-shadow: none; border: 0; }
+        .ff-carctl a.ff-carbtn {
+          display:flex; align-items:center; justify-content:center; gap:1px;
+          width:auto; min-width:30px; height:30px; padding:0 4px;
+          font-size:15px; line-height:1; text-decoration:none;
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color, #111); cursor:pointer;
+          border-radius:4px; box-shadow: 0 1px 5px rgba(0,0,0,.4);
+        }
+        .ff-carn { font-size:10px; font-weight:700; }
+        .ff-carpanel {
+          display:none; margin-top:4px; padding:8px 10px;
+          min-width:150px; max-height:220px; overflow:auto;
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color, #111);
+          border-radius:6px; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+          font-size:13px; text-align:left;
+        }
+        .ff-carpanel.open { display:block; }
+        .ff-carpanel-h { font-weight:700; margin-bottom:6px; }
+        .ff-carpanel-n {
+          margin-top:6px; padding-top:5px; font-size:11px;
+          color: var(--secondary-text-color); border-top:1px solid var(--divider-color);
+        }
+        .ff-carrow {
+          display:flex; align-items:center; gap:7px; padding:3px 0; cursor:pointer;
+        }
+        .ff-carrow input { margin:0; }
+        .ff-carrow-nopos span { color: var(--secondary-text-color); }
         /* follow-me: clearly "armed" when on, since it moves the map for you */
         .ff-mapctl a.ff-follow { font-size:14px; transform:none; }
         .ff-mapctl a.ff-follow.active { background:#1f6feb; color:#fff; }
@@ -760,6 +919,7 @@ class TankpriserCard extends HTMLElement {
         this._setFollow(false); // panning by hand means "stop chasing me"
       });
       this._addMapControls(L);
+      this._addCarControl(L);
       if (this._config.show_my_location) {
         this._startWatchingPosition();
         // A fix may already have arrived before the map existed.
@@ -818,7 +978,9 @@ class TankpriserCard extends HTMLElement {
         `<b>${this._escape(s.name)}</b>${s.city ? "<br>" + this._escape(s.city) : ""}` +
           `<br>${priceLines}` +
           updated +
-          (s.approx ? `<div><i>≈ approximate location</i></div>` : "")
+          // _navHtml carries the "estimated position" notice for approximate
+          // pins, so there is no separate line for it here.
+          this._navHtml(s)
       );
       this._markerLayer.addLayer(marker);
       points.push([s.lat, s.lon]);
@@ -838,30 +1000,61 @@ class TankpriserCard extends HTMLElement {
   }
 
   // -- cars on the map -------------------------------------------------------
-  // Find the Tankpriser car sensors (sensor.*_days_until_refuel) that carry a
-  // position. An explicit `cars:` list wins; otherwise every car is shown.
-  _discoverCars() {
+  // Every Tankpriser car sensor this dashboard may show. An explicit `cars:`
+  // list wins; otherwise every car is picked up. Cars *without* a position are
+  // included here (flagged) on purpose: the picker has to list them, or a car
+  // hidden before its first GPS fix could never be brought back.
+  _allCars() {
     if (!this._hass) return [];
     const states = this._hass.states;
-    let ids;
-    if (this._config.cars) {
-      ids = this._config.cars;
-    } else {
-      ids = Object.keys(states).filter(
-        (id) => states[id] && states[id].attributes && states[id].attributes.is_car
-      );
-    }
+    const ids = this._config.cars
+      ? this._config.cars
+      : Object.keys(states).filter(
+          (id) => states[id] && states[id].attributes && states[id].attributes.is_car
+        );
     const cars = [];
     for (const id of ids) {
       const st = states[id];
       if (!st) continue;
       const a = st.attributes || {};
-      const lat = Number(a.latitude);
-      const lon = Number(a.longitude);
-      if (!isFinite(lat) || !isFinite(lon)) continue; // no position → skip
-      cars.push({ id, state: st.state, a, lat, lon });
+      const lat = _coord(a.latitude);
+      const lon = _coord(a.longitude);
+      cars.push({
+        id,
+        state: st.state,
+        a,
+        lat,
+        lon,
+        positioned: lat !== null && lon !== null,
+        name: a.car_name || a.friendly_name || id,
+        hidden: !!(this._hidden && this._hidden.has(id)),
+      });
     }
+    cars.sort((x, y) => String(x.name).localeCompare(String(y.name)));
     return cars;
+  }
+
+  // What actually gets drawn: positioned, and not hidden on this device.
+  _visibleCars(cars) {
+    return (cars || this._allCars()).filter((c) => c.positioned && !c.hidden);
+  }
+
+  // Hide/show one car for this device only, and remember it.
+  _setCarHidden(id, hidden) {
+    if (!this._hidden) this._hidden = new Set();
+    if (hidden) this._hidden.add(id);
+    else this._hidden.delete(id);
+    _saveHidden(this._hass, this._hidden);
+    this._refreshCars();
+    window.dispatchEvent(
+      new CustomEvent(CARS_CHANGED, { detail: { key: _hiddenKey(this._hass) } })
+    );
+  }
+
+  // Redraw the car markers and the picker after the filter changed.
+  _refreshCars() {
+    if (this._map && window.L) this._updateCars(window.L);
+    else this._renderCarPicker();
   }
 
   // Fuel level → ring colour: 100% green, ~50% orange, 0% red.
@@ -882,8 +1075,11 @@ class TankpriserCard extends HTMLElement {
       return;
     }
 
-    const cars = this._discoverCars();
+    const all = this._allCars();
+    this._renderCarPicker(all);
+    const cars = this._visibleCars(all);
     // Only rebuild when something changed, so we don't fight the user's pan.
+    // Hidden cars simply drop out of this list, so the filter is part of it.
     const sig = cars
       .map((c) => `${c.id}|${c.lat.toFixed(5)}|${c.lon.toFixed(5)}|${c.a.current_level_percent}|${c.state}|${c.a.car_picture || ""}`)
       .join(";");
@@ -924,11 +1120,145 @@ class TankpriserCard extends HTMLElement {
             c.a.cheapest_station
           )}${c.a.cheapest_price != null ? ` · ${this._escape(c.a.cheapest_price)}` : ""}`
         : "";
-      marker.bindPopup(
-        `<b>${this._escape(name)}</b><br>Fuel: <b>${this._escape(pctLabel)}</b>${litres}<br>${days}${cheapest}`
-      );
+      // Built as an element rather than a string so the "hide" action can carry
+      // a real listener instead of an inline onclick.
+      const popup = document.createElement("div");
+      popup.innerHTML =
+        `<b>${this._escape(name)}</b><br>Fuel: <b>${this._escape(pctLabel)}</b>${litres}<br>${days}${cheapest}`;
+      if (this._config.car_picker) {
+        const hide = document.createElement("a");
+        hide.href = "#";
+        hide.className = "ff-carhide";
+        hide.textContent = "Skjul denne bil her";
+        hide.title = "Kun på denne enhed — hentes frem igen med 🚗";
+        hide.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          if (this._map) this._map.closePopup();
+          this._setCarHidden(c.id, true);
+        });
+        popup.appendChild(hide);
+      }
+      marker.bindPopup(popup);
       this._carLayer.addLayer(marker);
     }
+  }
+
+  // -- car picker (🚗 control) ------------------------------------------------
+  // Tapping a car's "hide" needs a way back, and a silent filter is worse than
+  // no filter: the button shows "visible/total" whenever something is hidden.
+  _addCarControl(L) {
+    if (!this._config.show_cars || !this._config.car_picker) return;
+    const card = this;
+    const Control = L.Control.extend({
+      options: { position: "topright" }, // topleft is taken by ◎ / ➤ and zoom
+      onAdd() {
+        const wrap = L.DomUtil.create("div", "leaflet-bar ff-carctl");
+        const button = L.DomUtil.create("a", "ff-carbtn", wrap);
+        button.href = "#";
+        button.setAttribute("role", "button");
+        const panel = L.DomUtil.create("div", "ff-carpanel", wrap);
+        card._carBtnEl = button;
+        card._carPanelEl = panel;
+        L.DomEvent.on(button, "click", (ev) => {
+          L.DomEvent.stop(ev);
+          panel.classList.toggle("open");
+          button.setAttribute("aria-expanded", panel.classList.contains("open"));
+        });
+        // Without these, a tap inside the panel pans or zooms the map.
+        L.DomEvent.disableClickPropagation(wrap);
+        L.DomEvent.disableScrollPropagation(wrap);
+        card._pickerSig = null;
+        card._renderCarPicker();
+        return wrap;
+      },
+    });
+    this._carControl = new Control();
+    this._map.addControl(this._carControl);
+  }
+
+  _renderCarPicker(cars) {
+    const panel = this._carPanelEl;
+    const button = this._carBtnEl;
+    if (!panel || !button) return;
+    const list = cars || this._allCars();
+
+    // Rebuilding on every state change would fight the checkboxes, so only
+    // when the list, the filter or a car's position actually changed.
+    const sig = list
+      .map((c) => `${c.id}|${c.hidden ? "h" : "v"}|${c.positioned ? "p" : "-"}|${c.name}`)
+      .join(";");
+    if (sig === this._pickerSig) return;
+    this._pickerSig = sig;
+
+    // One car (or none) is nothing to choose between — stay out of the way.
+    if (list.length < 2) {
+      button.style.display = "none";
+      panel.classList.remove("open");
+      panel.innerHTML = "";
+      return;
+    }
+    button.style.display = "";
+
+    const shown = list.filter((c) => !c.hidden).length;
+    button.innerHTML =
+      shown === list.length
+        ? "🚗"
+        : `🚗<span class="ff-carn">${shown}/${list.length}</span>`;
+    const label = `Vælg biler (${shown} af ${list.length} vises)`;
+    button.title = label;
+    button.setAttribute("aria-label", label);
+
+    panel.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "ff-carpanel-h";
+    head.textContent = "Vis biler her";
+    panel.appendChild(head);
+
+    for (const car of list) {
+      const row = document.createElement("label");
+      row.className = "ff-carrow";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = !car.hidden;
+      box.addEventListener("change", () => this._setCarHidden(car.id, !box.checked));
+      const text = document.createElement("span");
+      text.textContent = car.positioned ? car.name : `${car.name} (ingen position)`;
+      if (!car.positioned) row.classList.add("ff-carrow-nopos");
+      row.appendChild(box);
+      row.appendChild(text);
+      panel.appendChild(row);
+    }
+
+    const note = document.createElement("div");
+    note.className = "ff-carpanel-n";
+    note.textContent = "Gælder kun denne enhed";
+    panel.appendChild(note);
+  }
+
+  // "Navigate here" for a station popup, aimed at whatever this device runs —
+  // or an honest explanation of why there is no such button.
+  _navHtml(station) {
+    // No exact position: the pin is the middle of a postnummer, or an address
+    // DAWA could only match by correcting the chain's spelling. Sending that to
+    // a navigator would look authoritative and be wrong, so say what we have
+    // instead. The price is still the point of the popup.
+    if (station.approx) {
+      return (
+        `<div class="ff-nav-est">≈ Placeringen er kun anslået, så der kan ikke ` +
+        `navigeres præcist hertil.</div>`
+      );
+    }
+    if (this._config.navigation === "off") return "";
+    const url = _navUrl(station, this._config.navigation);
+    if (!url) return "";
+    // Not routed through _safeUrl: that only permits http(s) and would reject
+    // the geo: scheme. The URL is built here from coordinates and an
+    // encodeURIComponent'd name, never from config, so there is nothing to
+    // smuggle a javascript: into.
+    return (
+      `<div class="ff-nav"><a href="${this._escape(url)}" target="_blank" ` +
+      `rel="noopener">➤ Navigér hertil</a></div>`
+    );
   }
 
   _addMapControls(L) {
@@ -1267,6 +1597,23 @@ const EDITOR_SCHEMA = [
   { name: "show_my_location", selector: { boolean: {} } },
   { name: "follow_me", selector: { boolean: {} } },
   { name: "show_cars", selector: { boolean: {} } },
+  { name: "car_picker", selector: { boolean: {} } },
+  {
+    name: "navigation",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: [
+          { value: "auto", label: "Auto (device's own navigator)" },
+          { value: "geo", label: "Always the app chooser (geo:, Android)" },
+          { value: "apple", label: "Apple Maps" },
+          { value: "google", label: "Google Maps" },
+          { value: "osm", label: "OpenStreetMap" },
+          { value: "off", label: "No navigate link" },
+        ],
+      },
+    },
+  },
   { name: "show_list", selector: { boolean: {} } },
 ];
 
@@ -1282,6 +1629,8 @@ const EDITOR_LABELS = {
   show_my_location: "Show my position on the map",
   follow_me: "Start with follow-me on",
   show_cars: "Show my cars (ringed by fuel level)",
+  car_picker: "Let each device choose which cars to show",
+  navigation: "Navigate link in station popups",
   show_list: "Show price list",
 };
 

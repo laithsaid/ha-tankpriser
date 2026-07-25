@@ -21,8 +21,13 @@ Danish fuel chains are required by law to publish since 2026-01-01:
 Geography is done locally: the configured **postnummer + radius** is resolved
 into a set of postnumre via **DAWA** (`api.dataforsyningen.dk`, free, no key),
 and stations are filtered by `postnummer ∈ set`. Stations without provider
-coordinates (Q8/F24) are placed at their postnummer's centre for the map and
-flagged as approximate (`coord_approx: true`, shown as `≈`).
+coordinates (Q8/F24) have their **street address geocoded** against the same
+DAWA — all 241 resolved when last measured (183 on the exact house number, 45 at
+street level, 13 via a fuzzy pass) — so they sit on the real forecourt. The
+lookups run once per install, in the background, and are cached in
+`.storage/tankpriser.geocode` for good. Whatever DAWA cannot match still falls
+back to the postnummer centre, flagged approximate (`coord_approx: true`, shown
+as `≈` and a dashed pin).
 
 There is **no WAF, throttle, or rate-limit to worry about** anymore, and no
 browser geolocation. You can sanity-check a provider by opening its URL above in
@@ -314,6 +319,11 @@ lines from `custom_components.tankpriser`. Common messages:
 | Card missing from picker | Browser cache — hard refresh; check the resource loaded (Dev console: “TANKPRISER-CARD loaded”) |
 | Card shows “Configuration error” (dark card, red `!`) on one device | That client never loaded the card JS. Check **Settings → Dashboards → ⋮ → Resources** contains `/tankpriser/tankpriser-card.js?v=<version>`; the integration adds it on setup. Open `<your-ha-url>/tankpriser/tankpriser-card.js` on the device — JavaScript means the server side is fine and the client needs the resource entry (or an app cache clear) |
 | Map empty / “Map unavailable” | Browser has no internet to load Leaflet, or no stations have coordinates |
+| `Tankpriser geocoding pass done: N of M addresses new or changed` | Normal info line: Q8/F24 street addresses resolved against DAWA. Once per install, then a re-verification pass every 180 days. The map refreshes itself if anything changed |
+| `Tankpriser: <address> moved to lat,lon` | A re-verification found a different position for a station that had one — worth a look, but it just works |
+| A Q8/F24 pin has a dashed border and **no** navigate button | Its position is only estimated (DAWA could not match the address exactly, e.g. a motorway plaza). The popup says so; navigating to an estimate would take you confidently to the wrong place |
+| 🚗 button missing | Fewer than two cars exist, `show_cars: false`, or `car_picker: false` |
+| Hidden car came back | The filter lives in this device's `localStorage` under the logged-in user — clearing site data, a different browser profile, or a different HA user each start fresh |
 
 ---
 

@@ -17,7 +17,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from . import geo
+from . import geo, geocode
 from .const import (
     CONF_CREDENTIALS,
     CONF_EXCLUDED_STATIONS,
@@ -188,11 +188,32 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         return data
 
     async def _fill_coordinates(self, stations: list[Station]) -> None:
-        """Give coordinate-less stations their postnummer centre (approximate)."""
-        missing = {s.postnummer for s in stations if s.latitude is None}
+        """Position the stations whose provider ships no coordinates (Q8/F24).
+
+        Two tiers, best first: the station's own street address geocoded via
+        DAWA (the actual forecourt — good enough to navigate to), then the
+        centre of its postnummer as a visible placeholder.
+        """
+        missing = [s for s in stations if s.latitude is None]
         if not missing:
             return
-        centers = await geo.centers_for(self._session, missing)
+
+        geocoder = geocode.async_get(self.hass)
+        await geocoder.async_load()
+        unresolved = geocoder.apply(missing)
+        if unresolved:
+            # Background, not awaited: a fresh install is ~240 DAWA lookups.
+            # This refresh falls back to postnummer centres; the refresh that
+            # `async_request_refresh` triggers when the lookups land has the
+            # real coordinates.
+            geocoder.async_schedule(
+                self._session, unresolved, self.async_request_refresh
+            )
+
+        pending = {s.postnummer for s in stations if s.latitude is None}
+        if not pending:
+            return
+        centers = await geo.centers_for(self._session, pending)
         for station in stations:
             if station.latitude is None and station.postnummer in centers:
                 station.latitude, station.longitude = centers[station.postnummer]

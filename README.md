@@ -10,8 +10,11 @@ Shell and OIL! today; more chains easy to add). Geographic filtering uses the fr
   **radius** (default 10 km) and the fuel types you care about.
 - 📋 Each widget lists **every station** in the area with its price, cheapest
   highlighted.
-- 🗺️ Optional **map** showing where the stations are (exact where the chain
-  publishes coordinates, otherwise the postnummer centre).
+- 🗺️ Optional **map** showing where the stations are, with **➤ Navigér hertil**
+  in every station popup. Chains that ship no coordinates (Q8/F24) get their
+  street address geocoded against DAWA, so they sit on the real forecourt rather
+  than a postnummer centre (all 241 of them, when last measured), re-verified
+  every 180 days.
 - 🙈 **Hide** stations you don't care about.
 - 🔔 Optional **price-change notifications** with a rule you choose
   (any change / cheapest changes / below a threshold / decreases only).
@@ -73,6 +76,27 @@ your Home Assistant home location. Set `show_my_location: false` to turn the dot
 and its GPS watch off entirely. The watch only runs while the card is on screen,
 and only uses high-accuracy GPS while follow-me is on.
 
+Tap a station and the popup offers **➤ Navigér hertil**, which hands the position
+to whatever navigator the device has: on Android that is the system chooser
+(Google Maps, Waze, whatever you installed), on iPhone/iPad it is Apple Maps, and
+on a computer it opens Google Maps in a tab. Pin one of them with
+`navigation: google` (or `geo` / `apple` / `osm`), or remove the link with
+`navigation: off`.
+
+A handful of stations cannot be placed exactly — a motorway plaza with no street
+address, typically. Those keep the dashed `≈` pin and get **no** navigate button;
+the popup says the position is only estimated. Sending an estimate to a navigator
+would look authoritative and put you in the wrong place, which is worse than not
+offering it.
+
+**Hiding a car, just for you.** A dashboard is shared by everyone who can see
+it, so the card config cannot hold a per-person choice. Instead the 🚗 button
+lists every car with a checkbox, and a car's own popup has *"Skjul denne bil
+her"*. That choice is remembered on **that device, for that Home Assistant
+user** — your phone can show only your car while your partner's phone shows
+only theirs, from one shared dashboard. The button reads `2/3` whenever
+something is hidden, so a filter is never silent. `car_picker: false` removes it.
+
 Prices refresh when the integration has new data (it pushes an event after each
 poll), not on a separate timer in the card.
 
@@ -96,6 +120,8 @@ request at all.
 | `show_my_location` | `true` | Live GPS dot + the ◎ / ➤ buttons |
 | `follow_me` | `false` | Start with follow-me armed |
 | `show_cars` | `true` | Plot your configured cars on the map, ringed by fuel level (see prediction, below) |
+| `car_picker` | `true` | The 🚗 button: hide/show cars **on this device only** |
+| `navigation` | `auto` | "Navigér hertil" in a station popup. `auto` = the device's own navigator, or force `geo` / `apple` / `google` / `osm`, or `off` |
 | `show_list` | shown only when map is off | Set `true` to show the price table too |
 | `highlight_cheapest`, `max_stations`, `show_donate`, `donate_url` | | as before |
 

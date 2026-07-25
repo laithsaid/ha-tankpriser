@@ -52,7 +52,8 @@ Everything is configured from the UI; there is no `configuration.yaml`.
 | `const.py` | All constants: endpoints, fuel-type table, config keys, tuning values, `DONATE_URL`. Pure (no HA imports), so `prediction.py` can import from it. |
 | `sources.py` | Fuel-price **providers**. Each chain is a `Provider` record; `fetch_all()` fetches the active ones concurrently through a shared TTL cache and normalises them into `Station` records. |
 | `geo.py` | DAWA (Danish address API) helpers: resolve *postnummer + radius* → set of postnumre; look up postnummer centre coordinates. Process-life caches. |
-| `coordinator.py` | One `TankpriserCoordinator` per entry: resolves the area, calls `fetch_all`, filters stations to the area, fills approximate coordinates, fires notifications/events. Holds the per-car trackers in `.cars`. |
+| `geocode.py` | Street address → coordinates via DAWA, for the chains that publish no coordinates (Q8/F24). Three passes (exact house number → street+postnummer → fuzzy), cached in `.storage` for good, filled by a background task so setup is never delayed. |
+| `coordinator.py` | One `TankpriserCoordinator` per entry: resolves the area, calls `fetch_all`, filters stations to the area, positions coordinate-less stations, fires notifications/events. Holds the per-car trackers in `.cars`. |
 | `sensor.py` | `TankpriserSensor` (cheapest price per fuel, full list in attributes) and `CarPredictionSensor` (days-until-refuel + prediction attributes + car position/picture). |
 | `websocket.py` | `tankpriser/stations` command returning **all** national stations with coordinates — used by the card's `coverage: national` map instead of a huge sensor attribute. |
 | `notifications.py` | Compares successive refreshes and calls a `notify.*` service per the chosen rule; also fires the `tankpriser_price_updated` event. |
@@ -86,6 +87,31 @@ was never defined. The frontend hides that error for 2 s and rebuilds the card
 by itself if the element defines late, so an error that *persists* means the
 script never loaded on that client at all.
 
+### Two things the card keeps client-side
+
+**Navigate here** (`_navUrl`) picks the URL scheme from the platform, because
+only that lands in a real navigator everywhere: `geo:` on Android (the OS shows
+*its* chooser, so Waze/Google/HERE all qualify), `https://maps.apple.com` on
+iOS/iPadOS (always installed; iOS has no `geo:` handler), Google Maps on a
+computer. These URLs bypass `_safeUrl()` on purpose: it only permits http(s), and
+they are built here from coordinates and an encoded name, never from dashboard
+config.
+
+A station whose position is only *estimated* (`coord_approx` — a postnummer
+centre, or an address DAWA could only match by correcting the chain's spelling)
+gets **no** navigate button at all, on any platform and in any forced mode. It
+gets a plain notice that the position is approximate instead. Handing an
+estimate to a navigator is the one failure mode worth designing against: it
+looks authoritative all the way to the wrong forecourt.
+
+**Hidden cars** live in `localStorage`, keyed by `hass.user.id`. A dashboard
+config is shared by everyone who can see the dashboard, so it cannot hold "just
+for me"; the alternative, `frontend/set_user_data`, would follow a user across
+devices but was deliberately not used — the ask was explicitly per device, and
+this keeps the feature to three small functions with no round-trip before first
+paint. Consequence to remember: clearing site data forgets the filter, and the
+same user on two devices sets it twice.
+
 ## Subsystem 1 — fuel prices (data flow)
 
 1. **Fetch** (`sources.fetch_all`): each `Provider` is fetched concurrently.
@@ -99,8 +125,8 @@ script never loaded on that client at all.
    postnumre fall inside the circle. (Legacy entries created before v0.6 still
    resolve from a stored postnummer.)
 3. **Filter** (`coordinator`): keep stations whose `postnummer` is in that set,
-   fill approximate coordinates (postnummer centre) for coordinate-less chains,
-   drop hidden stations, sort.
+   position the coordinate-less chains (`geocode` cache first, postnummer centre
+   as the visible fallback), drop hidden stations, sort.
 4. **Surface**: one `TankpriserSensor` per configured fuel — state = cheapest
    price, attributes = the full station list. The card renders the list and/or a
    Leaflet map. `coverage: national` instead calls the `tankpriser/stations`
@@ -133,7 +159,7 @@ script never loaded on that client at all.
 | Service | Called by | Purpose | Privacy |
 | --- | --- | --- | --- |
 | Chain price APIs (OK, Q8/F24, Shell, OIL!) | HA server | Prices | Server-side; honest `User-Agent`, no auth. |
-| DAWA `api.dataforsyningen.dk` | HA server | Area resolution + postnummer centres | Server-side, keyless. |
+| DAWA `api.dataforsyningen.dk` | HA server | Area resolution, postnummer centres, station address geocoding | Server-side, keyless. Chosen over Google: no API key/billing, and Google's terms forbid showing Google-derived coordinates on a non-Google map. |
 | OSM / CARTO map tiles | **browser** | Map background | Leaks IP + viewed area. Avoid with `show_map: false`. |
 | A car's `entity_picture` URL | **browser** | Car photo on the marker | Only if the picture is an external URL; `no-referrer`. Use a `/local/…` image to avoid it. |
 
@@ -147,6 +173,12 @@ vendoring details.
   credential-fingerprinted, with stale-serving up to 6 h.
 - **DAWA postnummer centres** — `geo._CENTER_CACHE`, process-life (this data
   never changes); batched `nr=a|b|c` lookups (100 per request).
+- **Geocoded station addresses** — `.storage/tankpriser.geocode`. ~240 lookups
+  once per install, 4 concurrent, in the background. Hits are **re-verified after
+  180 days** and misses re-tried after 30; a due entry keeps serving its cached
+  coordinates while it is re-checked, and a re-check that fails (or that DAWA
+  cannot answer) keeps the old position rather than dropping the pin. Only a
+  changed or newly-found position triggers a coordinator refresh.
 - **Area resolution** — per coordinator, keyed by radius.
 - **National station list** — cached ~5 min in the card after a websocket fetch.
 - **Last-known car position/picture** — persisted per car, so a parked car stays

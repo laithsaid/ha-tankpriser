@@ -11,6 +11,7 @@ custom_components/tankpriser/
   const.py           constants (pure — no HA imports)
   sources.py         fuel-price providers + normalisation + cache
   geo.py             DAWA area resolution + postnummer centres
+  geocode.py         DAWA address -> coordinates for Q8/F24 (disk-cached)
   coordinator.py     per-entry DataUpdateCoordinator (+ .cars trackers)
   sensor.py          TankpriserSensor, CarPredictionSensor
   websocket.py       tankpriser/stations command
