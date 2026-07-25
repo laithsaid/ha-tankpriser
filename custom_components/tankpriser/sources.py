@@ -15,12 +15,14 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Final
 
 import aiohttp
 
 from .const import (
+    CHAINS,
+    MAX_DISCOUNT_ORE,
     MAX_STALE_AGE,
     OIL_FUELTYPES,
     OIL_URL,
@@ -50,8 +52,16 @@ class Station:
     latitude: float | None = None
     longitude: float | None = None
     coord_approx: bool = False
-    # normalized fuel key -> price (kr., float)
+    # normalized fuel key -> price (kr., float). This is the price you PAY:
+    # once a discount is configured for the chain it is already subtracted here,
+    # so every consumer — cheapest-of, notifications, the card — agrees without
+    # having to know about discounts.
     prices: dict[str, float] = field(default_factory=dict)
+    # The pump price, kept so the card can show "16,99 -> 16,79". Empty when no
+    # discount applies, i.e. when it would be identical to `prices`.
+    list_prices: dict[str, float] = field(default_factory=dict)
+    # Discount actually applied, in øre/L (0 = none).
+    discount_ore: int = 0
 
     @property
     def key(self) -> str:
@@ -80,6 +90,63 @@ _OK_PRODUCT_MAP: dict[str, str] = {
     "Oktan 100": "oktan100",
     "Svovlfri Diesel": "diesel",
 }
+
+
+def chain_key(company: str) -> str | None:
+    """Map a station's free-text company to a chain key from ``CHAINS``.
+
+    Providers spell themselves inconsistently ("Q8 Service", "OK Plus",
+    "Shell/7-Eleven"), and one endpoint serves two chains (Q8 and F24), so the
+    provider that fetched a station cannot answer this — only its own text can.
+    """
+    text = company or ""
+    for key, _label, pattern in CHAINS:
+        if re.search(pattern, text, re.I):
+            return key
+    return None
+
+
+def apply_discounts(
+    stations: list[Station], discounts: dict[str, int]
+) -> list[Station]:
+    """Return stations priced as *you* pay them, given per-chain øre discounts.
+
+    New objects, never mutation: the parsed stations live in the shared provider
+    cache, so subtracting in place would compound the discount on every refresh
+    and leak one area's loyalty card into another's prices.
+    """
+    if not discounts:
+        return stations
+
+    out: list[Station] = []
+    for station in stations:
+        if station.discount_ore:
+            # Already priced for this driver. Only reachable if a caller hands
+            # us its own output, but subtracting twice would quietly invent a
+            # price no pump ever charged, so refuse rather than trust callers.
+            out.append(station)
+            continue
+        key = chain_key(station.company)
+        ore = int(discounts.get(key) or 0) if key else 0
+        ore = max(0, min(ore, MAX_DISCOUNT_ORE))
+        if not ore or not station.prices:
+            out.append(station)
+            continue
+        krone = ore / 100.0
+        out.append(
+            replace(
+                station,
+                # A discount can never make fuel free; round to the øre so the
+                # numbers stay printable.
+                prices={
+                    fuel: round(max(0.01, price - krone), 2)
+                    for fuel, price in station.prices.items()
+                },
+                list_prices=dict(station.prices),
+                discount_ore=ore,
+            )
+        )
+    return out
 
 
 def _to_float(value) -> float | None:

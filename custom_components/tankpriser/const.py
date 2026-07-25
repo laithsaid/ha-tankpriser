@@ -61,6 +61,20 @@ CONF_FUEL_TYPES: Final = "fuel_types"
 CONF_AREA_NAME: Final = "area_name"
 CONF_EXCLUDED_STATIONS: Final = "excluded_stations"
 CONF_SCAN_INTERVAL: Final = "scan_interval"
+# Per-chain loyalty discount in øre/L, e.g. {"ok": 20, "f24": 30}. Danish cards
+# are advertised in øre off the pump price, so that is the unit we ask for.
+CONF_DISCOUNTS: Final = "discounts"
+# Nobody's card is worth more than a krone or two per litre; a bigger number is
+# a typo (kroner entered as øre) and would invent a negative price.
+MAX_DISCOUNT_ORE: Final = 200
+# Rank stations near a device you nominate (phone or car), for the voice /
+# in-car surfaces where the map card cannot reach.
+CONF_NEARBY_TRACKER: Final = "nearby_tracker"
+CONF_NEARBY_RADIUS_KM: Final = "nearby_radius_km"
+DEFAULT_NEARBY_RADIUS_KM: Final = 15
+# How many stations the nearby sensor lists. Enough to choose from out loud,
+# few enough that an attribute stays small.
+NEARBY_MAX_STATIONS: Final = 8
 # Per-chain API keys, stored in the config entry's *data* (not options):
 # {provider_key: credential}. Redacted from diagnostics, never logged.
 CONF_CREDENTIALS: Final = "credentials"
@@ -180,6 +194,22 @@ MAX_SEGMENTS: Final = 50
 # Donation is by free will: the prediction works for everyone, we simply ask.
 # Placeholder until the real Ko-fi / MobilePay handle is wired in (issue 4).
 DONATE_URL: Final = "https://github.com/laithsaid/ha-tankpriser"
+
+# Chain identification, for discounts. A station only tells us a `company`
+# string ("Q8 Service", "F24", "OK Plus"…), so each chain is matched by pattern.
+# ORDER MATTERS: "ok" is two letters and appears inside other words, so it is
+# tested last. The card carries the same table for its icons — keep them in step.
+CHAINS: Final = [
+    ("oil", "OIL!", r"oil"),
+    ("f24", "F24", r"f24"),
+    ("q8", "Q8", r"q8"),
+    ("shell", "Shell", r"shell"),
+    ("circlek", "Circle K / INGO", r"circle ?k|ingo"),
+    ("goon", "Go'on", r"go.?on"),
+    ("unox", "Uno-X", r"uno.?x"),
+    ("ok", "OK", r"ok|^ok"),
+]
+
 
 # Static path under which the bundled Lovelace card is served. The whole www/
 # directory is exposed, because the card also loads its vendored Leaflet build

@@ -120,6 +120,26 @@ reveal your IP and roughly which area you are looking at. Set `show_map: false`
 if you would rather not make them; the price list works without any external
 request at all.
 
+### Loyalty discounts
+
+If you have a fuel card, set the discount per chain in **øre per litre** under
+**Configure → Loyalty discounts** — the unit the cards themselves advertise. From
+then on every price in the integration is **what you actually pay**: the
+cheapest-of, the notifications, the sensors and the map all agree, and none of
+them has to know discounts exist. The card still shows the pump price beside it
+(a `−20` badge in the list, "Pumpepris 16,99 · din rabat 20 øre" in the popup) so
+you can see why the forecourt sign says something else.
+
+### In the car
+
+Neither CarPlay nor Android Auto will let Home Assistant draw a map, so the card
+cannot appear there. Nominate a device under **Configure → Area & fuel types →
+"Rank stations near this device"** and you get a `…_cheapest_nearby` sensor per
+fuel: Android Auto shows its price while driving and can **navigate straight to
+the cheapest station**, and a Siri Shortcut can read out the three cheapest and
+route you to the one you say out loud. Setup and the shortcut are in
+[`docs/IN_THE_CAR.md`](docs/IN_THE_CAR.md).
+
 **Card options:**
 
 | Option | Default | Description |
@@ -236,6 +256,9 @@ development — see the link in the card footer.
   level changing, the card painting the map), the data contracts between
   layers, a per-module reference, the prediction algorithm, storage schemas,
   how to extend it, and a "where to look if…" table.
+- [`docs/IN_THE_CAR.md`](docs/IN_THE_CAR.md) — CarPlay, Siri and Android Auto:
+  what each platform allows, the "cheapest nearby" sensor, and a Siri Shortcut
+  that reads out the cheapest stations and navigates to the one you name.
 - [`docs/TESTING.md`](docs/TESTING.md) — installing a build in a real HA,
   verifying it, running the test suite, and a troubleshooting table.
 

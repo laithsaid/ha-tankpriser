@@ -27,13 +27,17 @@ from .sources import (
     validate_credential,
 )
 from .const import (
+    CHAINS,
     CONF_AREA_NAME,
     CONF_CAR_FUEL,
     CONF_CREDENTIALS,
+    CONF_DISCOUNTS,
     CONF_EXCLUDED_STATIONS,
     CONF_FUEL_TYPES,
     CONF_LEVEL_ATTRIBUTE,
     CONF_LEVEL_UNIT,
+    CONF_NEARBY_RADIUS_KM,
+    CONF_NEARBY_TRACKER,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_RULE,
     CONF_NOTIFY_SERVICE,
@@ -46,9 +50,11 @@ from .const import (
     CONF_SOURCE_ENTITY,
     CONF_TANK_CAPACITY,
     DEFAULT_FUEL_TYPES,
+    DEFAULT_NEARBY_RADIUS_KM,
     DEFAULT_NOTIFY_RULE,
     DEFAULT_RADIUS,
     DEFAULT_SCAN_INTERVAL_MIN,
+    MAX_DISCOUNT_ORE,
     DOMAIN,
     FUEL_TYPES,
     LEVEL_UNIT_PERCENT,
@@ -274,7 +280,7 @@ class TankpriserOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Pick which group of settings to edit."""
-        menu = ["settings", "notifications"]
+        menu = ["settings", "discounts", "notifications"]
         if providers_needing_credential():
             menu.append("chains")
         return self.async_show_menu(step_id="init", menu_options=menu)
@@ -307,6 +313,32 @@ class TankpriserOptionsFlow(OptionsFlow):
                     CONF_EXCLUDED_STATIONS,
                     default=options.get(CONF_EXCLUDED_STATIONS, []),
                 ): self._station_selector(),
+                # Optional: without it the "cheapest nearby" sensors are not
+                # created at all (see sensor.py).
+                vol.Optional(
+                    CONF_NEARBY_TRACKER,
+                    description={
+                        "suggested_value": options.get(CONF_NEARBY_TRACKER, "")
+                    },
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["device_tracker", "person", "sensor"]
+                    )
+                ),
+                vol.Required(
+                    CONF_NEARBY_RADIUS_KM,
+                    default=options.get(
+                        CONF_NEARBY_RADIUS_KM, DEFAULT_NEARBY_RADIUS_KM
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=100,
+                        step=1,
+                        unit_of_measurement="km",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
                 vol.Required(
                     CONF_SCAN_INTERVAL,
                     default=options.get(
@@ -324,6 +356,42 @@ class TankpriserOptionsFlow(OptionsFlow):
             }
         )
         return self.async_show_form(step_id="settings", data_schema=schema)
+
+    async def async_step_discounts(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Loyalty discounts per chain, in øre per litre.
+
+        Danish fuel cards are advertised as "20 øre/L hos OK", so øre is the
+        unit people already have in their heads. Storing zero for every chain
+        would bloat the options, so blanks are dropped.
+        """
+        if user_input is not None:
+            self._options[CONF_DISCOUNTS] = {
+                key: int(value)
+                for key, value in user_input.items()
+                if value and int(value) > 0
+            }
+            return self._save()
+
+        current = self._entry.options.get(CONF_DISCOUNTS, {}) or {}
+        schema = vol.Schema(
+            {
+                vol.Optional(key, default=float(current.get(key, 0))): (
+                    selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=MAX_DISCOUNT_ORE,
+                            step=1,
+                            unit_of_measurement="øre/L",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    )
+                )
+                for key, _label, _pattern in CHAINS
+            }
+        )
+        return self.async_show_form(step_id="discounts", data_schema=schema)
 
     async def async_step_notifications(
         self, user_input: dict[str, Any] | None = None

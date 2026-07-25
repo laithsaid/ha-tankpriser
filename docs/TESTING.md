@@ -343,6 +343,7 @@ npm install          # once — pulls jsdom, used only by the tests
 npm test             # the card: helpers + a real DOM
 
 python tests/test_prediction.py         # refuel detection + the estimator
+python tests/test_discounts.py          # chain matching + loyalty discounts
 python tests/test_geocode.py            # address parsing + geocode cache policy
 python tests/test_card_registration.py  # the Lovelace resource registration
 ```

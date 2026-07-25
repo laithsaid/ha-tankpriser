@@ -82,7 +82,8 @@
         "menu_options": {
           "settings": "Område og brændstoftyper",
           "notifications": "Prisnotifikationer",
-          "chains": "Kæder og API-nøgler"
+          "chains": "Kæder og API-nøgler",
+          "discounts": "Rabatter"
         }
       },
       "settings": {
@@ -92,7 +93,9 @@
           "radius": "Radius omkring Hjem",
           "fuel_types": "Brændstoftyper",
           "excluded_stations": "Skjul disse tankstationer",
-          "scan_interval": "Opdateringsinterval (minutter)"
+          "scan_interval": "Opdateringsinterval (minutter)",
+          "nearby_tracker": "Find stationer nær denne enhed (telefon eller bil)",
+          "nearby_radius_km": "Hvor langt væk må stationerne være"
         }
       },
       "notifications": {
@@ -120,6 +123,20 @@
         },
         "data_description": {
           "api_key": "Nøglen kontrolleres med det samme — afviser kæden den, vises fejlen her."
+        }
+      },
+      "discounts": {
+        "title": "Rabatter",
+        "description": "Rabat pr. kæde i øre pr. liter, som dit benzinkort reklamerer med. Priserne alle steder — sensorer, kortet, notifikationer og billigste — viser så det, du faktisk betaler. Lad en kæde stå på 0, hvis du ikke har kort til den.",
+        "data": {
+          "oil": "OIL!",
+          "f24": "F24",
+          "q8": "Q8",
+          "shell": "Shell",
+          "circlek": "Circle K / INGO",
+          "goon": "Go'on",
+          "unox": "Uno-X",
+          "ok": "OK"
         }
       }
     },

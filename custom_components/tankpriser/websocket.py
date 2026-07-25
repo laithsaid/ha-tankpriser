@@ -14,8 +14,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import geo, geocode
-from .const import CONF_CREDENTIALS, DOMAIN
-from .sources import fetch_all
+from .const import CONF_CREDENTIALS, CONF_DISCOUNTS, DOMAIN
+from .sources import apply_discounts, fetch_all
 
 WS_TYPE_STATIONS = "tankpriser/stations"
 
@@ -32,12 +32,23 @@ def _credentials(hass: HomeAssistant) -> dict[str, str]:
     return creds
 
 
+def _discounts(hass: HomeAssistant) -> dict[str, int]:
+    """Merge the per-chain discounts from the configured entries."""
+    discounts: dict[str, int] = {}
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        discounts.update(entry.options.get(CONF_DISCOUNTS, {}) or {})
+    return discounts
+
+
 @websocket_api.websocket_command({vol.Required("type"): WS_TYPE_STATIONS})
 @websocket_api.async_response
 async def ws_stations(hass: HomeAssistant, connection, msg) -> None:
     """Return every Danish station with coordinates and current prices."""
     session = async_get_clientsession(hass)
     stations = await fetch_all(session, _credentials(hass))
+    # The national map is a different view of the same prices, so it must carry
+    # the same discounts the area sensors do.
+    stations = apply_discounts(stations, _discounts(hass))
 
     # Stations without provider coordinates (Q8/F24): use the geocoded street
     # address where we have one, and kick off the lookups for any we do not.
@@ -71,6 +82,8 @@ async def ws_stations(hass: HomeAssistant, connection, msg) -> None:
                 "coord_approx": approx,
                 "updated": s.updated,
                 "prices": s.prices,
+                "list_prices": s.list_prices,
+                "discount_ore": s.discount_ore,
             }
         )
 

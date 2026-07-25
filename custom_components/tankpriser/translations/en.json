@@ -82,7 +82,8 @@
         "menu_options": {
           "settings": "Area & fuel types",
           "notifications": "Price notifications",
-          "chains": "Chains & API keys"
+          "chains": "Chains & API keys",
+          "discounts": "Loyalty discounts"
         }
       },
       "settings": {
@@ -92,7 +93,9 @@
           "radius": "Radius around Home",
           "fuel_types": "Fuel types",
           "excluded_stations": "Hide these stations",
-          "scan_interval": "Update interval (minutes)"
+          "scan_interval": "Update interval (minutes)",
+          "nearby_tracker": "Rank stations near this device (phone or car)",
+          "nearby_radius_km": "How far to look for nearby stations"
         }
       },
       "notifications": {
@@ -120,6 +123,20 @@
         },
         "data_description": {
           "api_key": "The key is checked immediately — if the chain rejects it you will see an error here."
+        }
+      },
+      "discounts": {
+        "title": "Loyalty discounts",
+        "description": "Discount per chain in øre per litre, as your fuel card advertises it. Prices everywhere — sensors, the card, notifications and the cheapest-of — then show what you actually pay. Leave a chain at 0 if you have no card for it.",
+        "data": {
+          "oil": "OIL!",
+          "f24": "F24",
+          "q8": "Q8",
+          "shell": "Shell",
+          "circlek": "Circle K / INGO",
+          "goon": "Go'on",
+          "unox": "Uno-X",
+          "ok": "OK"
         }
       }
     },

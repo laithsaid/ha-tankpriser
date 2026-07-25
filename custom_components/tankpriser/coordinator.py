@@ -20,6 +20,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from . import geo, geocode
 from .const import (
     CONF_CREDENTIALS,
+    CONF_DISCOUNTS,
+    CONF_NEARBY_RADIUS_KM,
+    CONF_NEARBY_TRACKER,
+    DEFAULT_NEARBY_RADIUS_KM,
     CONF_EXCLUDED_STATIONS,
     CONF_FUEL_TYPES,
     CONF_POSTNUMMER,
@@ -31,7 +35,7 @@ from .const import (
     radius_to_metres,
 )
 from .notifications import evaluate_and_notify
-from .sources import Station, fetch_all
+from .sources import Station, apply_discounts, fetch_all
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +106,22 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         return self.entry.options.get(CONF_EXCLUDED_STATIONS, [])
 
     @property
+    def discounts(self) -> dict[str, int]:
+        """Per-chain loyalty discount in øre/L, e.g. {"ok": 20}."""
+        return dict(self.entry.options.get(CONF_DISCOUNTS, {}) or {})
+
+    @property
+    def nearby_tracker(self) -> str:
+        """Entity whose position the "nearby" sensors rank against ('' = off)."""
+        return str(self.entry.options.get(CONF_NEARBY_TRACKER, "") or "")
+
+    @property
+    def nearby_radius_km(self) -> float:
+        return float(
+            self.entry.options.get(CONF_NEARBY_RADIUS_KM, DEFAULT_NEARBY_RADIUS_KM)
+        )
+
+    @property
     def credentials(self) -> dict[str, str]:
         """Per-chain API keys, for the chains that require one."""
         return dict(self.entry.data.get(CONF_CREDENTIALS, {}))
@@ -154,6 +174,11 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
             )
 
         stations = [s for s in all_stations if s.postnummer in area]
+
+        # Re-price for this driver's loyalty cards before anything reads a
+        # price: cheapest-of, notifications and the card then all agree, and
+        # none of them needs to know discounts exist.
+        stations = apply_discounts(stations, self.discounts)
 
         # Approximate coordinates for stations without exact ones, using the
         # centre of their postnummer so they can still appear on a map.

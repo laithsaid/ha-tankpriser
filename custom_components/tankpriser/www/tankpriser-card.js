@@ -716,6 +716,13 @@ class TankpriserCard extends HTMLElement {
         .ff-name { color: var(--primary-text-color); }
         .ff-updated { color: var(--secondary-text-color); font-size: 0.8em; }
         .ff-approx { color: var(--warning-color, #b8860b); font-size: 0.8em; }
+        /* the loyalty-discount marker: "−20" next to a price you pay less for */
+        .ff-disc {
+          display:inline-block; margin-right:5px; padding:0 4px; border-radius:7px;
+          font-size:0.75em; font-weight:700; vertical-align:middle;
+          background: var(--success-color, #2e9c48); color:#fff;
+        }
+        .ff-popup-disc { color: var(--success-color, #2e9c48); font-size: 0.9em; }
         .ff-notice { padding: 12px 0; color: var(--secondary-text-color); }
         .ff-donate {
           padding: 8px 16px 12px; text-align:center; font-size:0.85em;
@@ -764,12 +771,15 @@ class TankpriserCard extends HTMLElement {
             const approx = s.coord_approx
               ? `<span class="ff-approx" title="Approximate location (postnummer centre)"> ≈</span>`
               : "";
+            const cut = s.discount_ore
+              ? `<span class="ff-disc" title="Pumpepris ${this._price(s.list_price, unit)} · rabat ${this._escape(s.discount_ore)} øre">−${this._escape(s.discount_ore)}</span>`
+              : "";
             return `
               <tr class="${isCheap ? "cheapest" : ""}">
                 <td class="ff-name">${this._escape(s.name)}${approx}
                   ${s.updated ? `<div class="ff-updated">${this._escape(s.updated)}</div>` : ""}
                 </td>
-                <td class="price">${this._price(s.price, unit)}</td>
+                <td class="price">${cut}${this._price(s.price, unit)}</td>
               </tr>`;
           })
           .join("")
@@ -806,12 +816,14 @@ class TankpriserCard extends HTMLElement {
           rec = {
             name: s.name, company: s.company, city: s.city,
             lat: s.latitude, lon: s.longitude, approx: !!s.coord_approx,
-            updated: s.updated || null, pf: {},
+            updated: s.updated || null, pf: {}, listPf: {},
+            discount: s.discount_ore || null,
           };
           byKey.set(k, rec);
         }
         if (!rec.updated && s.updated) rec.updated = s.updated;
         if (s.price != null) rec.pf[fuel] = s.price;
+        if (s.list_price != null) rec.listPf[fuel] = s.list_price;
       }
     }
     return [...byKey.values()].map((r) => {
@@ -823,6 +835,8 @@ class TankpriserCard extends HTMLElement {
         name: r.name, company: r.company, city: r.city,
         lat: r.lat, lon: r.lon, approx: r.approx,
         updated: r.updated, price, lines,
+        discount: r.discount,
+        listPrice: r.listPf[primaryFuel] != null ? r.listPf[primaryFuel] : null,
       };
     });
   }
@@ -846,6 +860,8 @@ class TankpriserCard extends HTMLElement {
         name: s.name, company: s.company, city: s.city,
         lat: s.latitude, lon: s.longitude, approx: !!s.coord_approx,
         updated: s.updated || null, price, lines,
+        discount: s.discount_ore || null,
+        listPrice: (s.list_prices && s.list_prices[key]) || null,
       });
     }
     return list;
@@ -1022,10 +1038,19 @@ class TankpriserCard extends HTMLElement {
       const updated = s.updated
         ? `<div class="ff-popup-updated">Priser opdateret: ${this._escape(s.updated)}</div>`
         : "";
+      // With a loyalty discount configured, the price shown is what you pay —
+      // so show the pump price too, or the card and the forecourt sign
+      // disagree and you have no way to tell which is wrong.
+      const discount =
+        s.discount && s.listPrice != null
+          ? `<div class="ff-popup-disc">Pumpepris ${this._price(s.listPrice)} ·
+             din rabat ${this._escape(s.discount)} øre</div>`
+          : "";
       marker.bindPopup(
         `<b>${this._escape(s.name)}</b>${s.city ? "<br>" + this._escape(s.city) : ""}` +
           `<br>${priceLines}` +
           updated +
+          discount +
           // _navHtml carries the "estimated position" notice for approximate
           // pins, so there is no separate line for it here.
           this._navHtml(s)
