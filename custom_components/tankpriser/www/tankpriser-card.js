@@ -655,20 +655,24 @@ class TankpriserCard extends HTMLElement {
         .ff-car-glyph { font-size:13px; line-height:1; }
         /* Absolutely filled + clipped by the disc, so any photo becomes a circle */
         .ff-car-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-        /* cars sharing a position: a dot on the real spot, a leader line out to
-           each car. The wrapper is zero-size so its origin IS the real spot. */
-        .ff-car-fan { position:relative; width:0; height:0; }
-        .ff-car-lead {
-          position:absolute; left:0; top:-1px; height:2px;
-          transform-origin: 0 50%; border-radius:1px;
-          background: var(--secondary-text-color, #888);
+        /* cars sharing a spot: one marker showing each car's face, tapped to
+           spiderfy them apart — the same gesture as a station cluster. */
+        .ff-ccars {
+          display:inline-flex; align-items:center; padding:2px;
+          transform: translate(-50%, -50%);
+          border-radius:14px;
+          background: var(--card-background-color, #fff);
+          box-shadow: 0 1px 4px rgba(0,0,0,.45);
         }
-        .ff-car-anchor {
-          position:absolute; left:-3px; top:-3px; width:6px; height:6px;
-          border-radius:50%; background: var(--secondary-text-color, #888);
-          box-shadow: 0 0 0 1.5px var(--card-background-color, #fff);
+        .ff-ccar {
+          position:relative; overflow:hidden; box-sizing:border-box;
+          width:22px; height:22px; border-radius:50%; margin-left:-7px;
+          border:2px solid #888; background: var(--card-background-color, #fff);
+          display:flex; align-items:center; justify-content:center;
         }
-        .ff-car-off { position:absolute; }
+        .ff-ccar:first-child { margin-left:0; }
+        .ff-ccar-glyph { font-size:11px; line-height:1; }
+        .ff-ccars .ff-cmore { margin:0 2px 0 3px; }
         .ff-car-pct {
           position:absolute; bottom:-8px; left:50%; transform:translateX(-50%);
           font-size:11px; font-weight:700; color:#fff; line-height:1;
@@ -1089,7 +1093,31 @@ class TankpriserCard extends HTMLElement {
   _updateCars(L) {
     if (!this._map) return;
     if (!this._carLayer) {
-      this._carLayer = L.layerGroup().addTo(this._map);
+      // Cars are grouped exactly like stations: when two share a spot you get
+      // one marker showing both faces, and a tap spiderfies them apart. That
+      // keeps every car on its *true* position — nudging a marker aside to make
+      // room only moves the problem onto whatever it lands on.
+      this._map.createPane(CAR_PANE).style.zIndex = 640; // above station pins
+      this._carLayer = (
+        L.markerClusterGroup
+          ? L.markerClusterGroup({
+              clusterPane: CAR_PANE,
+              // Tighter than the stations' 48: cars should separate as soon as
+              // they are genuinely in different places.
+              maxClusterRadius: 26,
+              showCoverageOnHover: false,
+              // Two cars at the same zone centre have no bounds to zoom to, so
+              // zooming would just re-cluster them. One tap always opens.
+              zoomToBoundsOnClick: false,
+              spiderfyOnEveryZoom: true,
+              spiderfyOnMaxZoom: true,
+              // Room for the 26 px discs plus their % badge.
+              spiderfyDistanceMultiplier: 1.8,
+              spiderLegPolylineOptions: { weight: 2, color: "#888", opacity: 0.8 },
+              iconCreateFunction: (cluster) => this._carClusterIcon(L, cluster),
+            })
+          : L.layerGroup()
+      ).addTo(this._map);
     }
     if (!this._config.show_cars) {
       this._carLayer.clearLayers();
@@ -1108,16 +1136,10 @@ class TankpriserCard extends HTMLElement {
     this._carSig = sig;
 
     this._carLayer.clearLayers();
-    // Cars sharing a spot are drawn around it rather than on top of each other.
-    for (const group of _groupBySpot(cars)) {
-      const offsets = _fanOffsets(group.length);
-      group.forEach((car, index) => this._addCarMarker(L, car, offsets[index]));
-    }
+    for (const car of cars) this._addCarMarker(L, car);
   }
 
-  // One car marker. [dx, dy] is its pixel offset from the real position: [0, 0]
-  // for a car that has its spot to itself.
-  _addCarMarker(L, c, [dx, dy]) {
+  _addCarMarker(L, c) {
     const pct = c.a.current_level_percent;
     const color = this._carColor(pct);
     const pctLabel = pct === null || pct === undefined ? "?" : `${Math.round(pct)}%`;
