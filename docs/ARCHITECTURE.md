@@ -104,6 +104,16 @@ gets a plain notice that the position is approximate instead. Handing an
 estimate to a navigator is the one failure mode worth designing against: it
 looks authoritative all the way to the wrong forecourt.
 
+**Cars sharing a position** are fanned out around it, each with a leader line
+back to a dot on the real spot. Cars at home usually have *identical*
+coordinates, not merely close ones — with no fix of their own they fall back to
+the same zone centre — so without this one car is completely invisible under the
+other. The offsets are pixel values applied *inside the marker's icon* (CSS),
+not to the marker's latlng: the marker stays on the true position, so the fan
+keeps its size and shape at every zoom level with no re-placement on `zoomend`,
+and the popup is nudged by the same offset to meet the disc you can see. A car
+alone at its spot renders exactly the markup it did before the feature existed.
+
 **Hidden cars** live in `localStorage`, keyed by `hass.user.id`. A dashboard
 config is shared by everyone who can see the dashboard, so it cannot hold "just
 for me"; the alternative, `frontend/set_user_data`, would follow a user across

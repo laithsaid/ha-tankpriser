@@ -89,6 +89,13 @@ the popup says the position is only estimated. Sending an estimate to a navigato
 would look authoritative and put you in the wrong place, which is worse than not
 offering it.
 
+Two cars parked in the same place — which is the normal case at home, where
+both fall back to the same zone coordinates and get *identical* positions — are
+drawn **around** the spot with a thin line back to it and a dot marking where
+they actually are, instead of one hiding the other. The fan is sized in pixels,
+so it looks the same at every zoom level, and a car alone at its position is
+drawn exactly as before.
+
 **Hiding a car, just for you.** A dashboard is shared by everyone who can see
 it, so the card config cannot hold a per-person choice. Instead the 🚗 button
 lists every car with a checkbox, and a car's own popup has *"Skjul denne bil
