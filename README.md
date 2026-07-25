@@ -127,7 +127,7 @@ request at all.
 | `show_map` | `false` | Show the map above the list |
 | `map_height` | `420` | Map height in px |
 | `map_theme` | `auto` | `auto` (follows HA theme) / `light` / `dark` |
-| `coverage` | `area` | `area` = your Home location + the configured radius; `national` = **all** DK stations, the map viewport is the filter (zoom out to aggregate) |
+| `coverage` | `national` | `area` = your Home location + the configured radius; `national` = **all** DK stations, the map viewport is the filter (zoom out to aggregate) |
 | `cluster` | `true` | Group nearby stations |
 | `show_my_location` | `true` | Live GPS dot + the ◎ / ➤ buttons |
 | `follow_me` | `false` | Start with follow-me armed |
@@ -216,10 +216,13 @@ development — see the link in the card footer.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the pieces fit together:
   the price-aggregation and consumption-prediction subsystems, data flow,
   caching and external dependencies.
-- [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) — module reference, the
-  prediction algorithm, the storage schema, and how to extend it (add a fuel
-  chain, add a fuel type) plus the test/release workflow.
-- [`TESTING.md`](TESTING.md) — installing and verifying a build in a real HA.
+- [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) — a guide to reading the
+  code: entry points, three end-to-end walkthroughs (a price refresh, a car's
+  level changing, the card painting the map), the data contracts between
+  layers, a per-module reference, the prediction algorithm, storage schemas,
+  how to extend it, and a "where to look if…" table.
+- [`docs/TESTING.md`](docs/TESTING.md) — installing a build in a real HA,
+  verifying it, running the test suite, and a troubleshooting table.
 
 ## Disclaimer
 

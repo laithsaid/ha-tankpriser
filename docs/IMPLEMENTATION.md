@@ -1,7 +1,24 @@
 # Tankpriser — Implementation notes
 
-Developer-facing detail. For the big picture read
-[ARCHITECTURE.md](ARCHITECTURE.md) first.
+Developer-facing detail, written to be read **next to the code**: every claim
+names the file and function it lives in, so you can jump there. For the big
+picture — which subsystems exist and why — read [ARCHITECTURE.md](ARCHITECTURE.md)
+first. For installing and verifying a build on real hardware, see
+[TESTING.md](TESTING.md).
+
+If you are looking for one specific thing, skip to
+[Where to look if…](#where-to-look-if) at the bottom.
+
+- [Layout](#layout)
+- [Entry points](#entry-points) — the only three ways code here starts running
+- [Walkthrough 1: a price refresh](#walkthrough-1-a-price-refresh)
+- [Walkthrough 2: a car's fuel level changes](#walkthrough-2-a-cars-fuel-level-changes)
+- [Walkthrough 3: the card paints the map](#walkthrough-3-the-card-paints-the-map)
+- [Contracts](#contracts) — the data shapes each layer hands the next
+- [Module reference](#module-reference)
+- [The prediction algorithm](#the-prediction-algorithm-predictionpy)
+- [Storage schema](#storage-schema)
+- [Where to look if…](#where-to-look-if)
 
 ## Layout
 
@@ -32,6 +49,242 @@ tests/
 package.json         jsdom, for the tests only — the integration ships no JS deps
 scratchpad/          local-only experiments (git-ignored)
 ```
+
+Roughly 3 500 lines of Python and 1 800 of JavaScript. `const.py` and
+`prediction.py` import nothing from Home Assistant, which is what makes them
+testable without it.
+
+## Entry points
+
+Nothing here runs on its own. There are exactly three ways in, and every stack
+trace you will ever see starts in one of them:
+
+| Trigger | Enters at | Does |
+| --- | --- | --- |
+| HA loads the component (once, because a config entry exists) | `__init__.async_setup` | registers the websocket command, the two services, and publishes the card |
+| The config entry is set up (also on reload, and after options change) | `__init__.async_setup_entry` | builds the coordinator, does the **first refresh**, starts one `ConsumptionTracker` per car, forwards to the `sensor` platform |
+| A browser opens a dashboard | `www/tankpriser-card.js` (module top level) | defines `tankpriser-card` + `tankpriser-prediction-card`; HA instantiates one per card, calling `setConfig()` then `hass` on every state change |
+
+After that, everything is a callback:
+
+- `DataUpdateCoordinator` timer → `coordinator._async_update_data` (every
+  `scan_interval`, default 30 min)
+- HA state change on a car's source entity → `consumption._handle_event`
+- the card's websocket subscription to `tankpriser_price_updated` →
+  `_ensureNational()` refetches the national list
+- a service call → `services._seed` / `services._reset`
+
+Two things worth knowing about setup order. `async_setup` publishes the card
+*before* any entry is set up, because a client that loads the frontend while the
+entry is still starting would otherwise get a page with no card (see
+[ARCHITECTURE.md](ARCHITECTURE.md#how-the-card-reaches-the-browser)). And
+`async_setup_entry` calls `async_config_entry_first_refresh()`, so a provider
+outage at startup makes HA retry the whole entry rather than create empty
+sensors.
+
+## Walkthrough 1: a price refresh
+
+The main loop. Read these five functions in this order and you understand the
+price side of the integration.
+
+```
+coordinator._async_update_data()                     ← every scan_interval
+├── _resolve_area()                    -> set[str] of postnumre
+│   └── geo.postnumre_within_point(lat, lon, radius_m)      DAWA "cirkel="
+│       (cached per radius in self._area_cache; legacy entries with a stored
+│        postnummer go through geo.postnumre_within instead)
+├── sources.fetch_all(session, credentials)          -> list[Station]  (all DK)
+│   └── per provider, concurrently: _fetch_provider()
+│       ├── TTL cache hit (PROVIDER_CACHE_TTL, 10 min, keyed by a credential
+│       │   fingerprint) -> return it
+│       ├── Provider.fetch() -> _fetch_json() -> parse_ok / parse_q8 /
+│       │   parse_shell / fetch_oil    (one parser per chain, each returning
+│       │   normalised Station records)
+│       └── on failure: serve the last good payload until MAX_STALE_AGE (6 h),
+│           then drop that provider entirely — stale prices are worse than none
+├── filter: keep s.postnummer in area                -> the area's stations
+├── _fill_coordinates(stations)                       fills lat/lon in place
+│   ├── geocode.async_get(hass).apply(missing)        cache only, no network
+│   │   -> returns the ones still unplaced *and* the ones due a re-check
+│   ├── geocoder.async_schedule(...)                  background DAWA lookups,
+│   │   then coordinator.async_request_refresh()      (never awaited here)
+│   └── geo.centers_for(pending)                      postnummer centre, and
+│                                                     coord_approx = True
+├── filter: drop excluded_stations (case-insensitive name match)
+├── sort by name, wrap in TankpriserData
+├── notifications.evaluate_and_notify(previous, current)   only if we had a
+│                                                          previous snapshot
+└── hass.bus.async_fire("tankpriser_price_updated", {...}) ← the card listens
+```
+
+`TankpriserData` is deliberately thin: a list of `Station` plus
+`stations_for(fuel_key)` (matching stations, cheapest first) and
+`cheapest(fuel_key)`. Every consumer — both sensors, the notifications, the
+prediction tie-in — goes through those two methods rather than filtering the
+list itself.
+
+Then, per fuel type, `TankpriserSensor.native_value` reads
+`coordinator.data.cheapest(fuel_key)` and `extra_state_attributes` builds the
+station list the card renders. Sensors are pure views over `coordinator.data` —
+they hold no state of their own, which is why a coordinator refresh is all it
+takes to update everything.
+
+## Walkthrough 2: a car's fuel level changes
+
+The prediction side. One `ConsumptionTracker` per car subentry, created in
+`__init__._async_setup_cars` and kept in `coordinator.cars[subentry_id]`.
+
+```
+HA state change on the car's source entity
+└── consumption._handle_event(event)
+    ├── _ingest_current()
+    │   ├── _read(source_entity, level_attribute)     state or nested attribute
+    │   │   (prediction.dig walks dotted paths into nested dicts, and
+    │   │    returns None for a missing key rather than raising)
+    │   ├── prediction.to_litres(value, unit, capacity_l)   %/L/gal -> litres
+    │   ├── skip if the level moved less than _EPSILON_L and the odometer did
+    │   │   not change  (collapses the repeats a level sensor emits)
+    │   └── model.add_reading(ts, litres, odo)          -> True if this closed
+    │       │                                              a tank (a refuel)
+    │       └── _close_segment() when the level jumps up by at least
+    │           REFUEL_MIN_JUMP_FRACTION (0.15) of the tank:
+    │           the completed Segment is what the model actually learns from
+    ├── Store.async_delay_save(...)   delay 0 on a refuel, else 300 s
+    └── _notify()  -> every registered sensor callback -> async_write_ha_state()
+```
+
+`CarPredictionSensor` subscribes with `tracker.async_add_listener` in
+`async_added_to_hass`, so it repaints on **any** source change — including a
+position-only update with no fuel movement, which is what keeps the car's marker
+current on the map.
+
+The state itself comes from `tracker.predict()` → `prediction.predict(model,
+current_litres)`, which returns `None` until enough tanks are learned. `None`
+becomes `unknown` rather than a guess; the card shows "Estimating…" for that.
+
+## Walkthrough 3: the card paints the map
+
+`www/tankpriser-card.js`, one file, two custom elements. HA calls `setConfig()`
+once and assigns `hass` on every state change, so `set hass` is the hot path —
+everything it triggers is guarded by a change signature.
+
+```
+set hass  ->  _update()
+├── _build()          once: innerHTML, the <style>, the Leaflet CSS <link>s
+├── the list          _section(entityId) per entity, from sensor attributes
+└── _updateMap()      only when show_map
+    ├── await loadCluster() / loadLeaflet()    vendored first, CDN fallback
+    ├── stations:
+    │   ├── coverage "area"     -> _areaStations()      from sensor attributes
+    │   └── coverage "national" -> _ensureNational()    websocket
+    │                              "tankpriser/stations", then
+    │                              _nationalStations() filters to the fuel key
+    ├── preloadIcon(...) for the distinct chain icons
+    ├── first call only: L.map(), the marker cluster group, the ◎/➤ controls,
+    │   the car control, the GPS watch
+    ├── _applyTiles(L)          light/dark basemap, follows the HA theme
+    ├── _updateCars(L)          ALWAYS, before the early-return below
+    │   ├── _allCars() -> every is_car sensor (positioned or not, hidden or not)
+    │   ├── _renderCarPicker(all)      the car button + its checkbox list
+    │   ├── _visibleCars(all)          positioned, and not hidden here
+    │   └── per car: _addCarMarker(L, car); grouped ones get _carClusterIcon
+    └── signature check on the station list -> rebuild markers, or return
+```
+
+Two details that look odd until you know why. `_updateCars` runs *before* the
+station-signature early-return, because a car moving does not change the station
+signature and would otherwise never be redrawn. And the map is only fitted once
+(`_fitted`), so a refresh never fights the user's pan or zoom.
+
+## Contracts
+
+The seams between layers. Change one of these and something else breaks
+silently, so they are worth knowing before editing.
+
+### `sources.Station` — every provider normalises to this
+
+```python
+Station(
+    name, company, postnummer, updated,   # updated = the chain's own stamp
+    city="", address="",                  # address is what geocode.py resolves
+    latitude=None, longitude=None,        # None until _fill_coordinates runs
+    coord_approx=False,                   # True = a postnummer centre or a
+                                          #        fuzzy-matched address
+    prices={},                            # normalised fuel key -> kr, float
+)
+```
+
+`Station.key` (`company|name|postnummer`, lowercased) is the identity used for
+de-duplication and change detection. Adding a provider means writing a parser
+that returns these — nothing downstream knows which chain a station came from
+except through `company`.
+
+### `sensor.TankpriserSensor` — one per configured fuel
+
+State is the cheapest price. Attributes are the card's entire input in
+`coverage: area` mode:
+
+| Attribute | Used by |
+| --- | --- |
+| `fuel_type`, `fuel_key` | the card's headings, and the national map's fuel filter |
+| `area`, `radius`, `station_count` | the list header |
+| `cheapest_station`, `cheapest_price`, `average_price` | templates, automations |
+| `stations[]` | `{name, company, postnummer, city, address, price, updated, latitude, longitude, coord_approx}` — the list and the area map |
+
+### `sensor.CarPredictionSensor` — one per car subentry
+
+State is days until refuel, or `unknown` while learning. The card finds these
+sensors **by the `is_car` attribute**, not by entity_id pattern — that is the
+contract that lets `_allCars()` discover cars with no configuration:
+
+| Attribute | Notes |
+| --- | --- |
+| `is_car: True` | the marker for "this is a Tankpriser car" |
+| `car_name`, `tank_capacity_l`, `fuel_type` | display |
+| `current_level_l`, `current_level_percent` | the marker's ring colour and badge |
+| `latitude`, `longitude` | **only present when known** — the card skips cars without them |
+| `car_picture` | only when the source entity has one |
+| `status` | `learning` or `ready`; the card branches on this, not on the state |
+| `avg_consumption`, `consumption_unit`, `learned_tanks`, `confidence`, `method`, `predicted_empty` | only when `ready` |
+| `cheapest_station`, `cheapest_price` | the price tie-in, for this car's fuel |
+| `source_entity`, `level_attribute`, `odometer_entity` | diagnostics: trace a missing pin without guessing the config |
+
+### `tankpriser/stations` — the websocket command
+
+`websocket.ws_stations` returns `{stations: [{name, company, postnummer, city,
+latitude, longitude, coord_approx, updated, prices{}}]}` — every station in the
+country, with `prices` as the whole fuel dict rather than one price. It exists
+because ~1 200 stations in a sensor attribute would bloat the state machine.
+Note it does **not** take the area into account; the map viewport is the filter.
+
+### Card config
+
+`setConfig` normalises and defaults everything, so the rest of the card can
+trust `this._config`. Full list in the file's header comment; the defaults that
+surprise people are `coverage: "national"`, `show_map: false`, and `show_list`
+following "shown only when the map is off".
+
+## Module reference
+
+What each file is for, and which function to open first.
+
+| Module | Open first | Notes / gotchas |
+| --- | --- | --- |
+| `__init__.py` | `async_setup_entry`, `_async_register_card` | Card publishing is three independently-latched steps; a failed one retries on the next entry setup and on `homeassistant_started`. `async_migrate_entry` still upgrades pre-0.6 (v1) entries. |
+| `const.py` | `FUEL_TYPES`, `radius_to_metres` | Pure. `FUEL_TYPES[key] = (display, unit)` is the single source of truth for which fuels exist; `strings.json` mirrors it for the UI. |
+| `sources.py` | `fetch_all`, then the `PROVIDERS` dict | One `Provider(key, label, fetch)` per chain. `_one_shot(url, parser)` covers the simple ones; OIL! needs `fetch_oil` because it is priced one fuel type per request. The cache is keyed by provider **and** a credential fingerprint, so changing a key bypasses it. |
+| `geo.py` | `postnumre_within_point`, `centers_for` | DAWA takes `cirkel=lon,lat,radius` — the reversed order is a 400. `visueltcenter` is `[lon, lat]`. Batches up to 100 postnumre per request; caches for process life. |
+| `geocode.py` | `apply`, then `_async_lookup` | Three passes, most precise first, each verified against the postnummer. `apply()` is cache-only and safe on every refresh; `async_schedule()` is the only thing that touches the network. |
+| `coordinator.py` | `_async_update_data` | The whole price pipeline in ~40 lines. `_resolve_area` is cached per radius; `self.cars` is populated by `__init__` *after* the first refresh. |
+| `sensor.py` | `extra_state_attributes` (both classes) | Sensors are stateless views. `CarPredictionSensor` also subscribes to its tracker, so it updates outside the coordinator's cycle. |
+| `websocket.py` | `ws_stations` | Not admin-only, deliberately: any user's dashboard needs it. |
+| `notifications.py` | `_evaluate_fuel` | Four rules: `threshold` (fires on crossing, not while below), `decrease`, `cheapest` (any change to the cheapest), `any` (any station's price for that fuel). Compares two `TankpriserData` snapshots. |
+| `config_flow.py` | `async_step_user`, then `TankpriserOptionsFlow.async_step_init` | Single entry (`async_set_unique_id(DOMAIN)`). Options is a menu: settings / notifications / chains → provider. Cars are **subentries** (`CarSubentryFlowHandler`), which is why one entry can hold several cars. |
+| `consumption.py` | `_ingest_current`, `location` | The only HA-aware half of the prediction. `location` walks four fallbacks (see below); the registry walk is lazy and normally never runs. |
+| `prediction.py` | `ConsumptionModel.add_reading`, `predict` | Pure, no HA imports — unit-tested directly. |
+| `services.py` | `_seed`, `_reset` | Iterate `hass.data[DOMAIN][*].cars`; `seed_demo_history` fabricates tanks so the prediction can be demoed without waiting weeks. |
+| `diagnostics.py` | `async_get_config_entry_diagnostics` | Redacts credentials, area name and notify target; keeps the postnummer. |
+| `www/tankpriser-card.js` | `setConfig`, `_update`, `_updateMap` | See [Walkthrough 3](#walkthrough-3-the-card-paints-the-map). |
 
 ## The prediction algorithm (`prediction.py`)
 
@@ -269,3 +522,23 @@ the commits stay on `main` either way.
 **Changes with no user-visible effect** (dead-code removal, tests, docs) are
 committed to `main` **untagged**. HACS installs from release tags, so they reach
 users with the next real release instead of prompting an update for nothing.
+
+## Where to look if…
+
+| Symptom | Look at |
+| --- | --- |
+| A chain's prices are missing entirely | `sources.PROVIDERS` → that chain's parser (`parse_ok` / `parse_q8` / `parse_shell` / `fetch_oil`). Check the endpoint by hand first — a large JSON body means the chain is fine and the parser drifted |
+| All prices are missing | `coordinator._async_update_data` raises `UpdateFailed` when every provider returned nothing; `sources._fetch_provider` decides when a provider is dropped for staleness |
+| A station is in the wrong place | `geocode._async_lookup` (the three passes) then `geo.centers_for` (the postnummer-centre fallback). `coord_approx` tells you which one placed it |
+| A station has no navigate button | By design when `coord_approx` is true — `_navHtml` in the card |
+| The area contains the wrong postnumre | `coordinator._resolve_area` → `geo.postnumre_within_point`. DAWA wants `cirkel=lon,lat,radius`; reversed is a 400 |
+| A car does not appear on the map | In order: does the sensor have `latitude`/`longitude`? (`consumption.location` and its four fallbacks) → is it hidden on this device? (`localStorage`, `tankpriser.hidden_cars.<user id>`) → is it grouped with another car? (`_carClusterIcon`) |
+| The days-until-refuel sensor stays `unknown` | `prediction.predict` returns `None` until enough tanks are learned; `attrs["status"]` says `learning`. `services.seed_demo_history` fabricates tanks to test the rest |
+| A refuel was missed or invented | `ConsumptionModel.add_reading` / `_close_segment`, and `REFUEL_MIN_JUMP_FRACTION` in `const.py` |
+| Consumption looks wrong | `prediction._ewma` (weighting) and `_confidence`; `Segment.consumed_litres` / `duration_days` / `distance_km` are the raw inputs |
+| Notifications fire too often / never | `notifications._evaluate_fuel` — one branch per rule |
+| The card renders "Configuration error" | The card script never loaded on that client: `__init__._async_register_card`, and [ARCHITECTURE.md](ARCHITECTURE.md#how-the-card-reaches-the-browser) |
+| The card shows stale prices | `_mapSig` / `_carSig` early-returns in `_updateMap` / `_updateCars`, and the `tankpriser_price_updated` subscription in `_subscribeUpdates` |
+| The map is empty but the list is fine | Leaflet did not load: `loadLeaflet` / `loadCluster` (vendored first, CDN with SRI as fallback), or no station has coordinates |
+| A new config option is ignored | `config_flow` writes it, but `coordinator`/`sensor` read through the properties on `TankpriserCoordinator` — add it there too, and remember options changes trigger a reload via `_async_reload_entry` |
+| HACS shows an old version | `manifest.json` version was not bumped — see [Versioning & releases](#versioning--releases) |
