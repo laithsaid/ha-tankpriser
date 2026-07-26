@@ -689,6 +689,11 @@ the right one.
 
    That switch is what makes the shortcut wait for her to finish the sentence.
    Without it, opening the map takes the audio and cuts her off mid-word.
+
+   Then **Add action** → search `Wait` → **Wait**, set to **1 second**. When the
+   shortcut ends, Siri says "OK" on top of it — her own acknowledgement, which
+   nothing here produces and no setting suppresses. Without this pause the map
+   opens over her and clips it. One second of silence lets her finish.
 6. **Add action** → **Render template** again. **Check its Server field before
    anything else:** Shortcuts fills a new action's fields with the *previous
    action's output*, so the second Render template often arrives with **Server**
@@ -724,7 +729,7 @@ the right one.
    *which* earlier result, not for a name you invent: two entries are called
    *Render template*, and you want the **lower** one.
 8. **Done.** The finished order is: Update location → Wait → Render template →
-   Speak Text → Render template → Open URLs.
+   Speak Text → Wait → Render template → Open URLs.
 
 **Test it parked, on the phone.** Say *"Hey Siri, Billigste benzin"* with the
 engine off: it should name one station and open Google Maps to it.
@@ -741,6 +746,7 @@ screen — voice is the only trigger.
 | --- | --- |
 | Siri: *"something went wrong"*, and the Home Assistant app was not running | Every Home Assistant action here belongs to that app, and iOS stops background-launching an app you have **force-quit** (swiped away in the App Switcher) until you open it by hand. A phone restart does the same until the first launch. Open Home Assistant once, leave it in the background, and check Background App Refresh is on. **Adding an "Open App" action does not fix this** — tested in a car: Siri opens the app and the shortcut stops there, because handing the foreground to another app ends the run. |
 | Siri starts saying something, gets cut off, and the map opens | **Wait Until Finished** is off on the Speak Text. Expand the action with ⌄ and turn it on — that is what makes the shortcut hold until she is done. |
+| Siri starts to say "OK" and is cut off as the map opens | Hers, not the shortcut's — she acknowledges the run finishing, and the map takes the audio as it comes forward. The **Wait of 1 second** after Speak Text (step 5) gives her time to finish. |
 | Siri: *"I don't see an app for that"* | The shortcut name is being misheard. Rename it to something more distinct and say it exactly. |
 | Siri web-searches the phrase instead of running anything | She could not match what she heard to any shortcut. Almost always a language mismatch: **Settings → Siri & Search → Language**. Either set Siri to Dansk, or rename the shortcut to words in Siri's language. Saying *"kør \<name\>"* also helps her treat it as a shortcut rather than a query. |
 | It shows the text instead of reading it aloud | Not the shortcut — **Siri Responses** is on *Automatic*, so she prints whenever the ring switch is silent. Set **Prefer Spoken Responses** (11a). |
