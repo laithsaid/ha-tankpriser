@@ -682,7 +682,7 @@ the right one.
    > | The sentence | The template is right. Anything that fails afterwards is the shortcut or the app, not this. |
    > | A red error mentioning `has no attribute` | The entity id is wrong. It follows your **area name**, so an area called "Silkeborg" gives `sensor.silkeborg_blyfri_95_e10_cheapest_nearby`. Copy it from *Developer tools → States*. |
    > | A red error about the template syntax | The text itself, and almost always **smart quotes** from copying it through something that curls them. The version above avoids quotes entirely — retype it by hand rather than pasting a curled copy. |
-   > | Nothing but your own trailing words | `spoken_cheapest` is missing, which means a version before 0.12.0b6. Redownload in HACS and restart. |
+   > | Nothing but your own trailing words | `spoken_cheapest` is missing, which means a version older than 0.12.0. Redownload in HACS and restart. |
 5. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
    **Render template** from the variable bar above the keyboard. Expand it (tap
    ⌄) and turn **Wait Until Finished** on.
