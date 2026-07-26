@@ -694,11 +694,17 @@ the right one.
 
    ```jinja
    {%- set s = states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby.attributes.stations -%}
-   {%- if s %}https://www.google.com/maps/dir/?api=1&destination={{ s[0].latitude }},{{ s[0].longitude }}{% endif -%}
+   {%- if s %}https://www.google.com/maps/dir/?api=1&destination={{ s[0].latitude }},{{ s[0].longitude }}&travelmode=driving&dir_action=navigate{% endif -%}
    ```
 
    The `-` in `{%- … -%}` is load-bearing: without it the tag leaves its newline
-   behind and the action returns a blank line followed by the URL.
+   behind and the action returns a blank line followed by the URL. The
+   **`dir_action=navigate`** on the end is what starts turn-by-turn immediately —
+   without it Google Maps opens a route *preview*, and if it cannot work out
+   where you are it asks you to pick a starting point first. If it still asks,
+   give Google Maps itself **Location: While Using the App** and **Precise
+   Location** in iOS Settings; it needs its own permission, separate from Home
+   Assistant's.
 7. **Add action** → search `Open URLs` → **Open URLs**.
 
    Take Apple's plain **Open URLs**, *not* "Open URLs in Chrome" or any other
@@ -737,6 +743,8 @@ screen — voice is the only trigger.
 | Speaks nothing at all | The entity id in the template is wrong — it follows your **area name**. Copy it from Developer tools → States. |
 | A template action returns a date/time | Apple's default `{{ now() }}` was left in place — clear the field completely before pasting. |
 | Speaks, then nothing happens | Google Maps is not installed, or that station has no exact coordinates (approximate positions are deliberately omitted rather than sending you to a postnummer centre). Try the Apple Maps variant below. |
+| Google Maps opens but asks you to choose a starting point | The URL is missing `dir_action=navigate` (step 6), so Maps opened a route preview rather than navigating — and it could not resolve your position by itself. Add it, and give **Google Maps** its own **Location** permission in iOS Settings; it does not inherit Home Assistant's. |
+| Every action fails, even with the template replaced by the word `hello` | The Home Assistant action instance inside the shortcut has gone stale — it keeps failing while still looking correctly configured, and no template change reaches it. Rebuilding the shortcut from scratch is the cure; debugging the template is not. Confirm first that the Home Assistant **app** opens your dashboard, which rules out the connection. |
 | A web page opens instead of the map app | "Open URLs **in Chrome**" was used instead of Apple's plain **Open URLs**. |
 | Nothing opens, and the spoken sentence appeared as a URL | **Open URLs** is pointing at the *first* Render template. Point it at the lower one. |
 | **You are already navigating somewhere, and nothing happens** | Expected, and not fixable from a shortcut — see 11d. |

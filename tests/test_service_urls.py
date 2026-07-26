@@ -60,6 +60,14 @@ for name in ("google", "apple", "osm"):
     check("56.1697" in url and "9.5451" in url, f"{name} lost the coordinates: {url}")
 check(len(MAPS) == 3, f"unexpected map options: {sorted(MAPS)}")
 
+# Google's link must start navigation, not open a route preview: a preview asks
+# for a starting point, which is a dialog to dismiss while driving.
+google = urls_for([exact], "google")[0]
+check("dir_action=navigate" in google, google)
+check("travelmode=driving" in google, google)
+# Apple's scheme has its own way of saying the same thing.
+check("dirflg=d" in urls_for([exact], "apple")[0], urls_for([exact], "apple")[0])
+
 # THE PROPERTY: an estimated station holds its place with an empty string.
 ranked = [
     station("OK Nordre Ringvej", 56.1697, 9.5451),

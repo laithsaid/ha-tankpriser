@@ -62,8 +62,14 @@ ATTR_MAPS = "maps"
 # Navigation links are built here rather than left to the caller: a Shortcut can
 # read a string out of a response, but assembling one per station from a nested
 # list is a page of actions on a phone.
+# `dir_action=navigate` starts turn-by-turn straight away; without it Google
+# Maps opens a route *preview* and — if it cannot resolve your position itself —
+# asks you to pick a starting point, which is a dialog nobody wants at 110 km/h.
 _MAPS_URL = {
-    "google": "https://www.google.com/maps/dir/?api=1&destination={lat},{lon}",
+    "google": (
+        "https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
+        "&travelmode=driving&dir_action=navigate"
+    ),
     "apple": "http://maps.apple.com/?daddr={lat},{lon}&dirflg=d",
     "osm": "https://www.openstreetmap.org/directions?to={lat}%2C{lon}",
 }
