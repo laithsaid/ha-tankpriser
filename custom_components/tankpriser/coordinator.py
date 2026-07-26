@@ -30,6 +30,7 @@ from .const import (
     CONF_RADIUS,
     DEFAULT_RADIUS,
     DEFAULT_SCAN_INTERVAL_MIN,
+    DOMAIN,
     EVENT_PRICE_UPDATED,
     CONF_SCAN_INTERVAL,
     radius_to_metres,
@@ -38,6 +39,61 @@ from .notifications import evaluate_and_notify
 from .sources import Station, apply_discounts, fetch_all
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def credentials_of(hass: HomeAssistant) -> dict[str, str]:
+    """Per-chain API keys from every configured entry.
+
+    Integration-wide callers (the websocket command, the services) are not tied
+    to one entry, so they use whatever keys any entry has; today there is only
+    ever one.
+    """
+    creds: dict[str, str] = {}
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        creds.update(entry.data.get(CONF_CREDENTIALS, {}) or {})
+    return creds
+
+
+def discounts_of(hass: HomeAssistant) -> dict[str, int]:
+    """Per-chain loyalty discounts from every configured entry."""
+    discounts: dict[str, int] = {}
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        discounts.update(entry.options.get(CONF_DISCOUNTS, {}) or {})
+    return discounts
+
+
+async def async_national_stations(
+    hass: HomeAssistant,
+    credentials: dict[str, str],
+    discounts: dict[str, int],
+) -> list[Station]:
+    """Every Danish station, priced for this driver and placed on the map.
+
+    Shared by the national map's websocket command and the ``nearby`` service so
+    both quote the same prices from the same positions. Everything underneath is
+    cached — the provider fetches, the geocode store, the postnummer centres —
+    so a repeat call costs little more than the discount pass.
+
+    Stations that still cannot be placed keep ``latitude = None``; callers drop
+    them, because a station without a position can be neither mapped nor ranked
+    by distance.
+    """
+    session = async_get_clientsession(hass)
+    stations = apply_discounts(await fetch_all(session, credentials), discounts)
+
+    geocoder = geocode.async_get(hass)
+    await geocoder.async_load()
+    unresolved = geocoder.apply([s for s in stations if s.latitude is None])
+    if unresolved:
+        geocoder.async_schedule(session, unresolved)
+
+    missing = {s.postnummer for s in stations if s.latitude is None}
+    centers = await geo.centers_for(session, missing) if missing else {}
+    for station in stations:
+        if station.latitude is None and station.postnummer in centers:
+            station.latitude, station.longitude = centers[station.postnummer]
+            station.coord_approx = True
+    return stations
 
 
 @dataclass

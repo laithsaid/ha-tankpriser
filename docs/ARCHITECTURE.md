@@ -35,6 +35,7 @@ Everything is configured from the UI; there is no `configuration.yaml`.
       ▼                                                          │   (no HA imports; unit-tested)
    sensor.py    ── one TankpriserSensor per fuel                ▼
    websocket.py ── tankpriser/stations (national map)       sensor.py       ── CarPredictionSensor
+   services.py  ── nearby(lat, lon) -> spoken + urls
    notifications.py ── price-change notify + event              │
       │                                                          │
       └──────────────────────┬───────────────────────────────────┘
@@ -54,14 +55,14 @@ Everything is configured from the UI; there is no `configuration.yaml`.
 | `geo.py` | DAWA (Danish address API) helpers: resolve *postnummer + radius* → set of postnumre; look up postnummer centre coordinates. Process-life caches. |
 | `geocode.py` | Street address → coordinates via DAWA, for the chains that publish no coordinates (Q8/F24). Three passes (exact house number → street+postnummer → fuzzy), cached in `.storage` for good, filled by a background task so setup is never delayed. |
 | `coordinator.py` | One `TankpriserCoordinator` per entry: resolves the area, calls `fetch_all`, filters stations to the area, positions coordinate-less stations, fires notifications/events. Holds the per-car trackers in `.cars`. Also keeps a `nationwide` snapshot when a nearby tracker is configured — that ranking follows a device, which leaves the area. |
-| `nearby.py` | **Pure** (no HA imports): haversine, a bounding-box pre-filter, and `rank_nearby()` — the stations around a point, cheapest first with distances. |
+| `nearby.py` | **Pure** (no HA imports): haversine, a bounding-box pre-filter, `rank_nearby()` — the stations around a point, cheapest first with distances — and `spoken_sentence()`, the same answer as a sentence to read aloud. |
 | `sensor.py` | `TankpriserSensor` (cheapest price per fuel, full list in attributes), `NearbyStationsSensor` (cheapest around a nominated device, nationwide pool, `spoken` sentence for Siri) and `CarPredictionSensor` (days-until-refuel + prediction attributes + car position/picture). |
 | `websocket.py` | `tankpriser/stations` command returning **all** national stations with coordinates — used by the card's `coverage: national` map instead of a huge sensor attribute. |
 | `notifications.py` | Compares successive refreshes and calls a `notify.*` service per the chosen rule; also fires the `tankpriser_price_updated` event. |
 | `config_flow.py` | Initial flow (fuel types), options flow (menu: settings / notifications / chain keys), and the **car subentry** flow (`ConfigSubentryFlow`). |
 | `consumption.py` | HA glue for prediction: `ConsumptionTracker` watches the source entity, feeds the pure model, persists via `Store`, resolves the car's coordinates/picture, and notifies dependent sensors. |
 | `prediction.py` | **Pure** (no `homeassistant` imports) learning core: refuel detection, the `ConsumptionModel`, and `predict()`. Fully unit-testable offline. |
-| `services.py` / `services.yaml` | `seed_demo_history` (inject synthetic tanks for testing/demo) and `reset_history`. |
+| `services.py` / `services.yaml` | `nearby` — the cheapest stations around a caller-supplied point, returned as **response data** (a spoken sentence, the ranked stations, one navigation URL each) so a Siri Shortcut or an automation gets a whole answer from one call, with no entity in between. Plus `seed_demo_history` and `reset_history` for the prediction. |
 | `diagnostics.py` | Redacted config-entry diagnostics (credentials + area name + notify target redacted; postnummer kept). |
 | `www/tankpriser-card.js` | Two custom cards: the price card (list + Leaflet map + car markers) and the prediction card. Leaflet is vendored under `www/vendor/`. |
 | `brand/`, `translations/`, `strings.json` | Bundled brand icons, and the flow/selector translations (en + da). |

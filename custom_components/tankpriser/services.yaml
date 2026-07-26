@@ -1,3 +1,74 @@
+nearby:
+  name: Cheapest stations near a point
+  description: >-
+    The cheapest stations around a position you supply, with a ready-to-speak
+    sentence and navigation links. Returns the answer directly, so a Siri
+    Shortcut or an automation can pass the phone's live coordinates and get a
+    complete reply from one call — no device tracker, and nothing that can go
+    stale in between.
+  fields:
+    latitude:
+      name: Latitude
+      description: Where to measure from.
+      required: true
+      example: 56.1697
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.000001
+          mode: box
+    longitude:
+      name: Longitude
+      description: Where to measure from.
+      required: true
+      example: 9.5451
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 0.000001
+          mode: box
+    fuel:
+      name: Fuel
+      description: >-
+        Which fuel to price. Defaults to the first fuel your Tankpriser area is
+        configured for.
+      required: false
+      example: blyfri95
+      selector:
+        select:
+          options:
+            - blyfri95
+            - blyfri98
+            - blyfri95plus
+            - oktan100
+            - diesel
+            - dieselplus
+            - hvo100
+    radius_km:
+      name: Radius
+      description: How far around that point to look.
+      required: false
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: km
+          mode: box
+    maps:
+      name: Navigation links
+      description: Which map app the returned URLs should open.
+      required: false
+      default: google
+      selector:
+        select:
+          options:
+            - google
+            - apple
+            - osm
+
 seed_demo_history:
   name: Seed demo prediction history
   description: >-

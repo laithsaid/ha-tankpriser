@@ -808,16 +808,96 @@ Two design notes worth knowing before you build it:
   the shortcut stops there** — nothing is spoken, nothing opens, with the phone
   locked or unlocked. Handing the foreground to another app ends the run. Do not
   build it in; the fix is simply not to force-quit the app.
-- **No app at all: talk to Home Assistant over the network** *(not yet written
-  up — ask)*. Every Home Assistant action here comes from the iPhone app, which
-  is why the app's state can break the shortcut. Apple's **Get contents of URL**
-  can call Home Assistant's REST API directly with a long-lived token, immune to
-  whatever the app is doing. Needs your Home Assistant reachable from mobile
-  data, and a token pasted into the shortcut.
+- **No app at all** — see 11f, which is worth reading even if 11b works for you.
 
 **Verified in a car, 2026-07-26:** the whole route works — asked by name, three
 stations read out with distances, chosen by number, Google Maps starting on the
 car screen.
+
+#### 11f. The sturdy version: no Home Assistant app involved
+
+Every action in 11b comes from the Home Assistant app, so the app's state can
+break the shortcut — and the app is also what reports your position, so a phone
+that has not checked in recently answers about the town you left. This version
+has neither problem: it calls Home Assistant **over the network**, and hands it
+**the phone's own live coordinates**, taken the moment you ask.
+
+**Better, not simpler.** It costs a token and a URL, and gives you:
+
+| | 11b, via the app | 11f, over the network |
+| --- | --- | --- |
+| App force-quit | fails | works |
+| Position | whenever the app last reported | taken as you ask, every time |
+| Setup | nothing extra | a token and your external URL |
+| Actions | 10 | 8 |
+
+**What you need first.** Your Home Assistant must be reachable from mobile data
+— Nabu Casa, or your own remote access. If 11b already worked in the car on
+cellular, it is. Then make a token: click your **name** at the bottom of the
+Home Assistant sidebar → **Security** tab → bottom of the page → **Create
+token**. Name it *Siri*, copy the long string **once** (it is never shown
+again), and keep it somewhere you can paste from.
+
+> The token is a **full-access key to your Home Assistant**, stored in plain
+> text inside a shortcut. Anyone who can open your unlocked phone can read it.
+> Delete it from that same Security page if the phone is lost, and never share
+> a screenshot of the shortcut.
+
+The service it calls is **`tankpriser.nearby`**: you give it a position, it
+gives back a spoken sentence and one navigation URL per station, already in
+order. Try it first in **Developer tools → Actions → Tankpriser: Cheapest
+stations near a point**, with any latitude/longitude, and read the response.
+
+Build:
+
+1. New shortcut, named as in 11b (it is still what you say to Siri).
+2. **Add action** → search `Get Current Location`. This is Apple's own, so it
+   works whatever the Home Assistant app is doing.
+3. **Add action** → search `Text` → **Text**. Paste this, then replace the two
+   placeholders using the variable bar: put **Current Location → Latitude**
+   where `LAT` is, and **Longitude** where `LON` is. Everything else is typed.
+
+   ```json
+   {"latitude": LAT, "longitude": LON, "fuel": "blyfri95", "radius_km": 15}
+   ```
+
+4. **Add action** → search `Get contents of URL`. Set the URL to your own Home
+   Assistant, keeping the path exactly:
+
+   ```
+   https://your-home-assistant/api/services/tankpriser/nearby?return_response=true
+   ```
+
+   Expand it with ⌄ and set:
+   - **Method**: `POST`
+   - **Headers**: `Authorization` = `Bearer <your token>`, and
+     `Content-Type` = `application/json`
+   - **Request Body**: **File**, then pick the **Text** action from step 3.
+5. **Add action** → search `Get Dictionary Value`. **Get** *Value for*
+   `service_response.spoken` **in** *Contents of URL*.
+6. **Add action** → **Speak Text**, fed by that dictionary value. Expand with ⌄
+   and turn **Wait Until Finished** on.
+7. **Add action** → **Get Dictionary Value** again: *Value for*
+   `service_response.urls` **in** *Contents of URL*.
+8. **Add action** → **Ask for Input**, **Input type: Number**, **Prompt**
+   *"Hvilken station? Sig et nummer."* — then **Get Item from List** (the urls),
+   **Item at Index**, index = **Provided Input**. Finish with a second **Speak
+   Text** (`Kører til nummer ` + Provided Input, **Wait Until Finished** on) and
+   **Open URLs** pointing at **Get Item from List**, exactly as in 11c.
+
+Notes worth knowing:
+
+- **`urls` lines up with the stations she names.** Station 2 is `urls` item 2,
+  always. A station whose position is only estimated gets an **empty** entry
+  rather than being left out, so the numbering can never quietly shift and send
+  you to the next forecourt along; picking it simply opens nothing.
+- **`fuel` is optional** — leave it out of the JSON and it uses the first fuel
+  your area is configured for. `radius_km` is optional too (default 15).
+- **`maps`** can be `google` (default), `apple` or `osm`, if you want the links
+  to open something else.
+- This works from an **automation** too — `tankpriser.nearby` with
+  `response_variable: fuel` and then `{{ fuel.spoken }}` — which is how you
+  would have it announce itself on a speaker rather than waiting to be asked.
 
 ### 12. Adding a car for prediction
 
@@ -935,6 +1015,7 @@ integration something else, that name is used instead.
 
 | Service | What it does |
 | --- | --- |
+| `tankpriser.nearby` | The cheapest stations around a position **you supply**, returned directly to the caller — a spoken sentence, the ranked stations, and one navigation URL per station. No entity, no device tracker, nothing that can be stale in between. Fields: `latitude`, `longitude` (both required), `fuel`, `radius_km`, `maps`. Used by the Siri shortcut in [11f](#11f-the-sturdy-version-no-home-assistant-app-involved), and by any automation that wants to announce prices unprompted |
 | `tankpriser.seed_demo_history` | Injects synthetic tanks into a car so the prediction shows a number immediately. For testing and demos — **it overwrites learned history**. Fields: `car` (blank = all), `tanks`, `litres_per_day`, `days_per_tank` |
 | `tankpriser.reset_history` | Clears a car's learned history, returning it to `learning`. Use after changing the tank size, or to undo a demo seed. Field: `car` (blank = all) |
 

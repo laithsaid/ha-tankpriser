@@ -30,14 +30,14 @@ custom_components/tankpriser/
   geo.py             DAWA area resolution + postnummer centres
   geocode.py         DAWA address -> coordinates for Q8/F24 (disk-cached)
   coordinator.py     per-entry DataUpdateCoordinator (+ .cars trackers)
-  nearby.py          pure ranking of stations around a point (haversine)
+  nearby.py          pure: ranking around a point + the spoken sentence
   sensor.py          TankpriserSensor, NearbyStationsSensor, CarPredictionSensor
   websocket.py       tankpriser/stations command
   notifications.py   price-change notify + event
   config_flow.py     initial + options + car-subentry flows
   consumption.py     ConsumptionTracker (HA glue for prediction)
   prediction.py      pure learning model + estimator
-  services.py/.yaml  seed_demo_history, reset_history
+  services.py/.yaml  nearby (response data), seed_demo_history, reset_history
   diagnostics.py     redacted diagnostics
   www/               tankpriser-card.js + vendored Leaflet/icons
   brand/             bundled brand icons (HA 2026.3+)
@@ -51,6 +51,7 @@ tests/
   test_card_registration.py   the Lovelace resource registration
   test_spoken.py     the sentence the nearby sensor hands to Siri
   test_nearby.py     ranking stations around a position
+  test_service_urls.py  the nearby service's navigation links stay index-aligned
 package.json         jsdom, for the tests only — the integration ships no JS deps
 scratchpad/          local-only experiments (git-ignored)
 ```
@@ -281,14 +282,14 @@ What each file is for, and which function to open first.
 | `geo.py` | `postnumre_within_point`, `centers_for` | DAWA takes `cirkel=lon,lat,radius` — the reversed order is a 400. `visueltcenter` is `[lon, lat]`. Batches up to 100 postnumre per request; caches for process life. |
 | `geocode.py` | `apply`, then `_async_lookup` | Three passes, most precise first, each verified against the postnummer. `apply()` is cache-only and safe on every refresh; `async_schedule()` is the only thing that touches the network. |
 | `coordinator.py` | `_async_update_data` | The whole price pipeline in ~40 lines. `_resolve_area` is cached per radius; `self.cars` is populated by `__init__` *after* the first refresh. |
-| `nearby.py` | `rank_nearby` | Pure, no HA imports. A bounding box rejects most of the country before any trigonometry, because this runs over every station on every GPS fix. |
+| `nearby.py` | `rank_nearby`, `spoken_sentence` | Pure, no HA imports. A bounding box rejects most of the country before any trigonometry, because this runs over every station on every GPS fix. The sentence builder lives here too — same inputs, and it keeps `services.py` from importing the sensor platform. |
 | `sensor.py` | `extra_state_attributes` (all three classes) | Sensors are stateless views. `CarPredictionSensor` and `NearbyStationsSensor` also subscribe outside the coordinator's cycle — to their tracker and to the nominated device respectively. `NearbyStationsSensor` exists only because no car platform will render a map: it puts the cheapest nearby station's coordinates on itself, which is what Android Auto navigates to. It ranks over `data.nationwide`, **not** the area list — the device it follows drives out of the area, and ranking inside it answered "cheapest near you" with the stations near *home*. See the in-car section of the [README](../README.md#11-setting-up-the-in-car-sensors). |
-| `websocket.py` | `ws_stations` | Not admin-only, deliberately: any user's dashboard needs it. |
+| `websocket.py` | `ws_stations` | Not admin-only, deliberately: any user's dashboard needs it. The payload build is `coordinator.async_national_stations()`, shared with the `nearby` service so the map and the voice answer cannot disagree. |
 | `notifications.py` | `_evaluate_fuel` | Four rules: `threshold` (fires on crossing, not while below), `decrease`, `cheapest` (any change to the cheapest), `any` (any station's price for that fuel). Compares two `TankpriserData` snapshots. |
 | `config_flow.py` | `async_step_user`, then `TankpriserOptionsFlow.async_step_init` | Single entry (`async_set_unique_id(DOMAIN)`). Options is a menu: settings / notifications / chains → provider. Cars are **subentries** (`CarSubentryFlowHandler`), which is why one entry can hold several cars. |
 | `consumption.py` | `_ingest_current`, `location` | The only HA-aware half of the prediction. `location` walks four fallbacks (see below); the registry walk is lazy and normally never runs. |
 | `prediction.py` | `ConsumptionModel.add_reading`, `predict` | Pure, no HA imports — unit-tested directly. |
-| `services.py` | `_seed`, `_reset` | Iterate `hass.data[DOMAIN][*].cars`; `seed_demo_history` fabricates tanks so the prediction can be demoed without waiting weeks. |
+| `services.py` | `_nearby`, `_seed`, `_reset` | `nearby` is `SupportsResponse.ONLY`: it ranks `async_national_stations()` around a caller-supplied point and returns `spoken` + `stations` + `urls`. `urls` is index-aligned with `stations`, an estimated position giving `""` rather than being dropped — closing the gap would shift the numbering and navigate to the wrong forecourt. The other two iterate `hass.data[DOMAIN][*].cars`. |
 | `diagnostics.py` | `async_get_config_entry_diagnostics` | Redacts credentials, area name and notify target; keeps the postnummer. |
 | `www/tankpriser-card.js` | `setConfig`, `_update`, `_updateMap` | See [Walkthrough 3](#walkthrough-3-the-card-paints-the-map). |
 

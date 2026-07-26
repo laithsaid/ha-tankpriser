@@ -38,6 +38,7 @@ jobs:
           python tests/test_card_registration.py
           python tests/test_spoken.py
           python tests/test_nearby.py
+          python tests/test_service_urls.py
       - name: Byte-compile the integration
         run: python -m compileall -q custom_components/tankpriser
 

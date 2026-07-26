@@ -9,16 +9,14 @@ the next town being offered the stations at home.
 
 from __future__ import annotations
 
-import importlib.util
 import os
+import sys
 from dataclasses import dataclass, field
 
-BASE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "custom_components", "tankpriser"
-)
-spec = importlib.util.spec_from_file_location("tp_nearby", os.path.join(BASE, "nearby.py"))
-nearby = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(nearby)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _load_nearby import load_nearby  # noqa: E402
+
+nearby = load_nearby()
 
 rank_nearby = nearby.rank_nearby
 haversine_m = nearby.haversine_m

@@ -651,6 +651,39 @@ config while hidden rather than being wiped. Covered by tests in
 
 ---
 
+## 5c. Test the `nearby` service
+
+The service the sturdy Siri shortcut uses (README 11f). It needs no phone and no
+device tracker — you hand it a position.
+
+**Developer tools → Actions → "Tankpriser: Cheapest stations near a point"**,
+switch to YAML mode, and run:
+
+```yaml
+action: tankpriser.nearby
+data:
+  latitude: 56.1697
+  longitude: 9.5451
+  radius_km: 15
+```
+
+| Check | Expect |
+| --- | --- |
+| Response | A `spoken` sentence, `count`, `stations`, and `urls` |
+| `spoken` | The same wording the sensor produces, in Home Assistant's language |
+| `stations` | Cheapest first, each with `distance_km` measured from the point you gave |
+| `urls` | **Exactly as many entries as `stations`**, in the same order |
+| A station with `coord_approx: true` | Its `urls` entry is an **empty string**, not missing. Dropping it would shift the numbering and send "number three" to the fourth station |
+| Move the coordinates 50 km | Entirely different stations — this is the proof that it measures from what you pass, not from Home |
+| No `fuel:` given | Uses the first fuel your area is configured for; `fuel_type` in the response says which |
+| `maps: apple` | The URLs become `maps.apple.com` links |
+| Nothing in range (`radius_km: 1` in open country) | `count: 0`, `urls: []`, and `spoken` is "Ingen stationer i nærheden." — not an error |
+
+The URL alignment is covered offline by `tests/test_service_urls.py`, because it
+is the one property that could confidently navigate someone to the wrong place.
+
+---
+
 ## 6. Reading logs / debugging
 
 Add to `configuration.yaml` (then restart):
