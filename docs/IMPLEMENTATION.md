@@ -475,8 +475,10 @@ Two custom elements in one file:
   or the original single `entity:`), each rendered by `_carSection()`. The
   per-section car name only appears when there are several, because with one car
   the `ha-card` header already carries it; the donation ask is emitted once for
-  the whole card by `_donate()`, unconditionally — neither card has a
-  `show_donate` option any more, and an old config carrying one is ignored. Its editor picks cars with a `multiple: true`
+  the whole card by `_donate()`, unconditionally. Neither card has a
+  `show_donate` or `donate_url` option any more, and an old config carrying one
+  is ignored: the link comes from the sensor's `donate_url` attribute
+  (i.e. `const.py`), falling back to the card's own copy of `DONATE_URL`. Its editor picks cars with a `multiple: true`
   entity selector filtered to `device_class: duration` — the only Tankpriser
   sensors that have one.
 

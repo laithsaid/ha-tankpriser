@@ -448,7 +448,6 @@ entities:
 | `cars` | auto-detect | Explicit list of `…_days_until_refuel` entities to plot |
 | `car_picker` | `true` | The 🚗 button: hide/show cars **on this device only** |
 | `navigation` | `auto` | `auto` / `geo` / `apple` / `google` / `osm` / `off` |
-| `donate_url` | project link | Where the footer's "Support the project ♥" points. The footer itself is always shown |
 
 ### 6. Turning on the map
 
@@ -601,7 +600,6 @@ dropped, so nothing is said twice:
 type: custom:tankpriser-prediction-card
 entity: sensor.passat_days_until_refuel   # the single-car form still works
 title: Passat            # optional; defaults to the car's own name, "" for none
-donate_url: ""           # optional; defaults to the sensor's link
 ```
 
 Prefer one card per car — different dashboard positions, or a card each in
@@ -784,9 +782,10 @@ Bugs and chain requests: [issues](https://github.com/laithsaid/ha-tankpriser/iss
 Tankpriser is free and open source, prediction included. If it saves you money,
 a donation is genuinely appreciated: **[paypal.me/tankpriser](https://paypal.me/tankpriser)**.
 
-The same link sits in both cards' footers, always — it is one line, it never
-withholds anything, and it is all the project asks in return, so there is no
-setting to remove it. `donate_url:` points it somewhere else if you fork this.
+The same link sits in both cards' footers, always. It is one line, it withholds
+nothing, and it is the only thing the project asks in return — so there is no
+card option to hide it or to point it elsewhere. Forking? Change `DONATE_URL` in
+`const.py` (and the copy at the top of `www/tankpriser-card.js`).
 
 ## Disclaimer
 

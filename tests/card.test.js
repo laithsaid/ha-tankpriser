@@ -248,18 +248,16 @@ assert.ok(
   !fields({ show_map: true, show_cars: false }).includes("car_picker"),
   "the car picker is meaningless with no cars"
 );
-// The donation ask is not a setting: nothing in either editor switches it off,
-// and no config value can either (see the render assertions in map.test.js).
-for (const config of [{}, { show_donate: false }]) {
-  assert.ok(
-    !_predEditorSchema(config).map((f) => f.name).includes("show_donate"),
-    "the prediction editor must not offer to hide the donation ask"
-  );
+// Neither the donation ask nor where it points is a setting: no editor offers
+// either, and no config value changes them (see the renders in map.test.js).
+for (const config of [{}, { show_donate: false }, { donate_url: "https://evil.example" }]) {
+  const names = _predEditorSchema(config).map((f) => f.name);
+  assert.ok(!names.includes("show_donate"), "the prediction editor cannot hide the ask");
+  assert.ok(!names.includes("donate_url"), "nor retarget it");
 }
-assert.ok(
-  !fields({ show_map: true, show_list: true }).includes("show_donate"),
-  "nor the price card's editor"
-);
+const priceFields = fields({ show_map: true, show_list: true });
+assert.ok(!priceFields.includes("show_donate"), "nor the price card's editor");
+assert.ok(!priceFields.includes("donate_url"), "nor there");
 // Every prediction field needs a label too, and the car picker is a list now.
 const predLabels = vm.runInContext("PRED_EDITOR_LABELS", ctx);
 for (const field of _predEditorSchema({})) {

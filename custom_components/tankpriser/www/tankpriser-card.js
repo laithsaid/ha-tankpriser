@@ -70,9 +70,9 @@ function _define(tag, cls) {
   if (!customElements.get(tag)) customElements.define(tag, cls);
 }
 
-// Only http(s) links may be rendered. A dashboard config is trusted, but
-// "javascript:..." in donate_url would run in Home Assistant's origin, and
-// dashboard YAML gets copied between users.
+// Only http(s) links may be rendered. Everything routed through here arrives as
+// *data* — a car's entity_picture, the integration's own donate link — and a
+// "javascript:..." among it would run in Home Assistant's origin.
 function _safeUrl(url) {
   if (!url) return "";
   try {
@@ -458,7 +458,6 @@ class TankpriserCard extends HTMLElement {
       // The list answers "where is it cheapest" first; "distance" turns it into
       // "what is closest", with the price alongside.
       sort: config.sort === "distance" ? "distance" : "price",
-      donate_url: _safeUrl(config.donate_url) || DONATE_URL,
       // Show a live "you are here" dot on the map, updated while you move.
       show_my_location: config.show_my_location !== false,
       // Start with follow-me armed. Off by default: it takes control of the map
@@ -611,10 +610,11 @@ class TankpriserCard extends HTMLElement {
     const mapBlock = this._config.show_map
       ? `<div class="ff-map" style="height:${this._config.map_height}px"></div>`
       : "";
-    // Always shown. This is the whole of what the project asks in return, and
-    // it withholds nothing — so it is not a setting.
+    // Always shown, and always pointing at the project. This is the whole of
+    // what it asks in return, and it withholds nothing — so neither the ask nor
+    // its destination is a dashboard setting.
     const donate = `<div class="ff-donate">Enjoying this card?
-           <a href="${this._escape(this._config.donate_url)}" target="_blank" rel="noopener">Support the project ♥</a>
+           <a href="${this._escape(DONATE_URL)}" target="_blank" rel="noopener">Support the project ♥</a>
          </div>`;
 
     this.innerHTML = `
@@ -2018,11 +2018,11 @@ _define("tankpriser-card-editor", TankpriserCardEditor);
  *   entity: sensor.<car>_days_until_refuel          # or just the one
  *   title: "Passat"            # optional; defaults to the car's own name,
  *                              #   "" for no header at all
- *   donate_url: "..."          # optional; defaults to the sensor's link
  *
  * The prediction is free and complete — nothing about it is withheld or
  * degraded. The footer asking for a donation is the only thing the project
- * asks in return, so it is always shown and is not a setting.
+ * asks in return, so neither it nor where it points is a setting: a dashboard
+ * cannot hide it, and cannot send it somewhere else either.
  */
 class TankpriserPredictionCard extends HTMLElement {
   setConfig(config) {
@@ -2042,7 +2042,6 @@ class TankpriserPredictionCard extends HTMLElement {
       // indistinguishable without a title nobody knew they had to write.
       // `title: ""` still means no header.
       title: config.title === undefined || config.title === null ? null : String(config.title),
-      donate_url: _safeUrl(config.donate_url) || "",
     };
     this._built = false;
   }
@@ -2113,10 +2112,12 @@ class TankpriserPredictionCard extends HTMLElement {
   }
 
   _donate(st) {
+    // The integration's own link first: `const.py` is the source of truth, and
+    // reading it from the sensor keeps the card in step when the backend
+    // changes it. Falls back to this file's copy for a sensor too old to carry
+    // it. Validated, because it arrives as data even though it is our own.
     const donateUrl =
-      this._config.donate_url ||
-      _safeUrl(st && st.attributes ? st.attributes.donate_url : "") ||
-      DONATE_URL;
+      _safeUrl(st && st.attributes ? st.attributes.donate_url : "") || DONATE_URL;
     return `<div class="tp-pred-donate">
          This prediction took real work to build. If it's useful,
          <a href="${this._escape(donateUrl)}" target="_blank" rel="noopener">please consider a donation 💛</a>
@@ -2280,7 +2281,6 @@ const PRED_EDITOR_FIELDS = {
       },
     },
   },
-  donate_url: { name: "donate_url", selector: { text: {} } },
 };
 
 // Cached for the same reason as the price card's schema: a fresh array on every
@@ -2288,8 +2288,9 @@ const PRED_EDITOR_FIELDS = {
 const _predSchemaCache = new Map();
 
 function _predEditorSchema(_config) {
-  // The donation ask is not configurable — see the card's own comment.
-  const names = ["title", "entities", "donate_url"];
+  // Neither the donation ask nor its destination is configurable — see the
+  // card's own comment.
+  const names = ["title", "entities"];
   const key = names.join(",");
   if (!_predSchemaCache.has(key)) {
     _predSchemaCache.set(key, names.map((name) => PRED_EDITOR_FIELDS[name]));
@@ -2299,7 +2300,6 @@ function _predEditorSchema(_config) {
 const PRED_EDITOR_LABELS = {
   title: "Title (default: the car's name)",
   entities: "Which cars (their …_days_until_refuel sensors)",
-  donate_url: "Donation link (optional)",
 };
 
 class TankpriserPredictionCardEditor extends HTMLElement {

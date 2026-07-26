@@ -348,6 +348,30 @@ const clusterIcons = (card) =>
     noDonate.querySelectorAll(".ff-donate").length, 1,
     "nor the price card's"
   );
+
+  // …and it cannot be pointed somewhere else either. A dashboard is shared, and
+  // its YAML gets copied between installs; redirecting the project's own ask
+  // was a setting that only ever helped whoever changed it.
+  const hijack = { donate_url: "https://evil.example/pay" };
+  const hijacked = await mount({ [PRICE_ENTITY]: priceState() }, { show_map: false, ...hijack });
+  const priceLink = hijacked.querySelector(".ff-donate a").getAttribute("href");
+  assert.strictEqual(priceLink, "https://paypal.me/tankpriser", priceLink);
+  const predLink = mountPred(hijack).querySelector(".tp-pred-donate a").getAttribute("href");
+  assert.strictEqual(predLink, "https://paypal.me/tankpriser", predLink);
+
+  // The integration is the source of truth: `const.py` puts the link on the
+  // sensor, and the card follows it, so changing it in one place is enough.
+  const moved = new Pred();
+  moved.setConfig({ entity: PRED_ENTITY });
+  window.document.getElementById("host").appendChild(moved);
+  const movedState = predState("Passat");
+  movedState.attributes.donate_url = "https://ko-fi.com/tankpriser";
+  moved.hass = hass({ [PRED_ENTITY]: movedState });
+  assert.strictEqual(
+    moved.querySelector(".tp-pred-donate a").getAttribute("href"),
+    "https://ko-fi.com/tankpriser",
+    "the backend's link wins over the card's built-in copy"
+  );
   assert.strictEqual(header(both), null, "a multi-car card takes no car's name as its header");
   assert.strictEqual(header(mountPred({})), "Passat", "…but a single-car card still does");
   // A single car must not be labelled twice — the ha-card header already says it.
