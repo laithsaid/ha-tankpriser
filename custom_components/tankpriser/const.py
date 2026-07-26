@@ -214,8 +214,10 @@ MAX_RAW_SAMPLES: Final = 500
 MAX_SEGMENTS: Final = 50
 
 # Donation is by free will: the prediction works for everyone, we simply ask.
-# Placeholder until the real Ko-fi / MobilePay handle is wired in (issue 4).
-DONATE_URL: Final = "https://github.com/laithsaid/ha-tankpriser"
+# PayPal.Me rather than Ko-fi: the tip platforms price in USD/EUR only, and this
+# is a Danish audience paying for Danish fuel. The card carries its own copy of
+# this URL (www/tankpriser-card.js) — change both together.
+DONATE_URL: Final = "https://paypal.me/tankpriser"
 
 # Chain identification, for discounts. A station only tells us a `company`
 # string ("Q8 Service", "F24", "OK Plus"…), so each chain is matched by pattern.

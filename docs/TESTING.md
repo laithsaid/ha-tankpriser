@@ -392,8 +392,9 @@ Tracked here and in the project notes so nothing is lost while testing:
   - Circle K / INGO — email **fueldkapi@circlekeurope.com** for access; they
     suggest waiting for their modernized API.
   - Uno-X — needs a bearer token and endpoint discovery.
-- [ ] **Real donate link** — the card/README still use a placeholder (the repo
-      URL); replace with a real Ko-fi/MobilePay handle when you have one.
+- [x] **Real donate link** — `https://paypal.me/tankpriser`, in `const.py` and
+      `www/tankpriser-card.js` (two copies, keep them in step). Ko-fi and the
+      other tip platforms were ruled out: none of them price in DKK.
 - [ ] **Optional: exact geocoding for Q8/F24** — they ship no coordinates, so
       they're pinned at their postnummer centre (flagged `≈`). Could geocode
       their addresses via DAWA for exact map pins.

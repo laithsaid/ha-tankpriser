@@ -50,8 +50,11 @@
 // reach unpkg (DNS filtering, Private Relay, WAN down while HA is local).
 const VENDOR = "/tankpriser/vendor";
 
-// Where "Support the project" points unless a dashboard overrides it.
-const DONATE_URL = "https://github.com/laithsaid/ha-tankpriser";
+// Where "Support the project" points unless a dashboard overrides it. Kept in
+// step with DONATE_URL in const.py, which the prediction sensor publishes as an
+// attribute — the price card never reads that attribute, so this copy is the
+// one it renders.
+const DONATE_URL = "https://paypal.me/tankpriser";
 
 // The integration publishes this file both as a frontend extra_module_url and
 // as a Lovelace resource. Normally that is one and the same URL, so the browser
