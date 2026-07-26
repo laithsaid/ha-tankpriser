@@ -27,7 +27,7 @@ from .const import (
 )
 from .consumption import ConsumptionTracker, zone_coords
 from .coordinator import TankpriserCoordinator
-from .nearby import rank_nearby, spoken_sentence
+from .nearby import rank_nearby, spoken_cheapest, spoken_sentence
 
 
 async def async_setup_entry(
@@ -394,10 +394,10 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
             self._fuel_key,
         )
 
-    def _spoken(self, ranked: list[dict]) -> str:
-        """The three cheapest as a sentence, in Home Assistant's language."""
+    def _danish(self) -> bool:
+        """Whether to phrase things in Danish, per Home Assistant's language."""
         language = str(getattr(self.hass.config, "language", "") or "")
-        return spoken_sentence(ranked, danish=language.lower().startswith("da"))
+        return language.lower().startswith("da")
 
     @property
     def native_value(self) -> float | None:
@@ -427,8 +427,12 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
             # are only 8 stations near you", which was never true.
             "station_count": len(ranked),
             "listed_count": min(len(ranked), NEARBY_MAX_STATIONS),
-            # Ready to hand to "Speak Text" in a Siri Shortcut, in HA's language.
-            "spoken": self._spoken(ranked),
+            # Both ready to hand straight to "Speak Text" in a Siri Shortcut,
+            # in HA's language. `spoken_cheapest` is the one the documented
+            # shortcut uses: one station, no list to hold in your head while
+            # driving. `spoken` names three, for anyone who wants to choose.
+            "spoken_cheapest": spoken_cheapest(ranked, danish=self._danish()),
+            "spoken": spoken_sentence(ranked, danish=self._danish()),
             "stations": ranked[:NEARBY_MAX_STATIONS],
         }
         if best is not None:

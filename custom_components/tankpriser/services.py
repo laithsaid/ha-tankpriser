@@ -42,7 +42,7 @@ from .const import (
     SPOKEN_STATIONS,
 )
 from .coordinator import async_national_stations, credentials_of, discounts_of
-from .nearby import rank_nearby, spoken_sentence
+from .nearby import rank_nearby, spoken_cheapest, spoken_sentence
 
 SERVICE_NEARBY = "nearby"
 SERVICE_SEED_DEMO = "seed_demo_history"
@@ -145,6 +145,7 @@ def async_register_services(hass: HomeAssistant) -> None:
             fuel,
         )
         language = str(getattr(hass.config, "language", "") or "")
+        danish = language.lower().startswith("da")
         listed = ranked[:NEARBY_MAX_STATIONS]
         template = _MAPS_URL[call.data[ATTR_MAPS]]
         return {
@@ -154,7 +155,9 @@ def async_register_services(hass: HomeAssistant) -> None:
             # In range, not listed below: a count that silently equalled the cap
             # reads as "there are only 8 stations near you", which is never true.
             "count": len(ranked),
-            "spoken": spoken_sentence(ranked, danish=language.lower().startswith("da")),
+            # One station, said plainly — what the documented shortcut speaks.
+            "spoken_cheapest": spoken_cheapest(ranked, danish=danish),
+            "spoken": spoken_sentence(ranked, danish=danish),
             "spoken_count": min(len(ranked), SPOKEN_STATIONS),
             "stations": listed,
             # Index-aligned with `stations`, so "the third one she named" is

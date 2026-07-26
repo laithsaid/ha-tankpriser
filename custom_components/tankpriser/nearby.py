@@ -129,6 +129,33 @@ def _spoken_place(station: dict) -> str:
     return " ".join(p for p in (station.get("company"), station.get("city")) if p)
 
 
+def _number(value: float, danish: bool, decimals: int = 2) -> str:
+    """A figure written the way the language reads it aloud.
+
+    Danish wants a decimal comma: "16,79 kroner" is read as sixteen seventy-nine,
+    where "16.79" comes out as "sixteen point seven nine".
+    """
+    text = f"{value:.{decimals}f}"
+    return text.replace(".", ",") if danish else text
+
+
+def spoken_cheapest(ranked: list[dict], danish: bool) -> str:
+    """The single cheapest station as a sentence.
+
+    For the shortcut that asks nothing and simply drives you there: one station,
+    named, priced and placed, with no list to hold in your head at 110 km/h.
+    """
+    if not ranked:
+        return "Ingen stationer i nærheden." if danish else "No stations nearby."
+    best = ranked[0]
+    price = _number(best["price"], danish)
+    distance = _number(best["distance_km"], danish, 1)
+    place = _spoken_place(best)
+    if danish:
+        return f"Billigste er {place}, {price} kroner, {distance} kilometer væk."
+    return f"The cheapest is {place}, {price} kroner, {distance} kilometres away."
+
+
 def spoken_sentence(ranked: list[dict], danish: bool) -> str:
     """The cheapest few stations as a sentence, ready to be read aloud.
 
@@ -141,10 +168,6 @@ def spoken_sentence(ranked: list[dict], danish: bool) -> str:
     if not ranked:
         return "Ingen stationer i nærheden." if danish else "No stations nearby."
 
-    def number(value: float, decimals: int = 2) -> str:
-        text = f"{value:.{decimals}f}"
-        return text.replace(".", ",") if danish else text
-
     top = ranked[:SPOKEN_STATIONS]
     # A chain often prices every forecourt identically — OK does, nationally —
     # and then repeating the figure per station spends the listener's attention
@@ -154,7 +177,7 @@ def spoken_sentence(ranked: list[dict], danish: bool) -> str:
     lines: list[str] = []
     if same_price:
         count = _COUNT_WORDS[danish].get(len(top), str(len(top)))
-        price = number(top[0]["price"])
+        price = _number(top[0]["price"], danish)
         lines.append(
             f"Alle {count} koster {price} kroner."
             if danish
@@ -164,10 +187,10 @@ def spoken_sentence(ranked: list[dict], danish: bool) -> str:
     label = "Nummer" if danish else "Number"
     unit = "kilometer" if danish else "kilometres"
     for index, station in enumerate(top, start=1):
-        distance = f"{number(station['distance_km'], 1)} {unit}."
+        distance = f"{_number(station['distance_km'], danish, 1)} {unit}."
         if same_price:
             tail = distance
         else:
-            tail = f"{number(station['price'])} kroner, {distance}"
+            tail = f"{_number(station['price'], danish)} kroner, {distance}"
         lines.append(f"{label} {index}: {_spoken_place(station)}, {tail}")
     return " ".join(lines)

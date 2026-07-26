@@ -653,8 +653,9 @@ config while hidden rather than being wiped. Covered by tests in
 
 ## 5c. Test the `nearby` service
 
-The service the sturdy Siri shortcut uses (README 11f). It needs no phone and no
-device tracker — you hand it a position.
+Answers from a position you hand it — no phone, no device tracker, nothing that
+can be stale in between. Used by automations, and by any client that can POST
+to the REST API.
 
 **Developer tools → Actions → "Tankpriser: Cheapest stations near a point"**,
 switch to YAML mode, and run:

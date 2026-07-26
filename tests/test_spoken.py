@@ -83,6 +83,39 @@ def test_no_stations(spoken) -> None:
     assert spoken.spoken_sentence([], danish=False) == "No stations nearby."
 
 
+def test_cheapest_names_one_station(spoken) -> None:
+    """The sentence the documented shortcut speaks: one station, no list.
+
+    Same trimming and the same Danish decimal comma as the three-station
+    version, because it is read aloud in a car just the same.
+    """
+    ranked = [
+        station("OK Nordre Ringvej 110", 16.19, 1.9),
+        station("Q8 Vestergade 5", 16.49, 1.2, company="Q8"),
+    ]
+    assert spoken.spoken_cheapest(ranked, danish=True) == (
+        "Billigste er OK Nordre Ringvej, 16,19 kroner, 1,9 kilometer væk."
+    ), spoken.spoken_cheapest(ranked, danish=True)
+    assert spoken.spoken_cheapest(ranked, danish=False) == (
+        "The cheapest is OK Nordre Ringvej, 16.19 kroner, 1.9 kilometres away."
+    ), spoken.spoken_cheapest(ranked, danish=False)
+
+
+def test_cheapest_says_the_second_station_nothing(spoken) -> None:
+    """It names the first and only the first — the list is deliberately gone."""
+    ranked = [
+        station("OK Nordre Ringvej 110", 16.19, 1.9),
+        station("Q8 Vestergade 5", 16.49, 1.2, company="Q8"),
+    ]
+    said = spoken.spoken_cheapest(ranked, danish=True)
+    assert "Q8" not in said and "Nummer" not in said, said
+
+
+def test_cheapest_with_no_stations(spoken) -> None:
+    assert spoken.spoken_cheapest([], danish=True) == "Ingen stationer i nærheden."
+    assert spoken.spoken_cheapest([], danish=False) == "No stations nearby."
+
+
 def test_house_number_trimming(spoken) -> None:
     cases = {
         "OK Nordre Ringvej 110": "OK Nordre Ringvej",

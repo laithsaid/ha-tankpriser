@@ -15,10 +15,10 @@ that is a bad way to follow instructions with one hand on a steering wheel.
 | | |
 | --- | --- |
 | **11a** | Setting up your iPhone — the six iOS settings that decide whether any of it works |
-| **11b** | The shortcut, first version — eight actions |
-| **11c** | Choosing the station out loud |
-| **11d** | When it does not work |
-| **11e** | Variants, and one that does not work |
+| **11b** | The shortcut — six actions, no questions asked |
+| **11c** | When it does not work |
+| **11d** | Already navigating? What that can and cannot do |
+| **11e** | Variants |
 
 Android Auto needs no shortcut at all: add the sensor to the companion app's
 Android Auto favourites and it appears in the driving list, with navigation
