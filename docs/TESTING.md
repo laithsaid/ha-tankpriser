@@ -803,9 +803,25 @@ Tracked here and in the project notes so nothing is lost while testing:
 
 ### Backlog (feature ideas)
 
-- [ ] **EV charging stations + prices** — check which chains expose charging
-      (Q8 already returns an `HPC` kWh product we currently skip); decide how to
-      model kr./kWh alongside kr./L, likely as a separate sensor/group.
+- [ ] **EV charging stations + prices** — the blocker is *prices*, not
+      locations. Locations are solved: the Danish NAP (Dataudveksleren) has
+      keyless DATEX II feeds covering ~3600 sites, and Clever's own API another
+      2000 — but **neither carries a tariff**, and Q8's `HPC` product (which we
+      currently skip) is a single flat 3,49 kr./kWh nationwide, so there is
+      nothing to rank. Candidates still unchecked, in order of promise:
+      **Chargeprice** (`api.chargeprice.app` — a real price-comparison API;
+      check its key policy and licence), **ChargeFinder** and **Electromaps**
+      (both consumer apps — find out whether an API exists and whether the
+      prices are operator-fed or crowdsourced, since crowdsourced free text is
+      what made Open Charge Map's `UsageCost` useless). **Hubject** is a B2B
+      roaming backend needing a commercial contract — not viable here. The
+      national mapping work (Klimadatastyrelsen / Vejdirektoratet) *is* the NAP
+      already checked: locations, no prices.
+      Two design problems survive whatever source wins: an EV price is not one
+      number (base + per-kWh + per-minute + idle fee + VAT + customer tier +
+      time of day), and the card assumes a single unit — `_areaStations()` picks
+      a headline price with `Math.min()` across fuels, so 3,49 kr./kWh would
+      beat 16,79 kr./L and mislabel a station as cheapest.
 - [ ] **OIL! station icon** — confirm the OIL! favicon renders well on the map;
       if not, source a better official OIL! icon (applies to any chain whose
       favicon looks poor).
