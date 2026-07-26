@@ -176,64 +176,375 @@ A common failure is nesting it one level too deep
 
 ---
 
-## 2. Add an area and check it loads
+## 2. Add the integration and check it loads
+
+The area is your **HA Home location** — the setup form no longer asks for a
+postnummer. Set the Home location first (**Settings → System → General**),
+otherwise there is no area to search and no stations will be found.
 
 1. **Settings → Devices & Services → Add Integration → Tankpriser**.
-2. Enter postnummer `8600`, radius `10 km`, tick **Blyfri 95 (E10)** and
-   **Diesel (B7)** → **Submit**.
-3. You should get a **Tankpriser 8600** device with sensors.
+2. Leave the name blank (or give it one — it becomes the device name and the
+   notification title), tick **Blyfri 95 (E10)** and **Diesel (B7)** →
+   **Submit**.
+3. You should get a **Tankpriser** device with one sensor per fuel.
+4. **Configure** → **Area & fuel types** to set the radius; it defaults to 10 km.
 
-For 8600 Silkeborg at 10 km this yields ~21 stations (OK, Q8, F24, Shell and
-OIL!). If setup fails with "not ready", a provider or DAWA was briefly
+For a Home location in Silkeborg at 10 km this yields ~21 stations (OK, Q8, F24,
+Shell and OIL!). If setup fails with "not ready", a provider or DAWA was briefly
 unreachable — Reload the entry and check the logs (step 6).
+
+> Entries created before v0.11 still carry their stored postnummer and keep using
+> it; only new entries are Home-based. Both are supported on purpose.
 
 ---
 
 ## 3. Verify the sensor data
 
-**Developer Tools → States**, filter `tankpriser` (or `sensor.8600`):
+**Developer Tools → States**, filter `tankpriser`:
 
 - State = the cheapest price, e.g. `16.79`.
 - Expand **Attributes** — you should see:
   - `stations`: a list of `{name, company, postnummer, city, address, price,
-    updated, latitude, longitude, coord_approx}`
+    list_price, discount_ore, updated, latitude, longitude, coord_approx}`,
+    **sorted cheapest first**
   - `cheapest_station`, `cheapest_price`, `average_price`, `station_count`,
-    `postnummer`, `radius`.
+    `discounted`, `area`, `radius`, `fuel_type`, `fuel_key`.
 
 If `stations` is populated, the whole pipeline (providers → DAWA filter →
 normalize) works end-to-end. 🎉
+
+Two things worth checking here, because everything downstream trusts them:
+
+- **`coord_approx`** should be `true` on some Q8/F24 stations and `false` on the
+  rest. All-true means geocoding never ran; all-false is suspicious.
+- **Ordering.** The card renders `stations` in the order given, so if the first
+  entry is not the cheapest, the bug is here and not in the card.
+
+The `…_cheapest_nearby` sensors only exist once you nominate a device under
+**Configure → Area & fuel types**; testing those is
+[`IN_THE_CAR.md`](IN_THE_CAR.md).
 
 **Force a refresh without waiting 30 min:** Settings → the Tankpriser integration
 → **⋮ → Reload**. (This re-fetches once.)
 
 ---
 
-## 4. Add the dashboard card
+## 4. The dashboard cards
 
-1. Edit a dashboard → **+ Add Card** → search **“Tankpriser Prices”**.
-   - If it doesn't appear, hard-refresh the browser (Ctrl+F5) to clear the old
-     JS, then retry. The card is auto-registered by the integration.
-2. Configure it:
+Two cards ship **inside** the integration — no HACS frontend repository, no
+`resources:` entry to add by hand:
+
+| Card | Type | What it is |
+| --- | --- | --- |
+| **Tankpriser Prices** | `custom:tankpriser-card` | The price table, the map, or both |
+| **Tankpriser Prediction** | `custom:tankpriser-prediction-card` | One car's refuel forecast |
+
+The price card is what people look at every day, so it gets the most attention
+here. Work 4a → 4j in order the first time; afterwards each part stands alone.
+Every option mentioned is listed in the README's card-options table if you want
+the one-line version.
+
+> **Test on at least two clients** — a desktop browser *and* the mobile app. They
+> receive the card by two different routes (a `<script>` tag injected into
+> `index.html`, and a Lovelace resource fetched over the websocket), and only one
+> of them fails at a time. A card that works on your laptop can still be a red
+> "Configuration error" box on your phone.
+
+---
+
+### 4a. Get it on screen
+
+1. Edit a dashboard → **+ Add Card** → stay on the **By card** tab → type `tank`.
+
+   The dialog also has a **By entity** tab; custom cards do not appear there.
+   Searching "tank" on that tab finds your `sensor.tankpriser_*` entities and
+   builds a generic Entities card instead, which is not what you are testing.
+
+   **Pass:** both cards are listed, **each exactly once**. Listed twice means a
+   leftover hand-added resource pointing at a second copy of the file — check
+   **Settings → Dashboards → ⋮ → Resources**.
+
+2. Pick **Tankpriser Prices**. It must open a **visual editor** (a form with
+   labelled fields), not a raw YAML box, and it should have pre-filled an entity
+   it found by itself.
+
+3. Open the browser console (F12).
+
+   **Pass:** exactly one `TANKPRISER-CARD loaded` line. Two means the file is
+   being loaded twice — harmless by design, but worth fixing.
+
+Not in the picker at all? Hard-refresh (Ctrl+F5); on the mobile app, fully close
+and reopen it (pull-to-refresh does *not* refetch `index.html`). Then check the
+Resources list holds `/tankpriser/tankpriser-card.js?v=<version>` with a version
+matching `manifest.json`.
+
+---
+
+### 4b. The price list, without the map
+
+This is the offline half: with `show_map: false` the card makes **no external
+request at all**. Testing it separately is also how you prove that the map's
+OpenStreetMap tiles are the only thing that ever leaves your network.
 
 ```yaml
 type: custom:tankpriser-card
-title: Fuel near 8600
-show_map: true          # optional; plots the stations on a map
-map_height: 320         # optional px
+title: Fuel near home
+show_map: false
 entities:
-  - sensor.8600_blyfri_95_e10
-  - sensor.8600_diesel_b7
+  - sensor.tankpriser_blyfri_95_e10
+  - sensor.tankpriser_diesel_b7
 ```
 
-You should see a per-station table with the cheapest row highlighted, and a
-donate line in the footer. (Entity ids may differ — copy the real ones from
-Developer Tools → States.)
+(Entity ids differ if you named the integration something other than
+"Tankpriser" — copy the real ones from Developer Tools → States.)
 
-**Map (`show_map: true`):** stations are drawn as coloured dots — green =
-cheapest, blue = normal, amber/semi-transparent = approximate location (a
-Q8/F24 station shown at its postnummer centre). Click a dot for prices. The map
-uses Leaflet + OpenStreetMap loaded from a CDN, so it needs internet from the
-browser viewing the dashboard; the price table works offline regardless.
+| Check | Expect |
+| --- | --- |
+| Sections | One block per entity, in config order |
+| Block header | Left: the fuel's display name, e.g. `Blyfri 95 (E10)`. Right: `Home · 10 km · 21 st.` — area, radius, and how many stations sell *that* fuel |
+| Row order | **Cheapest first.** The sensor's `stations` attribute is already sorted by price; the card does not re-sort, so a wrong order means the sensor is wrong, not the card |
+| Cheapest row | Visibly highlighted |
+| Price format | Two decimals plus the unit, e.g. `16,79 kr./L` |
+| Row subtext | The chain's own "prices last changed" timestamp under the station name, where the provider supplies one |
+| `≈` after a name | Hover → "Approximate location (postnummer centre)". Expect these on some Q8/F24 rows and nowhere else |
+| Footer | "Enjoying this card? **Support the project ♥**" → `paypal.me/tankpriser` |
+
+Then vary one thing at a time:
+
+| Change | Expect |
+| --- | --- |
+| `highlight_cheapest: false` | Highlight gone, order unchanged |
+| `max_stations: 5` | Exactly 5 rows — the **5 cheapest**, not the first 5 by name |
+| `title` removed | No card header; the per-fuel block headers remain |
+| `show_donate: false` | Footer link gone |
+| `donate_url: https://example.com` | Footer points there instead |
+| `donate_url: javascript:alert(1)` | **Silently ignored** — falls back to the default link. This is a deliberate guard; if the alert fires, that is a security bug |
+| A bad entity id | `Unknown entity: sensor.nope` |
+| Every station hidden (Configure → Hide these stations) | `No prices available.` |
+
+**Cross-check the card against the sensor.** In Developer Tools → States for the
+same entity: the card's first row must match `cheapest_station` /
+`cheapest_price`, and the header count must equal `station_count`. A mismatch
+means the card is rendering a stale state.
+
+---
+
+### 4c. Loyalty discounts in the list
+
+Discounts are applied in the backend, so the card needs no special handling —
+this is how you prove that.
+
+1. Configure → **Loyalty discounts** → set **OK** to `20` → Submit. The entry
+   reloads itself.
+2. Watch any OK station's row.
+
+| Check | Expect |
+| --- | --- |
+| The price | Lower by exactly 0,20 kr |
+| A `−20` badge | Immediately before the price, on discounted rows only |
+| Badge tooltip | `Pumpepris 16,99 · rabat 20 øre` |
+| Non-OK rows | Untouched |
+| The cheapest row | **May move** — the cheapest-of is computed on what *you* pay. That is the whole point of the feature, not a bug |
+| Sensor attributes | `discounted: true`; the discounted stations carry `list_price` and `discount_ore` |
+
+Set it back to `0` afterwards unless you really hold that card — every other
+test in this document reads prices.
+
+---
+
+### 4d. The map, `coverage: area`
+
+```yaml
+type: custom:tankpriser-card
+show_map: true
+coverage: area
+show_list: true
+map_height: 320
+entities:
+  - sensor.tankpriser_blyfri_95_e10
+```
+
+| Check | Expect |
+| --- | --- |
+| First paint | The map fits all its markers. It must **not** open on the whole world or on 0,0 |
+| Marker count | Matches the list, minus any station that could not be placed at all |
+| Marker content | The chain's logo plus the price. A chain with no bundled icon falls back to a coloured letter code — both are correct |
+| Cheapest marker | Green border, green price |
+| Approximate markers | **Dashed** border |
+| Clusters | Nearby markers merge into one showing the **lowest** price inside it, a few chain icons, `+N` when there are more, and the count |
+| Zoom in | Clusters break down to individual forecourts |
+| `cluster: false` | Every station is its own marker, overlaps included |
+| `map_height: 320` | 320 px tall — and changing it takes effect without a browser reload |
+| `map_theme: dark` / `light` | Tiles switch (CARTO dark vs OSM standard) |
+| `map_theme: auto` | Follows the HA theme — switch your theme and confirm |
+| `show_list: false` | Map only, no table |
+| Prices update | Reload the entry (⋮ → Reload). The map repaints **without** a browser refresh — it listens for `tankpriser_price_updated` |
+
+**Prove the map is served locally:** with the card open, DevTools → Network,
+filter `leaflet`. Every hit must come from your own HA origin under
+`/tankpriser/vendor/`. Anything from `unpkg`, `cdn…` or similar is a bug.
+
+---
+
+### 4e. The map, `coverage: national`
+
+The default. A different data path entirely: the station list arrives over the
+websocket instead of from a sensor attribute.
+
+```yaml
+type: custom:tankpriser-card
+show_map: true
+coverage: national
+map_theme: dark
+entities:
+  - sensor.tankpriser_blyfri_95_e10   # the fuel to show nationwide
+```
+
+Use a **Panel** view so it gets full width.
+
+| Check | Expect |
+| --- | --- |
+| Station count | Far more than your area — around a thousand nationwide, depending on which chains sell that fuel |
+| Which fuel | `fuel:` if set, otherwise the first entity's `fuel_key` attribute |
+| Zoomed out over Denmark | Clusters across the country, each labelled with its own lowest price |
+| Pan to another region | Its stations are there. **Your radius does not apply here** — this is the single most misunderstood behaviour in the integration |
+| Network tab | **No** HTTP request for the station list; it arrives over the existing `/api/websocket` connection |
+| Quick reload | Near-instant — the payload is memoised for 60 s server-side |
+| The table underneath | Still **your area only**. The table comes from the sensor, the map from the national payload. Not a bug |
+| Map with no table at all | `fuel: blyfri95`, `show_map: true`, no `entities:` — the map paints on its own. Add `show_list: true` to that and you correctly get `No Tankpriser sensor found.` |
+
+---
+
+### 4f. Station popups and navigation
+
+Tap any marker.
+
+| Check | Expect |
+| --- | --- |
+| Header | Station name, chain, city |
+| Fuels | **Every** fuel that station sells with its price — not only the fuel the map is showing |
+| Timestamp | `Priser opdateret: …` where the provider supplies one |
+| Discount line | `Pumpepris 16,99 · din rabat 20 øre` when a discount applies |
+| `➤ Navigér hertil` | Present on exactly-placed stations. Tap it: Android → the system app chooser; iPhone/iPad → Apple Maps; desktop → Google Maps in a new tab |
+| A dashed `≈` marker | **No navigate button.** Instead: `≈ Placeringen er kun anslået, så der kan ikke navigeres præcist hertil.` |
+| `navigation: google` | Google Maps on every platform, including phones |
+| `navigation: apple` / `osm` / `geo` | The forced target, likewise |
+| `navigation: off` | No button anywhere — but the `≈` explanation still appears |
+
+**Verify the coordinates are actually right,** not just present: pick two
+stations you know personally — ideally one Q8 or F24, since those are geocoded
+rather than provider-supplied — and confirm the navigator lands within a street
+of the real forecourt.
+
+---
+
+### 4g. Your position, ◎ and ➤
+
+**Requires HTTPS** (or `localhost`). Browsers disable geolocation on plain
+`http`, and no amount of card configuration works around it.
+
+| Step | Expect |
+| --- | --- |
+| Load the card with the map on | The browser asks for location permission, once per origin |
+| Allow | A blue dot appears at your position and follows you as you move |
+| Tap **◎** | Recentres on you once. Panning afterwards is *not* fought |
+| Tap **➤** | Turns solid blue; the map now recentres on every new fix |
+| Pan by hand while ➤ is armed | ➤ disarms itself — this is the escape hatch |
+| `follow_me: true` | Armed already on load |
+| Deny permission (or use `http`) | No dot, ever. **◎ falls back to your HA Home location** rather than doing nothing |
+| `show_my_location: false` | No dot, **no ◎, no ➤** — the whole control bar goes — and no GPS watch. Nothing on the card can ask the browser for your position, so no permission prompt ever appears. Covered by a regression test in `tests/map.test.js` |
+| Navigate to another dashboard view | The GPS watch stops. This is the one genuinely battery-hungry thing the card does, so it must not survive leaving the view |
+
+The remaining check needs a car: with ➤ armed, the map should keep pace while
+driving. Nothing on a desk reproduces that.
+
+---
+
+### 4h. Cars on the map, and the 🚗 picker
+
+Needs at least one car from section 5b whose source entity reports coordinates
+(a `device_tracker`, typically). Two cars make the picker testable.
+
+| Check | Expect |
+| --- | --- |
+| Car marker | Drawn **above** station pins, ringed by fuel level — green when full, red when empty — with the percentage on it |
+| A car with no photo | Material Design's `mdi:car` in the theme's own text colour, not an emoji |
+| A car with `entity_picture` | The photo fills the disc |
+| Two cars on identical coordinates | **One** marker showing both faces. Tap it → they spread apart on legs; tap either for its own popup |
+| 🚗 button | Appears only with **two or more** cars. Title: `Vælg biler (2 af 3 vises)` |
+| The panel | Header `Vis biler her`, one checkbox per car, footer `Gælder kun denne enhed`. A car with no position reads `<name> (ingen position)` |
+| Untick a car | It disappears, and the button label reads `2/3` — a filter must never be silent |
+| Reload the page | Still hidden. The choice lives in this device's `localStorage`, keyed by the logged-in HA user |
+| Another browser, or another HA user | Unaffected by your choice |
+| A car's own popup | `Skjul denne bil her` hides just that one |
+| A second Tankpriser card on the same view | Shares the filter immediately, without a reload |
+| `show_cars: false` | No cars and no 🚗 button |
+| `car_picker: false` | Cars shown, no 🚗 button |
+| `cars: [sensor.passat_days_until_refuel]` | Only that car, for everyone — this is dashboard config, not per-device |
+
+---
+
+### 4i. The prediction card
+
+```yaml
+type: custom:tankpriser-prediction-card
+entity: sensor.passat_days_until_refuel
+title: Passat            # optional
+```
+
+It renders three different ways depending on the sensor's `status`. Use
+`tankpriser.seed_demo_history` and `tankpriser.reset_history` (Developer Tools →
+Actions) to move between them on demand instead of waiting days.
+
+| Sensor state | Expect on the card |
+| --- | --- |
+| `status: learning` (state `unknown`) | Big **`Learning…`** and "A day or two of driving is enough for a first estimate." No number invented, no consumption rows |
+| `status: estimating` | The number prefixed with `~`, e.g. **`~9.2 days`**, plus "Early estimate from the tank you are on now — it will settle as tanks complete." |
+| `status: ready` | The number with no tilde. Below 10 days it shows one decimal (`7.4`), from 10 up it is rounded (`12`) |
+| Any state with a level | A fuel gauge bar at the current percentage, labelled `45 % · 27 L` |
+| `ready` / `estimating` | Detail rows: **Consumption** (with its unit — `L/100 km` only if you configured an odometer, otherwise a time-based rate), **Confidence** as a percentage with the tank count (`30 % · 2 tanks`), and **Cheapest \<fuel\>** naming the station and price |
+| Entity id that does not exist | `Entity sensor.nope not found.` |
+| Footer | "This prediction took real work to build… **please consider a donation 💛**". `show_donate: false` removes it; `donate_url:` overrides the target |
+
+Two things worth confirming deliberately:
+
+- **Confidence never exceeds 30 % while `estimating`.** That cap is what stops
+  one partial tank looking like a measurement.
+- **The gauge tracks the source entity live.** Change the fuel-level entity in
+  Developer Tools → States and the bar and percentage must follow without a
+  page reload.
+
+---
+
+### 4j. The visual editors
+
+Both cards have one, and a card that only works from YAML is half-broken.
+
+1. Add each card from the picker and configure it **entirely through the form** —
+   never touching YAML.
+2. Switch to "Show code editor" and back.
+
+| Check | Expect |
+| --- | --- |
+| Every field has a readable label | e.g. "Map coverage", "Show my position on the map", "Navigate link in station popups" — not raw keys like `show_my_location` |
+| Changing a field | The preview updates immediately |
+| Round-tripping through the code editor | No option is silently dropped or reordered into nonsense |
+| An `entities:` list made by hand | The editor adopts the first entry as its single `entity` rather than wiping your config |
+
+**The form is conditional** — it only offers options that do something:
+
+| With | Expect |
+| --- | --- |
+| **Show map** off | Four fields only: title, price sensor, fuel, show map. Nothing about clustering, position, cars, navigation or the price list, because none of those exists without a map |
+| **Show map** on | The rest appear |
+| **Show my position** off | "Start with follow-me on" disappears — it cannot work without the position dot |
+| **Show my cars** off | "Let each device choose which cars to show" disappears |
+| Prediction card, **donation ask** off | The donation-link field disappears |
+| Typing in the title | Focus stays in the field, one character at a time. The schema is cached per shape precisely so `ha-form` does not rebuild mid-word |
+
+Turning the map back on restores your previous map settings — they stay in the
+config while hidden rather than being wiped. Covered by tests in
+`tests/card.test.js`.
 
 ---
 
@@ -278,17 +589,16 @@ browser viewing the dashboard; the price table works offline regardless.
    from one refuel to the next, and tanks shorter than ~1 hour are ignored to
    avoid nonsense — so a few rapid manual changes will *not* produce a number;
    real car usage over days will. The prediction maths itself is covered by the
-   offline test suite (`scratchpad/test_prediction.py`). To see a full
+   offline test suite (`tests/test_prediction.py`). To see a full
    end-to-end number **today**, call the service **Developer Tools → Actions →
    `tankpriser.seed_demo_history`** (optionally set `tanks`, `litres_per_day`,
    `days_per_tank`): it injects synthetic tanks so the sensor flips to
    `status: ready` with `days_until_empty`, `avg_consumption` and `confidence`
    at once. Undo it with **`tankpriser.reset_history`** to return to real
    learning.
-5. **Prediction card:** add a **Tankpriser Prediction** card from the picker (or
-   `type: custom:tankpriser-prediction-card`, `entity:
-   sensor.<car>_days_until_refuel`). It shows the tank gauge, the headline, and
-   a dismissible donation ask (`show_donate: false` to hide it).
+5. **Prediction card:** covered in [4i](#4i-the-prediction-card) — including what
+   each of the three states must look like on screen, and how to reach them on
+   demand with the two services.
 
 > With an **odometer** entity configured, consumption is reported in L/100 km;
 > without one, it falls back to a time-based estimate. Either way the
@@ -315,7 +625,7 @@ lines from `custom_components.tankpriser`. Common messages:
 | `No data returned from any fuel-price provider` | Both providers unreachable at once (transient); it retries next interval |
 | `Provider q8/shell failed: …` | One provider was down/changed — the other still populates; report if persistent |
 | `DAWA radius lookup failed … using postnummer only` | DAWA was unreachable; falls back to just your postnummer until it recovers |
-| `Area 8600 10 km -> N postnumre` | Normal debug line confirming the radius resolved |
+| `Area Home (10 km) -> N postnumre` | Normal debug line confirming the radius resolved. `N = 0` means the Home location is unset or outside Denmark |
 | No sensors created | No fuel types selected |
 | A car's sensor stays `unknown` (`status: learning`) | It has not seen real driving yet: it needs ≥3 days *and* ≥5 % of the tank consumed since the last refuel. A parked car never qualifies — that guard is what stops "empty in nine years" |
 | The number moves after a long trip | Expected, and deliberately damped: the tank in progress is weighted by the time it covers, so a busy day nudges the estimate rather than halving it |
@@ -323,7 +633,10 @@ lines from `custom_components.tankpriser`. Common messages:
 | Want a prediction now, for testing | `tankpriser.seed_demo_history` fabricates completed tanks; `tankpriser.reset_history` clears them |
 | Card missing from picker | Browser cache — hard refresh; check the resource loaded (Dev console: “TANKPRISER-CARD loaded”) |
 | Card shows “Configuration error” (dark card, red `!`) on one device | That client never loaded the card JS. Check **Settings → Dashboards → ⋮ → Resources** contains `/tankpriser/tankpriser-card.js?v=<version>`; the integration adds it on setup. Open `<your-ha-url>/tankpriser/tankpriser-card.js` on the device — JavaScript means the server side is fine and the client needs the resource entry (or an app cache clear) |
-| Map empty / “Map unavailable” | Browser has no internet to load Leaflet, or no stations have coordinates |
+| `Kortet kunne ikke indlæses. Prøver igen…` | Leaflet itself failed to load. It is served from your own HA (`/tankpriser/vendor/`), so this is a local problem — the file did not deploy, or the browser is holding a broken cached copy. Not an internet issue |
+| Map paints but is empty | No station in view has coordinates. In `area` coverage, check `stations` actually has lat/long; in `national`, check the websocket returned something (DevTools → Network → WS) |
+| Map shows stations far outside the radius | `coverage: national`, the default — the viewport is the filter, not your radius. Set `coverage: area` to pin it |
+| Map tiles grey, markers fine | The browser cannot reach OpenStreetMap/CARTO (offline, DNS filtering, ad blocker). Prices are unaffected; `show_map: false` removes the dependency entirely |
 | `Tankpriser geocoding pass done: N of M addresses new or changed` | Normal info line: Q8/F24 street addresses resolved against DAWA. Once per install, then a re-verification pass every 180 days. The map refreshes itself if anything changed |
 | `Tankpriser: <address> moved to lat,lon` | A re-verification found a different position for a station that had one — worth a look, but it just works |
 | A Q8/F24 pin has a dashed border and **no** navigate button | Its position is only estimated (DAWA could not match the address exactly, e.g. a motorway plaza). The popup says so; navigating to an estimate would take you confidently to the wrong place |
@@ -382,10 +695,12 @@ python -m py_compile custom_components/tankpriser/*.py
 
 Tracked here and in the project notes so nothing is lost while testing:
 
-- [ ] **Live verification in your HA** — nothing has run in a real Home Assistant
-      yet; this test pass is that step.
-- [ ] **Not committed to git** — the working tree is untracked; commit once the
-      live test passes.
+- [ ] **The in-car test** — Siri reads the list out correctly while parked; the
+      CarPlay leg (asking mid-drive, navigation starting on the car screen) has
+      not been done. See [`IN_THE_CAR.md`](IN_THE_CAR.md).
+- [ ] **Card verification on a second client** — the desktop browser is covered;
+      the mobile app takes the card by a different route (section 4a) and is the
+      one that historically broke.
 - [ ] **More chains (need your credential):**
   - Go'on — apply for an API key on **goon.nu** (auto-issued by email). Then I
     add an optional "Go'on API key" field + parser.
@@ -395,9 +710,9 @@ Tracked here and in the project notes so nothing is lost while testing:
 - [x] **Real donate link** — `https://paypal.me/tankpriser`, in `const.py` and
       `www/tankpriser-card.js` (two copies, keep them in step). Ko-fi and the
       other tip platforms were ruled out: none of them price in DKK.
-- [ ] **Optional: exact geocoding for Q8/F24** — they ship no coordinates, so
-      they're pinned at their postnummer centre (flagged `≈`). Could geocode
-      their addresses via DAWA for exact map pins.
+- [x] **Exact geocoding for Q8/F24** — done: their street addresses are resolved
+      against DAWA and cached (section 0). Only what DAWA cannot match still
+      falls back to a postnummer centre, flagged `≈`.
 - [ ] **Optional: rename the GitHub repo** — code says `Tankpriser`, but the repo
       is still `ha-tankpriser`; if you rename it, tell me to update the URLs.
 

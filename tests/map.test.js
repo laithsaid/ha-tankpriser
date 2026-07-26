@@ -148,6 +148,33 @@ const clusterIcons = (card) =>
   console.log("hidden -> car icons:", carIcons(card));
   assert.strictEqual(carIcons(card), 1, "hiding one car leaves the other");
 
+  // 5. show_my_location: false must remove BOTH position buttons, not just ➤.
+  //    Leaving ◎ behind was a real bug: tapping it called getCurrentPosition,
+  //    so the option that means "do not use my location" still produced a
+  //    browser permission prompt.
+  card = await mount({ [CAR_A]: carState("Passat", 56.16, 10.2, 80) });
+  const ctlOff = {
+    bar: card.querySelectorAll(".ff-mapctl").length,
+    recenter: card.querySelectorAll(".ff-recenter").length,
+    follow: card.querySelectorAll(".ff-follow").length,
+  };
+  console.log("loc off ->", JSON.stringify(ctlOff));
+  assert.strictEqual(ctlOff.recenter, 0, "◎ must not exist with show_my_location: false");
+  assert.strictEqual(ctlOff.follow, 0, "➤ must not exist with show_my_location: false");
+  assert.strictEqual(ctlOff.bar, 0, "the whole control bar goes with them");
+
+  // 6. …and with it on, both are there.
+  card = await mount({ [CAR_A]: carState("Passat", 56.16, 10.2, 80) }, {
+    show_my_location: true,
+  });
+  const ctlOn = {
+    recenter: card.querySelectorAll(".ff-recenter").length,
+    follow: card.querySelectorAll(".ff-follow").length,
+  };
+  console.log("loc on  ->", JSON.stringify(ctlOn));
+  assert.strictEqual(ctlOn.recenter, 1, "◎ is drawn when location is enabled");
+  assert.strictEqual(ctlOn.follow, 1, "➤ is drawn when location is enabled");
+
   console.log("\nmap tests passed");
 })().catch((err) => {
   console.error("\nFAILED:", err && err.message);

@@ -119,7 +119,9 @@ build your own automations on.
 
 A Lovelace card ships **inside the integration**: no HACS frontend repository,
 no `resources:` entry, no YAML. It registers itself and appears in the card
-picker as **"Tankpriser Prices"**, with a **visual editor** for every option.
+picker as **"Tankpriser Prices"**, with a **visual editor** that offers only the
+options that currently do something — switch the map off and the map settings
+step out of the way.
 
 Without the map it is a compact price table — station, price, cheapest
 highlighted — that makes **no external network request at all**. It repaints
@@ -424,7 +426,7 @@ entities:
 | `show_list` | shown only when the map is off | Set `true` to show map *and* table |
 | `highlight_cheapest` | `true` | Emphasise the cheapest row |
 | `max_stations` | `0` (all) | Cap the number of rows in the table |
-| `show_my_location` | `true` | Live GPS dot and the ◎ / ➤ buttons |
+| `show_my_location` | `true` | Live GPS dot and the ◎ / ➤ buttons. `false` removes all three and never asks for your location |
 | `follow_me` | `false` | Start with follow-me armed |
 | `show_cars` | `true` | Plot your configured cars on the map |
 | `cars` | auto-detect | Explicit list of `…_days_until_refuel` entities to plot |
@@ -478,7 +480,8 @@ external request at all.
 Nothing to configure: the dot and the ◎ / ➤ buttons are on whenever the map is.
 
 - Start with follow-me armed: `follow_me: true`.
-- Turn the dot and its GPS watch off entirely: `show_my_location: false`.
+- Turn the whole thing off: `show_my_location: false` removes the dot, both
+  buttons and the GPS watch, so nothing on the card can ask for your position.
 
 **Home Assistant must be served over HTTPS** (or `localhost`) for this to work —
 browsers refuse geolocation on plain `http`.

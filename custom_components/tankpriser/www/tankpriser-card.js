@@ -985,13 +985,18 @@ class TankpriserCard extends HTMLElement {
         this._userMoved = true;
         this._setFollow(false); // panning by hand means "stop chasing me"
       });
-      this._addMapControls(L);
-      this._addCarControl(L);
+      // Both ◎ and ➤ are about *your* position, so show_my_location: false
+      // takes the pair away with the dot. Adding the bar anyway left a button
+      // labelled "centre on my position" that still asked the browser for a
+      // fix — a permission prompt from the one option set to prevent exactly
+      // that.
       if (this._config.show_my_location) {
+        this._addMapControls(L);
         this._startWatchingPosition();
         // A fix may already have arrived before the map existed.
         if (this._pos) this._drawMe(this._pos, this._posAccuracy);
       }
+      this._addCarControl(L);
       setTimeout(() => this._map && this._map.invalidateSize(), 200);
     }
 
@@ -1400,6 +1405,9 @@ class TankpriserCard extends HTMLElement {
   }
 
   _addMapControls(L) {
+    // Only called when show_my_location is on — both buttons are about your
+    // position, so neither exists without it.
+    //
     // Two separate buttons, because they are two different intentions:
     //   ◎  one-shot "where am I" — recentre now and leave the map alone after.
     //   ➤  follow-me toggle — keep recentring on every new fix. Off by default;
@@ -1423,18 +1431,16 @@ class TankpriserCard extends HTMLElement {
         });
         card._recenterEl = recenter;
 
-        if (card._config.show_my_location) {
-          const follow = L.DomUtil.create("a", "ff-follow", wrap);
-          follow.href = "#";
-          follow.setAttribute("role", "button");
-          follow.innerHTML = "➤";
-          L.DomEvent.on(follow, "click", (ev) => {
-            L.DomEvent.stop(ev);
-            card._setFollow(!card._follow);
-            if (card._follow) card._recenter();
-          });
-          card._followEl = follow;
-        }
+        const follow = L.DomUtil.create("a", "ff-follow", wrap);
+        follow.href = "#";
+        follow.setAttribute("role", "button");
+        follow.innerHTML = "➤";
+        L.DomEvent.on(follow, "click", (ev) => {
+          L.DomEvent.stop(ev);
+          card._setFollow(!card._follow);
+          if (card._follow) card._recenter();
+        });
+        card._followEl = follow;
 
         L.DomEvent.disableClickPropagation(wrap);
         card._syncFollowButton();
@@ -1689,10 +1695,12 @@ class TankpriserCard extends HTMLElement {
 _define("tankpriser-card", TankpriserCard);
 
 // -- visual editor ----------------------------------------------------------
-const EDITOR_SCHEMA = [
-  { name: "title", selector: { text: {} } },
-  { name: "entity", selector: { entity: { integration: "tankpriser", domain: "sensor" } } },
-  {
+// Every field the editor can show, by name. Kept separate from the assembly
+// below so the form can be composed per config without duplicating a selector.
+const EDITOR_FIELDS = {
+  title: { name: "title", selector: { text: {} } },
+  entity: { name: "entity", selector: { entity: { integration: "tankpriser", domain: "sensor" } } },
+  fuel: {
     name: "fuel",
     selector: {
       select: {
@@ -1704,8 +1712,8 @@ const EDITOR_SCHEMA = [
       },
     },
   },
-  { name: "show_map", selector: { boolean: {} } },
-  {
+  show_map: { name: "show_map", selector: { boolean: {} } },
+  coverage: {
     name: "coverage",
     selector: {
       select: {
@@ -1717,7 +1725,7 @@ const EDITOR_SCHEMA = [
       },
     },
   },
-  {
+  map_theme: {
     name: "map_theme",
     selector: {
       select: {
@@ -1730,13 +1738,13 @@ const EDITOR_SCHEMA = [
       },
     },
   },
-  { name: "map_height", selector: { number: { min: 200, max: 1000, step: 20, mode: "slider", unit_of_measurement: "px" } } },
-  { name: "cluster", selector: { boolean: {} } },
-  { name: "show_my_location", selector: { boolean: {} } },
-  { name: "follow_me", selector: { boolean: {} } },
-  { name: "show_cars", selector: { boolean: {} } },
-  { name: "car_picker", selector: { boolean: {} } },
-  {
+  map_height: { name: "map_height", selector: { number: { min: 200, max: 1000, step: 20, mode: "slider", unit_of_measurement: "px" } } },
+  cluster: { name: "cluster", selector: { boolean: {} } },
+  show_my_location: { name: "show_my_location", selector: { boolean: {} } },
+  follow_me: { name: "follow_me", selector: { boolean: {} } },
+  show_cars: { name: "show_cars", selector: { boolean: {} } },
+  car_picker: { name: "car_picker", selector: { boolean: {} } },
+  navigation: {
     name: "navigation",
     selector: {
       select: {
@@ -1752,13 +1760,47 @@ const EDITOR_SCHEMA = [
       },
     },
   },
-  { name: "show_list", selector: { boolean: {} } },
-];
+  show_list: { name: "show_list", selector: { boolean: {} } },
+};
+
+// Which fields are worth showing for a given config. With the map off, most of
+// these control nothing that exists: there are no markers to cluster, no popups
+// to put a navigate link in, nowhere to draw a position dot or a car, and the
+// price list is shown unconditionally. Offering them anyway invites someone to
+// switch on "follow me" for a price table and conclude the card is broken.
+// Same reasoning one level down: follow-me needs the position dot, and the
+// per-device car picker needs cars.
+function _editorFieldNames(config) {
+  const names = ["title", "entity", "fuel", "show_map"];
+  if (config.show_map !== true) return names;
+
+  names.push("coverage", "map_theme", "map_height", "cluster", "show_my_location");
+  if (config.show_my_location !== false) names.push("follow_me");
+  names.push("show_cars");
+  if (config.show_cars !== false) names.push("car_picker");
+  names.push("navigation", "show_list");
+  return names;
+}
+
+// One array per distinct form shape, reused. ha-form re-renders whenever its
+// `schema` property changes, and handing it a freshly built array on every
+// keystroke would drop focus out of the title field mid-word. There are eight
+// possible shapes at most.
+const _schemaCache = new Map();
+
+function _editorSchema(config) {
+  const names = _editorFieldNames(config || {});
+  const key = names.join(",");
+  if (!_schemaCache.has(key)) {
+    _schemaCache.set(key, names.map((name) => EDITOR_FIELDS[name]));
+  }
+  return _schemaCache.get(key);
+}
 
 const EDITOR_LABELS = {
   title: "Title",
-  entity: "Sensor (picks the fuel & area)",
-  fuel: "Fuel (national map)",
+  entity: "Price sensor — sets the fuel, area and radius shown",
+  fuel: "Fuel to plot (national map only)",
   show_map: "Show map",
   coverage: "Map coverage",
   map_theme: "Map theme",
@@ -1808,7 +1850,9 @@ class TankpriserCardEditor extends HTMLElement {
       this.appendChild(this._form);
     }
     this._form.hass = this._hass;
-    this._form.schema = EDITOR_SCHEMA;
+    // Recomputed per render: switching the map on or off changes which options
+    // mean anything (see _editorFieldNames).
+    this._form.schema = _editorSchema(this._config);
     this._form.data = this._config;
   }
 }
@@ -2024,12 +2068,26 @@ class TankpriserPredictionCard extends HTMLElement {
 
 _define("tankpriser-prediction-card", TankpriserPredictionCard);
 
-const PRED_EDITOR_SCHEMA = [
-  { name: "title", selector: { text: {} } },
-  { name: "entity", selector: { entity: { integration: "tankpriser", domain: "sensor" } } },
-  { name: "show_donate", selector: { boolean: {} } },
-  { name: "donate_url", selector: { text: {} } },
-];
+const PRED_EDITOR_FIELDS = {
+  title: { name: "title", selector: { text: {} } },
+  entity: { name: "entity", selector: { entity: { integration: "tankpriser", domain: "sensor" } } },
+  show_donate: { name: "show_donate", selector: { boolean: {} } },
+  donate_url: { name: "donate_url", selector: { text: {} } },
+};
+
+// A donation link is meaningless with the ask switched off. Cached for the same
+// reason as the price card's schema: a fresh array on every render steals focus.
+const _predSchemaCache = new Map();
+
+function _predEditorSchema(config) {
+  const names = ["title", "entity", "show_donate"];
+  if ((config || {}).show_donate !== false) names.push("donate_url");
+  const key = names.join(",");
+  if (!_predSchemaCache.has(key)) {
+    _predSchemaCache.set(key, names.map((name) => PRED_EDITOR_FIELDS[name]));
+  }
+  return _predSchemaCache.get(key);
+}
 const PRED_EDITOR_LABELS = {
   title: "Title",
   entity: "Prediction sensor (…_days_until_refuel)",
@@ -2066,7 +2124,7 @@ class TankpriserPredictionCardEditor extends HTMLElement {
       this.appendChild(this._form);
     }
     this._form.hass = this._hass;
-    this._form.schema = PRED_EDITOR_SCHEMA;
+    this._form.schema = _predEditorSchema(this._config);
     this._form.data = this._config;
   }
 }

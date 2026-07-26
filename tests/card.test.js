@@ -189,4 +189,61 @@ assert.ok(!icon.html.includes("<script"), icon.html);
 icon = iconFor([car("a", null), car("b", undefined)]);
 assert.ok(!icon.html.includes("NaN"), icon.html);
 
+// 6. The editor only offers options that do something.
+const { _editorSchema, _predEditorSchema } = ctx;
+// Spread into a host array: the schema is built inside the vm context, so its
+// prototype is that realm's Array.prototype and deepStrictEqual would reject it
+// on identity alone.
+const fields = (config) => [..._editorSchema(config).map((f) => f.name)];
+
+// Map off: clustering, the position dot, cars and the navigate link all control
+// something that does not exist, and the price list is shown unconditionally.
+const listOnly = ["title", "entity", "fuel", "show_map"];
+assert.deepStrictEqual(fields({ show_map: false }), listOnly, "map off = four fields");
+assert.deepStrictEqual(fields({}), listOnly, "an absent show_map means off");
+
+// Map on: everything is relevant again.
+const mapOn = fields({ show_map: true });
+for (const name of [
+  "coverage", "map_theme", "map_height", "cluster", "show_my_location",
+  "follow_me", "show_cars", "car_picker", "navigation", "show_list",
+]) {
+  assert.ok(mapOn.includes(name), `map on must offer ${name}`);
+}
+
+// One level down: follow-me needs the position dot, the picker needs cars.
+assert.ok(
+  !fields({ show_map: true, show_my_location: false }).includes("follow_me"),
+  "follow-me is meaningless without the position dot"
+);
+assert.ok(
+  !fields({ show_map: true, show_cars: false }).includes("car_picker"),
+  "the car picker is meaningless with no cars"
+);
+// …and the prediction card's donation URL needs the ask.
+assert.ok(
+  !_predEditorSchema({ show_donate: false }).map((f) => f.name).includes("donate_url"),
+  "no donation link field when the ask is off"
+);
+
+// Identical shape must reuse one array: ha-form re-renders when `schema`
+// changes, so a fresh array per keystroke takes focus out of the title field.
+assert.strictEqual(
+  _editorSchema({ show_map: true, title: "a" }),
+  _editorSchema({ show_map: true, title: "ab" }),
+  "same form shape must be the same array"
+);
+assert.notStrictEqual(
+  _editorSchema({ show_map: true }),
+  _editorSchema({ show_map: false }),
+  "a different shape is a different array"
+);
+
+// Every field the schema can emit needs a readable label; a missing one shows
+// the raw config key to the user.
+const labels = vm.runInContext("EDITOR_LABELS", ctx);
+for (const name of mapOn) {
+  assert.ok(labels[name], `no editor label for ${name}`);
+}
+
 console.log("card helper tests passed");
