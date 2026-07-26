@@ -777,10 +777,20 @@ class TankpriserCard extends HTMLElement {
             const cut = s.discount_ore
               ? `<span class="ff-disc" title="Pumpepris ${this._price(s.list_price, unit)} · rabat ${this._escape(s.discount_ore)} øre">−${this._escape(s.discount_ore)}</span>`
               : "";
+            // Where it is, written the Danish way ("8600 Silkeborg"). The list is
+            // sorted by price alone, so the cheapest row can be the far side of
+            // the area — without a town the name "OK Nordre Ringvej" tells you
+            // nothing about whether it is worth the trip. The map popup has
+            // carried the city all along; the list was the odd one out.
+            const place = [s.postnummer, s.city].filter(Boolean).join(" ");
+            const sub = [place, s.updated]
+              .filter(Boolean)
+              .map((part) => this._escape(part))
+              .join(" · ");
             return `
               <tr class="${isCheap ? "cheapest" : ""}">
                 <td class="ff-name">${this._escape(s.name)}${approx}
-                  ${s.updated ? `<div class="ff-updated">${this._escape(s.updated)}</div>` : ""}
+                  ${sub ? `<div class="ff-updated">${sub}</div>` : ""}
                 </td>
                 <td class="price">${cut}${this._price(s.price, unit)}</td>
               </tr>`;
@@ -1771,10 +1781,16 @@ const EDITOR_FIELDS = {
 // Same reasoning one level down: follow-me needs the position dot, and the
 // per-device car picker needs cars.
 function _editorFieldNames(config) {
-  const names = ["title", "entity", "fuel", "show_map"];
+  const names = ["title", "entity", "show_map"];
   if (config.show_map !== true) return names;
 
-  names.push("coverage", "map_theme", "map_height", "cluster", "show_my_location");
+  names.push("coverage");
+  // `fuel` is read by _nationalStations() alone. In area coverage the map plots
+  // whatever the configured sensors carry, so offering a fuel picker there
+  // implies a choice that changes nothing — and on a list-only card it is pure
+  // noise next to the sensor, which already names its fuel.
+  if (config.coverage !== "area") names.push("fuel");
+  names.push("map_theme", "map_height", "cluster", "show_my_location");
   if (config.show_my_location !== false) names.push("follow_me");
   names.push("show_cars");
   if (config.show_cars !== false) names.push("car_picker");
@@ -1799,8 +1815,8 @@ function _editorSchema(config) {
 
 const EDITOR_LABELS = {
   title: "Title",
-  entity: "Price sensor — sets the fuel, area and radius shown",
-  fuel: "Fuel to plot (national map only)",
+  entity: "Price sensor (the list, its area and radius)",
+  fuel: "Fuel on the map (default: the sensor's own)",
   show_map: "Show map",
   coverage: "Map coverage",
   map_theme: "Map theme",

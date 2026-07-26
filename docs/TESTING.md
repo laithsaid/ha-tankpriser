@@ -305,7 +305,8 @@ entities:
 | Row order | **Cheapest first.** The sensor's `stations` attribute is already sorted by price; the card does not re-sort, so a wrong order means the sensor is wrong, not the card |
 | Cheapest row | Visibly highlighted |
 | Price format | Two decimals plus the unit, e.g. `16,79 kr./L` |
-| Row subtext | The chain's own "prices last changed" timestamp under the station name, where the provider supplies one |
+| Row subtext | `8600 Silkeborg · 2026-07-26` under the station name — postnummer and town, then the chain's own "prices last changed" date where it supplies one. A station with no date shows the town alone, with no dangling `·` |
+| Why the town matters | The list is sorted by **price only**, with no distance involved, so the cheapest row can be the far side of your radius. The town is what makes a row judgeable |
 | `≈` after a name | Hover → "Approximate location (postnummer centre)". Expect these on some Q8/F24 rows and nowhere else |
 | Footer | "Enjoying this card? **Support the project ♥**" → `paypal.me/tankpriser` |
 
@@ -421,7 +422,7 @@ Tap any marker.
 
 | Check | Expect |
 | --- | --- |
-| Header | Station name, chain, city |
+| Header | Station name, then its city on the next line |
 | Fuels | **Every** fuel that station sells with its price — not only the fuel the map is showing |
 | Timestamp | `Priser opdateret: …` where the provider supplies one |
 | Discount line | `Pumpepris 16,99 · din rabat 20 øre` when a discount applies |
@@ -535,8 +536,10 @@ Both cards have one, and a card that only works from YAML is half-broken.
 
 | With | Expect |
 | --- | --- |
-| **Show map** off | Four fields only: title, price sensor, fuel, show map. Nothing about clustering, position, cars, navigation or the price list, because none of those exists without a map |
+| **Show map** off | Three fields only: title, price sensor, show map. Nothing about clustering, position, cars, navigation or the price list, because none of those exists without a map |
 | **Show map** on | The rest appear |
+| **Map coverage: Home area only** | "Fuel on the map" disappears. In area coverage the map plots whatever the configured sensors carry, so the picker would change nothing |
+| **Map coverage: National** | It reappears — the nationwide payload holds every fuel, and the map draws one. Left empty it follows the price sensor's own fuel |
 | **Show my position** off | "Start with follow-me on" disappears — it cannot work without the position dot |
 | **Show my cars** off | "Let each device choose which cars to show" disappears |
 | Prediction card, **donation ask** off | The donation-link field disappears |

@@ -123,9 +123,15 @@ picker as **"Tankpriser Prices"**, with a **visual editor** that offers only the
 options that currently do something — switch the map off and the map settings
 step out of the way.
 
-Without the map it is a compact price table — station, price, cheapest
+Without the map it is a compact price table — station, town, price, cheapest
 highlighted — that makes **no external network request at all**. It repaints
 when the integration says there is new data, not on a timer of its own.
+
+The table is sorted by **price alone**; there is no distance in it, so the
+cheapest row may well be the far side of your radius. That is why each row names
+its postnummer and town. If you want stations ranked by how far away they are,
+that is the [cheapest-nearby sensor](#11-in-the-car-carplay-siri-and-android-auto),
+which measures from a device you nominate.
 
 ### 6. The map
 

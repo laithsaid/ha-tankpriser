@@ -197,19 +197,30 @@ const { _editorSchema, _predEditorSchema } = ctx;
 const fields = (config) => [..._editorSchema(config).map((f) => f.name)];
 
 // Map off: clustering, the position dot, cars and the navigate link all control
-// something that does not exist, and the price list is shown unconditionally.
-const listOnly = ["title", "entity", "fuel", "show_map"];
-assert.deepStrictEqual(fields({ show_map: false }), listOnly, "map off = four fields");
+// something that does not exist, the price list is shown unconditionally, and
+// `fuel` only ever steers the national map.
+const listOnly = ["title", "entity", "show_map"];
+assert.deepStrictEqual(fields({ show_map: false }), listOnly, "map off = three fields");
 assert.deepStrictEqual(fields({}), listOnly, "an absent show_map means off");
 
 // Map on: everything is relevant again.
 const mapOn = fields({ show_map: true });
 for (const name of [
-  "coverage", "map_theme", "map_height", "cluster", "show_my_location",
+  "coverage", "fuel", "map_theme", "map_height", "cluster", "show_my_location",
   "follow_me", "show_cars", "car_picker", "navigation", "show_list",
 ]) {
   assert.ok(mapOn.includes(name), `map on must offer ${name}`);
 }
+
+// `fuel` is read by the national map only — _areaStations() never looks at it.
+assert.ok(
+  !fields({ show_map: true, coverage: "area" }).includes("fuel"),
+  "no fuel picker in area coverage, where it changes nothing"
+);
+assert.ok(
+  fields({ show_map: true, coverage: "national" }).includes("fuel"),
+  "national coverage needs it: one fuel out of the whole payload"
+);
 
 // One level down: follow-me needs the position dot, the picker needs cars.
 assert.ok(

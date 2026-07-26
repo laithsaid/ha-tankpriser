@@ -51,6 +51,36 @@ const carState = (name, lat, lon, pct) => ({
     status: "ready", fuel_type: "Blyfri 95",
   },
 });
+// A price sensor, shaped like the real one: `stations` is already cheapest-first.
+const PRICE_ENTITY = "sensor.tankpriser_blyfri_95_e10";
+const priceState = () => ({
+  state: "16.79",
+  attributes: {
+    friendly_name: "Blyfri 95 (E10)",
+    fuel_type: "Blyfri 95 (E10)",
+    fuel_key: "blyfri95",
+    unit_of_measurement: "kr./L",
+    area: "Home",
+    radius: "10 km",
+    station_count: 2,
+    cheapest_station: "OK Nordre Ringvej",
+    cheapest_price: 16.79,
+    stations: [
+      {
+        name: "OK Nordre Ringvej", company: "OK", postnummer: "8600",
+        city: "Silkeborg", address: "Nordre Ringvej 110", price: 16.79,
+        updated: "2026-07-26", latitude: 56.18, longitude: 9.55,
+        coord_approx: false,
+      },
+      {
+        name: "F24 Motorvejen nord", company: "F24", postnummer: "4000",
+        city: "Roskilde", address: "", price: 17.29,
+        updated: "", latitude: 55.65, longitude: 12.08, coord_approx: true,
+      },
+    ],
+  },
+});
+
 const hass = (cars) => ({
   states: cars,
   config: { latitude: 56.16, longitude: 10.2 },
@@ -174,6 +204,22 @@ const clusterIcons = (card) =>
   console.log("loc on  ->", JSON.stringify(ctlOn));
   assert.strictEqual(ctlOn.recenter, 1, "◎ is drawn when location is enabled");
   assert.strictEqual(ctlOn.follow, 1, "➤ is drawn when location is enabled");
+
+  // 7. The price list names the town. Sorted by price alone, the cheapest row
+  //    can be an hour away, so a row that says only "OK Nordre Ringvej" cannot
+  //    be judged. The map popup always showed the city; the list did not.
+  card = await mount({ [PRICE_ENTITY]: priceState() }, { show_map: false });
+  const rows = [...card.querySelectorAll("tr")];
+  assert.strictEqual(rows.length, 2, "one row per station");
+  const first = rows[0].textContent.replace(/\s+/g, " ").trim();
+  console.log("list   ->", first);
+  assert.ok(first.includes("OK Nordre Ringvej"), first);
+  assert.ok(first.includes("8600 Silkeborg"), "the row must name the town");
+  assert.ok(first.includes("2026-07-26"), "and keep the chain's price date");
+  // A station with no date still gets its town, with no stray separator.
+  const second = rows[1].textContent.replace(/\s+/g, " ").trim();
+  assert.ok(second.includes("4000 Roskilde"), second);
+  assert.ok(!second.includes("·"), "no dangling separator when there is no date");
 
   console.log("\nmap tests passed");
 })().catch((err) => {
