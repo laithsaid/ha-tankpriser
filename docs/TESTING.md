@@ -743,9 +743,11 @@ python -m py_compile custom_components/tankpriser/*.py
 
 Tracked here and in the project notes so nothing is lost while testing:
 
-- [ ] **The in-car test** — Siri reads the list out correctly while parked; the
-      CarPlay leg (asking mid-drive, navigation starting on the car screen) has
-      not been done. See [`IN_THE_CAR.md`](IN_THE_CAR.md).
+- [x] **The in-car test** — done 2026-07-26. The full CarPlay route works:
+      asking by name, three stations read out, choosing by number, Google Maps
+      starting on the car screen. Three build details it exposed (force-quit
+      app, unset **Ask for Input** prompt, Siri cut off by the map) are fixed in
+      [`IN_THE_CAR.md`](IN_THE_CAR.md).
 - [ ] **Card verification on a second client** — the desktop browser is covered;
       the mobile app takes the card by a different route (section 4a) and is the
       one that historically broke.

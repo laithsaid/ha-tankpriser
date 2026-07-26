@@ -118,6 +118,13 @@ Two things that are easy to assume otherwise:
   paste it into two templates.
 - The Home Assistant app is installed and signed in **on the iPhone** (not just
   on the desktop).
+- **Do not force-quit the Home Assistant app.** Every Home Assistant action in
+  this shortcut is provided by that app, and iOS treats swiping an app away in
+  the App Switcher as "never run this in the background again" until you next
+  open it by hand. A shortcut built on those actions then fails with Siri
+  saying only *"something went wrong"*. Open Home Assistant once after a phone
+  restart, leave it in the background, and keep **Settings → Home Assistant →
+  Background App Refresh** on.
 - Google Maps is installed on the iPhone. (Prefer Apple Maps? See *Variants*.)
 - **Settings → Siri & Search → Siri Responses** is set to **Prefer Spoken
   Responses**. On the default *Automatic*, Siri prints its answer instead of
@@ -254,20 +261,45 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
 
 2. **Add action** → search `Split` → **Split Text**. Input: the **Render
    template**. Separator: **New Lines**.
-3. **Add action** → search `Ask` → **Ask for Input**. Input type: **Number**.
-   Prompt: something short like *"Hvilken?"* — Siri reads it aloud before
-   listening.
+3. **Add action** → search `Ask` → **Ask for Input**. This action has **two
+   fields you must change**, and both start on a default that sounds broken in
+   the car:
+
+   - **Input type** — tap it and choose **Number**. It starts on *Text*.
+   - **Prompt** — the empty field on the action itself. Type what Siri should
+     ask, e.g. *"Hvilken station? Sig et nummer."* (English: *"Which station?
+     Say a number."*).
+
+   Left alone, Siri asks **"What is the text?"** — her own generic fallback for
+   an unset prompt, and *"text"* rather than *"number"* is how you can tell the
+   input type was never changed either. Hearing that in the car is the symptom
+   of skipping this step, not of anything being wrong with the shortcut.
+
 4. **Add action** → search `Get Item` → **Get Item from List**. List: **Split
    Text**. Get: **Item at Index**. Index: tap the field and pick **Provided
    Input** from the variable bar.
-5. Point **Open URLs** at **Get Item from List** instead of at the Render
+
+5. **Add action** → search `Speak` → **Speak Text**, and put it *before* Open
+   URLs. Type `Kører til nummer ` and then pick **Provided Input** from the
+   variable bar above the keyboard, so it reads *"Kører til nummer to."*
+   (English: `Starting route to number `.) Expand the action with the ⌄ and turn
+   **Wait Until Finished** on.
+
+   This is not decoration. Opening a map hands the screen and the audio to
+   Google Maps, which cuts Siri off mid-sentence — so without an action that
+   *waits*, anything she is saying at that moment is chopped in half. Turning
+   **Wait Until Finished** on makes the shortcut hold until she has finished the
+   sentence, and only then start navigating. It also reads the number back, so
+   you hear whether she understood *"to"* or *"tre"* before the route starts.
+
+6. Point **Open URLs** at **Get Item from List** instead of at the Render
    template.
 
-   The finished order is: Update location → Render template (spoken) → Speak
-   Text → Render template (URLs) → Split Text → Ask for Input → Get Item from
-   List → Open URLs.
+   The finished order is: Update location → Wait → Render template (spoken) →
+   Speak Text → Render template (URLs) → Split Text → Ask for Input → Get Item
+   from List → Speak Text → Open URLs.
 
-6. Test parked, **via Siri** — say the shortcut's name, then *"three"* when it
+7. Test parked, **via Siri** — say the shortcut's name, then *"three"* when it
    asks. Shortcuts numbers lists from 1, so three gets you the third station.
    Tapping the shortcut tests the template but not the voice path, and the voice
    path is the one that has to work in the car.
@@ -282,6 +314,9 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
 
 | What happens | Why, and what to do |
 | --- | --- |
+| Siri: *"something went wrong"*, and the Home Assistant app was not running | Every Home Assistant action here belongs to that app, and iOS stops background-launching an app you have **force-quit** (swiped away in the App Switcher) until you open it by hand again. A phone restart has the same effect until the first launch. Open Home Assistant once, leave it in the background, and check **Settings → Home Assistant → Background App Refresh** is on. If you habitually swipe apps away, the shortcut cannot survive it — ask for the token-based variant, which talks to Home Assistant over the network and needs no app at all. |
+| Siri asks *"What is the text?"* instead of about the station | **Ask for Input** was left on its defaults. Set **Prompt** to your own question and **Input type** to **Number** (Part 4, step 3). "Text" in her question is the giveaway that the type was never changed. |
+| Siri starts saying something, gets cut off, and the map opens | Opening a map takes the screen and the audio, so whatever she was mid-sentence on is chopped. Any **Speak Text** before it needs **Wait Until Finished** on (expand the action with ⌄) — that is what makes the shortcut hold until she is done. Part 4, step 5. |
 | Siri: *"I don't see an app for that"* | The shortcut name is being misheard. Rename it to something more distinct and say it exactly. |
 | Siri web-searches the phrase instead of running anything | Siri could not match what it heard to any shortcut, so it fell back to a search. Almost always a language mismatch: **Settings → Siri & Search → Language**. A Danish shortcut name spoken to an English Siri transcribes as nonsense. Either set Siri to Dansk, or rename the shortcut to words in Siri's language. Saying *"kør \<name\>"* / *"run \<name\>"* also helps Siri treat it as a shortcut rather than a query. |
 | It runs, spins for a while, then ends silently — no speech, no map | A **Dictate Text** action. Siri holds the microphone for the whole run and never hands it over, so the action waits for audio that never arrives. Replace it with **Ask for Input** (Part 4). To confirm this is it, duplicate the shortcut, delete the dictation action, and run the copy from Siri. |
@@ -326,12 +361,21 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
 - **Just tell me, do not navigate:** keep actions 1–5 only. This variant also
   works as a saved **Assist prompt** in CarPlay's Quick Access tab.
 
-### What I could not verify for you
+### Verified in a car, 2026-07-26
 
-Whether **Dictate Text** and **Open URLs** behave on *your* head unit is iOS- and
-car-specific — some units are fussier than others. Everything before that (Siri
-triggering by name, the template rendering, Speak Text) is not in doubt. That is
-why Part 2 exists: test it in the driveway before trusting it at 110 km/h.
+The whole route works on CarPlay: asking by name, the three stations read out
+with distances, choosing one by number, and Google Maps starting the route on
+the car screen. Three things the driveway test could not have shown, all now
+fixed above:
+
+- the shortcut fails with *"something went wrong"* if the Home Assistant app has
+  been force-quit;
+- **Ask for Input** left on its defaults makes Siri ask *"What is the text?"*;
+- opening the map cuts Siri off mid-sentence unless a **Speak Text** with
+  **Wait Until Finished** holds the shortcut first.
+
+Still car-specific: how your head unit hands over to Google Maps. That is why
+Part 2 exists — test in the driveway before trusting it at 110 km/h.
 
 ---
 
