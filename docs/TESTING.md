@@ -222,7 +222,8 @@ Two things worth checking here, because everything downstream trusts them:
 
 The `…_cheapest_nearby` sensors only exist once you nominate a device under
 **Configure → Area & fuel types**; testing those is
-[`IN_THE_CAR.md`](IN_THE_CAR.md). Three checks belong here, though, because they
+the [README's in-car section](../README.md#11-setting-up-the-in-car-sensors).
+Three checks belong here, though, because they
 are what makes an in-car answer right or wrong:
 
 - **The pool is national.** These rank against every station in Denmark, not the
@@ -747,7 +748,7 @@ Tracked here and in the project notes so nothing is lost while testing:
       asking by name, three stations read out, choosing by number, Google Maps
       starting on the car screen. Three build details it exposed (force-quit
       app, unset **Ask for Input** prompt, Siri cut off by the map) are fixed in
-      [`IN_THE_CAR.md`](IN_THE_CAR.md).
+      the [README's in-car section](../README.md#11-setting-up-the-in-car-sensors).
 - [ ] **Card verification on a second client** — the desktop browser is covered;
       the mobile app takes the card by a different route (section 4a) and is the
       one that historically broke.
