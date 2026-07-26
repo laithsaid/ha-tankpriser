@@ -657,6 +657,16 @@ the right one.
    "sixteen point one nine". The words after it are plain text: **change them to
    whatever you want announced**, or delete them if you would rather it just
    read the station and go.
+
+   > **Try it in Home Assistant before pasting it into Shortcuts.** *Developer
+   > tools → Template*, paste it in, and read the result pane. That one step
+   > splits every later problem in half:
+   >
+   > | Result pane | Meaning |
+   > | --- | --- |
+   > | The sentence | The template is right. Anything that fails afterwards is the shortcut or the app, not this. |
+   > | `None Jeg sætter kurs…` | The template ran but found no such attribute. Either the entity id is wrong (it follows your **area name** — copy it from *Developer tools → States*), or you are on a version before 0.12.0b6, which is where `spoken_cheapest` was added. Check the sensor's attributes in *States*: if `spoken` is there but `spoken_cheapest` is not, redownload in HACS and restart. |
+   > | A red error | The template text itself. Almost always **smart quotes**: `'` turned into `'` or `'` by copying through something that "helpfully" curls them. Retype the four quote characters by hand. |
 5. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
    **Render template** from the variable bar above the keyboard. Expand it (tap
    ⌄) and turn **Wait Until Finished** on.
