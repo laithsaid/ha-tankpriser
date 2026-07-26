@@ -4,7 +4,7 @@
   "description": "Test harness for the Tankpriser Lovelace card. Not shipped to Home Assistant — the integration itself has no build step and no npm dependencies.",
   "scripts": {
     "test": "node tests/card.test.js && node tests/map.test.js",
-    "test:py": "python tests/test_prediction.py && python tests/test_discounts.py && python tests/test_geocode.py && python tests/test_card_registration.py"
+    "test:py": "python tests/test_prediction.py && python tests/test_discounts.py && python tests/test_geocode.py && python tests/test_card_registration.py && python tests/test_spoken.py && python tests/test_nearby.py"
   },
   "devDependencies": {
     "jsdom": "^29.1.1"

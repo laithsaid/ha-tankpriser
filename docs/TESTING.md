@@ -222,7 +222,23 @@ Two things worth checking here, because everything downstream trusts them:
 
 The `…_cheapest_nearby` sensors only exist once you nominate a device under
 **Configure → Area & fuel types**; testing those is
-[`IN_THE_CAR.md`](IN_THE_CAR.md).
+[`IN_THE_CAR.md`](IN_THE_CAR.md). Three checks belong here, though, because they
+are what makes an in-car answer right or wrong:
+
+- **The pool is national.** These rank against every station in Denmark, not the
+  area the price sensors cover. Drive (or move the tracked device) well outside
+  your radius and the sensor must name stations *there*. If it still lists the
+  ones at home, read the next check before assuming the ranking is broken.
+- **`origin_latitude` / `origin_longitude` / `origin_source`** say where the
+  ranking was measured from. Compare them with the tracked device's own
+  `latitude`/`longitude`: they should match, and `origin_source` should read
+  `tracker`. `zone:home` means the device reported a zone name instead of
+  coordinates; `none` means it had no position at all, and the sensor then has
+  no stations.
+- **`position_updated`** is when that device last told Home Assistant anything.
+  A phone whose companion app has stopped reporting answers confidently about
+  wherever it last checked in — this attribute is the only way to see that from
+  the outside.
 
 **Force a refresh without waiting 30 min:** Settings → the Tankpriser integration
 → **⋮ → Reload**. (This re-fetches once.)
@@ -306,7 +322,8 @@ entities:
 | Cheapest row | Visibly highlighted |
 | Price format | Two decimals plus the unit, e.g. `16,79 kr./L` |
 | Row subtext | `8600 Silkeborg · 2026-07-26` under the station name — postnummer and town, then the chain's own "prices last changed" date where it supplies one. A station with no date shows the town alone, with no dangling `·` |
-| Why the town matters | The list is sorted by **price only**, with no distance involved, so the cheapest row can be the far side of your radius. The town is what makes a row judgeable |
+| Distance | Above each price: `3,2 km`, or metres below a kilometre (`450 m`). A row whose position is only estimated keeps its single `≈` beside the name — the distance is not marked a second time |
+| Where it is measured from | The block header ends with `· from home` on a card with no map. Sanity-check one row against Google Maps from your house — it is a straight-line distance, so expect it to be *shorter* than the drive |
 | `≈` after a name | Hover → "Approximate location (postnummer centre)". Expect these on some Q8/F24 rows and nowhere else |
 | Footer | "Enjoying this card? **Support the project ♥**" → `paypal.me/tankpriser` |
 
@@ -316,6 +333,8 @@ Then vary one thing at a time:
 | --- | --- |
 | `highlight_cheapest: false` | Highlight gone, order unchanged |
 | `max_stations: 5` | Exactly 5 rows — the **5 cheapest**, not the first 5 by name |
+| `sort: distance` | **Nearest first**, price still shown and the cheapest still highlighted — so the highlight is now somewhere down the list. With `max_stations` set, the cap is applied *after* sorting: the 5 nearest, not the 5 cheapest |
+| `show_distance: false` | No distances, and the header stops saying `from home`. `sort: distance` then does nothing — nothing is measured — and the editor stops offering it |
 | `title` removed | No card header; the per-fuel block headers remain |
 | `show_donate: false` | Footer link gone |
 | `donate_url: https://example.com` | Footer points there instead |
@@ -456,6 +475,12 @@ of the real forecourt.
 | `show_my_location: false` | No dot, **no ◎, no ➤** — the whole control bar goes — and no GPS watch. Nothing on the card can ask the browser for your position, so no permission prompt ever appears. Covered by a regression test in `tests/map.test.js` |
 | Navigate to another dashboard view | The GPS watch stops. This is the one genuinely battery-hungry thing the card does, so it must not survive leaving the view |
 
+With the position dot on and the list shown (`show_list: true`), the list joins
+in: its header switches from `· from home` to `· from you` on the first fix, and
+the distances are then measured from where you stand. They redraw once you have
+moved 100 m, not on every fix — a table rebuilt several times a second would
+throw away your scroll position mid-scroll.
+
 The remaining check needs a car: with ➤ armed, the map should keep pace while
 driving. Nothing on a desk reproduces that.
 
@@ -489,9 +514,25 @@ Needs at least one car from section 5b whose source entity reports coordinates
 
 ```yaml
 type: custom:tankpriser-prediction-card
-entity: sensor.passat_days_until_refuel
-title: Passat            # optional
+entities:                                 # as many cars as you like
+  - sensor.passat_days_until_refuel
+title: Passat            # optional; defaults to the car's name
 ```
+
+The cars are chosen in the editor's *"Which cars"* field. Check that picker lists
+**only your cars**: it is filtered to the duration device class, which no other
+Tankpriser sensor has, so a price sensor appearing there is a bug. Added from the
+card picker it starts with every car you have.
+
+| Config | Expect |
+| --- | --- |
+| One car, no `title` | The card header is the **car's own name**, e.g. `Passat`, and there is no second name inside the body |
+| One car, `title: Min bil` | That, instead |
+| One car, `title: ""` | No header at all — the escape hatch for a card inside a section that already names the car |
+| Two cars | **One block per car**, each headed by its own name, separated by a rule. No card header unless you set `title` |
+| Two cars | The donation footer appears **once**, at the bottom — not once per car |
+| A car sensor that does not exist | That block alone says `Entity … not found.`; the other cars still render |
+| Old `entity:` (single) config | Still works, unchanged. Opening it in the editor shows it in the list, and saving converts it to `entities:` |
 
 It renders three different ways depending on the sensor's `status`. Use
 `tankpriser.seed_demo_history` and `tankpriser.reset_history` (Developer Tools →
@@ -536,8 +577,9 @@ Both cards have one, and a card that only works from YAML is half-broken.
 
 | With | Expect |
 | --- | --- |
-| **Show map** off | Three fields only: title, price sensor, show map. Nothing about clustering, position, cars, navigation or the price list, because none of those exists without a map |
-| **Show map** on | The rest appear |
+| **Show map** off | Five fields only: title, price sensor, show map, and the list's own two (distances, order). Nothing about clustering, position, cars or navigation, because none of that exists without a map |
+| **Show map** on | The rest appear. The list's two options go away with it, and come back when **Show price list** is ticked |
+| **Show how far away** off | "Order the price list by" disappears — with nothing measured there is no distance to sort on |
 | **Map coverage: Home area only** | "Fuel on the map" disappears. In area coverage the map plots whatever the configured sensors carry, so the picker would change nothing |
 | **Map coverage: National** | It reappears — the nationwide payload holds every fuel, and the map draws one. Left empty it follows the price sensor's own fuel |
 | **Show my position** off | "Start with follow-me on" disappears — it cannot work without the position dot |
@@ -662,7 +704,11 @@ python tests/test_prediction.py         # refuel detection + the estimator
 python tests/test_discounts.py          # chain matching + loyalty discounts
 python tests/test_geocode.py            # address parsing + geocode cache policy
 python tests/test_card_registration.py  # the Lovelace resource registration
+python tests/test_spoken.py             # the sentence Siri reads out
+python tests/test_nearby.py             # ranking stations around a position
 ```
+
+(`npm run test:py` runs all six.)
 
 `tests/map.test.js` is the one worth knowing about: it loads the *real* card
 together with the vendored Leaflet and markercluster into a jsdom document and

@@ -41,7 +41,7 @@ Everything is configured from the UI; there is no `configuration.yaml`.
                              ▼
                   www/tankpriser-card.js
                   • tankpriser-card            (prices: list + Leaflet map + cars)
-                  • tankpriser-prediction-card (per-car panel + donation ask)
+                  • tankpriser-prediction-card (a panel per car + donation ask)
 ```
 
 ## Module responsibilities
@@ -53,8 +53,9 @@ Everything is configured from the UI; there is no `configuration.yaml`.
 | `sources.py` | Fuel-price **providers**. Each chain is a `Provider` record; `fetch_all()` fetches the active ones concurrently through a shared TTL cache and normalises them into `Station` records. |
 | `geo.py` | DAWA (Danish address API) helpers: resolve *postnummer + radius* → set of postnumre; look up postnummer centre coordinates. Process-life caches. |
 | `geocode.py` | Street address → coordinates via DAWA, for the chains that publish no coordinates (Q8/F24). Three passes (exact house number → street+postnummer → fuzzy), cached in `.storage` for good, filled by a background task so setup is never delayed. |
-| `coordinator.py` | One `TankpriserCoordinator` per entry: resolves the area, calls `fetch_all`, filters stations to the area, positions coordinate-less stations, fires notifications/events. Holds the per-car trackers in `.cars`. |
-| `sensor.py` | `TankpriserSensor` (cheapest price per fuel, full list in attributes) and `CarPredictionSensor` (days-until-refuel + prediction attributes + car position/picture). |
+| `coordinator.py` | One `TankpriserCoordinator` per entry: resolves the area, calls `fetch_all`, filters stations to the area, positions coordinate-less stations, fires notifications/events. Holds the per-car trackers in `.cars`. Also keeps a `nationwide` snapshot when a nearby tracker is configured — that ranking follows a device, which leaves the area. |
+| `nearby.py` | **Pure** (no HA imports): haversine, a bounding-box pre-filter, and `rank_nearby()` — the stations around a point, cheapest first with distances. |
+| `sensor.py` | `TankpriserSensor` (cheapest price per fuel, full list in attributes), `NearbyStationsSensor` (cheapest around a nominated device, nationwide pool, `spoken` sentence for Siri) and `CarPredictionSensor` (days-until-refuel + prediction attributes + car position/picture). |
 | `websocket.py` | `tankpriser/stations` command returning **all** national stations with coordinates — used by the card's `coverage: national` map instead of a huge sensor attribute. |
 | `notifications.py` | Compares successive refreshes and calls a `notify.*` service per the chosen rule; also fires the `tankpriser_price_updated` event. |
 | `config_flow.py` | Initial flow (fuel types), options flow (menu: settings / notifications / chain keys), and the **car subentry** flow (`ConfigSubentryFlow`). |

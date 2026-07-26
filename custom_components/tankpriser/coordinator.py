@@ -45,6 +45,11 @@ class TankpriserData:
     """Parsed result of one refresh."""
 
     stations: list[Station]
+    # Every station in the country, placed, for the "cheapest nearby" sensors:
+    # the device they follow can be anywhere, so an area cut around Home is the
+    # wrong pool to rank against. Empty unless a nearby tracker is configured —
+    # placing the whole country costs geocoding nobody else needs.
+    nationwide: list[Station] = field(default_factory=list)
     # fuel_key -> cheapest-first stations, built on first use. A refresh always
     # produces a new TankpriserData, so this cannot outlive its prices.
     _by_fuel: dict[str, list[Station]] = field(
@@ -189,25 +194,31 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
                 "No data returned from any fuel-price provider; will retry."
             )
 
-        stations = [s for s in all_stations if s.postnummer in area]
-
         # Re-price for this driver's loyalty cards before anything reads a
         # price: cheapest-of, notifications and the card then all agree, and
-        # none of them needs to know discounts exist.
-        stations = apply_discounts(stations, self.discounts)
-
-        # Approximate coordinates for stations without exact ones, using the
-        # centre of their postnummer so they can still appear on a map.
-        await self._fill_coordinates(stations)
+        # none of them needs to know discounts exist. Done for the whole country
+        # so the area list and the nearby list quote the same numbers.
+        priced = apply_discounts(all_stations, self.discounts)
 
         excluded = {e.strip().lower() for e in self.excluded_stations if e.strip()}
         if excluded:
-            stations = [
-                s for s in stations if s.name.strip().lower() not in excluded
-            ]
+            priced = [s for s in priced if s.name.strip().lower() not in excluded]
+
+        stations = [s for s in priced if s.postnummer in area]
+
+        # The nearby sensors rank against every station in the country: they
+        # follow a device that drives out of the area, and ranking within the
+        # area kept offering stations at home to someone halfway to the next
+        # town. Only paid for when such a sensor exists.
+        nationwide = priced if self.nearby_tracker else []
+
+        # Approximate coordinates for stations without exact ones, using the
+        # centre of their postnummer so they can still appear on a map. The
+        # area stations are members of `nationwide`, so filling that fills both.
+        await self._fill_coordinates(nationwide or stations)
 
         stations.sort(key=lambda s: s.name.lower())
-        data = TankpriserData(stations=stations)
+        data = TankpriserData(stations=stations, nationwide=nationwide)
 
         # Change detection / notifications (needs the previous snapshot).
         previous = self.data

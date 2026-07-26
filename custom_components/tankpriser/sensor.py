@@ -18,7 +18,6 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util.location import distance as location_distance
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -29,8 +28,9 @@ from .const import (
     NEARBY_MAX_STATIONS,
     SPOKEN_STATIONS,
 )
-from .consumption import ConsumptionTracker
+from .consumption import ConsumptionTracker, zone_coords
 from .coordinator import TankpriserCoordinator
+from .nearby import rank_nearby
 
 
 async def async_setup_entry(
@@ -345,19 +345,28 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         self._ranked_cache = None
         super()._handle_coordinator_update()
 
-    def _origin(self) -> tuple[float, float] | None:
-        """Where 'nearby' is measured from, or None if the device has no fix."""
+    def _origin(self) -> tuple[float, float, str] | None:
+        """Where 'nearby' is measured from, with how it was found.
+
+        The device's own coordinates first. A tracker that reports by zone —
+        and a GPS one that has gone quiet while parked — puts a zone name in
+        its state instead, so fall back to that zone's position rather than
+        answering "no stations nearby" from a device that is simply at home.
+        """
         state = self.hass.states.get(self.coordinator.nearby_tracker)
         if state is None:
             return None
         lat = state.attributes.get("latitude")
         lon = state.attributes.get("longitude")
-        if lat is None or lon is None:
-            return None
         try:
-            return float(lat), float(lon)
+            if lat is not None and lon is not None:
+                return float(lat), float(lon), "tracker"
         except (TypeError, ValueError):
-            return None
+            pass
+        zone_lat, zone_lon = zone_coords(self.hass, state.state)
+        if zone_lat is not None and zone_lon is not None:
+            return zone_lat, zone_lon, f"zone:{state.state}"
+        return None
 
     def _ranked(self) -> list[dict]:
         """The current ranking, computed at most once per state write.
@@ -370,46 +379,23 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         return self._ranked_cache
 
     def _compute_ranked(self) -> list[dict]:
-        """Every station within the radius, cheapest first, with its distance.
-
-        Deliberately *not* truncated here: ``station_count`` must report how
-        many stations are actually in range. Callers slice for what they show.
-        """
+        """Every station within the radius, cheapest first, with its distance."""
         data = self.coordinator.data
         origin = self._origin()
         if data is None or origin is None:
             return []
-
-        radius_m = self.coordinator.nearby_radius_km * 1000.0
-        out: list[dict] = []
-        for station in data.stations_for(self._fuel_key):
-            if station.latitude is None or station.longitude is None:
-                continue
-            metres = location_distance(
-                origin[0], origin[1], station.latitude, station.longitude
-            )
-            if metres is None or metres > radius_m:
-                continue
-            out.append(
-                {
-                    "name": station.name,
-                    "company": station.company,
-                    "city": station.city,
-                    "price": station.prices[self._fuel_key],
-                    "list_price": station.list_prices.get(self._fuel_key),
-                    "discount_ore": station.discount_ore or None,
-                    "distance_km": round(metres / 1000.0, 1),
-                    "latitude": station.latitude,
-                    "longitude": station.longitude,
-                    # An estimated position must not be handed to a navigator;
-                    # a caller can skip these or warn.
-                    "coord_approx": station.coord_approx,
-                }
-            )
-        # Cheapest first — that is the question being asked. Distance breaks a
-        # tie, because two stations at the same price are not equally useful.
-        out.sort(key=lambda s: (s["price"], s["distance_km"]))
-        return out
+        # The whole country, not the configured area: the device this follows
+        # drives out of the area, and ranking inside it answered "the cheapest
+        # three near you" with stations near *home*. Falls back to the area
+        # list only if a refresh predates the nationwide snapshot.
+        pool = data.nationwide or data.stations
+        return rank_nearby(
+            pool,
+            origin[0],
+            origin[1],
+            self.coordinator.nearby_radius_km * 1000.0,
+            self._fuel_key,
+        )
 
     def _spoken(self, ranked: list[dict]) -> str:
         """The three cheapest as a sentence, in Home Assistant's language."""
@@ -425,11 +411,20 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
     def extra_state_attributes(self) -> dict:
         ranked = self._ranked()
         best = ranked[0] if ranked else None
+        origin = self._origin()
         attrs: dict = {
             "fuel_type": FUEL_TYPES[self._fuel_key][0],
             "fuel_key": self._fuel_key,
             "tracked_entity": self.coordinator.nearby_tracker,
             "radius_km": self.coordinator.nearby_radius_km,
+            # Where this ranking was measured from, and when that position
+            # reached Home Assistant. A phone whose app has stopped reporting
+            # answers confidently about the town you left, and there was no way
+            # to tell that from the outside — these three say so.
+            "origin_latitude": origin[0] if origin else None,
+            "origin_longitude": origin[1] if origin else None,
+            "origin_source": origin[2] if origin else "none",
+            "position_updated": self._position_updated(),
             # How many are in range, not how many are listed below — the list is
             # capped and a count that silently equalled the cap read as "there
             # are only 8 stations near you", which was never true.
@@ -452,9 +447,16 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
                 attrs["longitude"] = best["longitude"]
         return attrs
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self.async_write_ha_state()
+    def _position_updated(self) -> str | None:
+        """When the tracked device last told Home Assistant anything.
+
+        The state's own timestamp: device trackers carry no "fix time", and
+        what matters here is when we last heard from the device at all. A
+        template can compare it with ``now()`` to see whether an answer is
+        worth trusting — see docs/IN_THE_CAR.md.
+        """
+        state = self.hass.states.get(self.coordinator.nearby_tracker)
+        return state.last_updated.isoformat() if state is not None else None
 
 
 # Spelled out because "all 3 cost" is read aloud as "all three cost" by some

@@ -197,20 +197,37 @@ const { _editorSchema, _predEditorSchema } = ctx;
 const fields = (config) => [..._editorSchema(config).map((f) => f.name)];
 
 // Map off: clustering, the position dot, cars and the navigate link all control
-// something that does not exist, the price list is shown unconditionally, and
-// `fuel` only ever steers the national map.
-const listOnly = ["title", "entity", "show_map"];
-assert.deepStrictEqual(fields({ show_map: false }), listOnly, "map off = three fields");
+// something that does not exist, and `fuel` only ever steers the national map.
+// The list itself is shown unconditionally, so its own two options stay.
+const listOnly = ["title", "entity", "show_map", "show_distance", "sort"];
+assert.deepStrictEqual(fields({ show_map: false }), listOnly, "map off = the list's fields");
 assert.deepStrictEqual(fields({}), listOnly, "an absent show_map means off");
 
 // Map on: everything is relevant again.
-const mapOn = fields({ show_map: true });
+const mapOn = fields({ show_map: true, show_list: true });
 for (const name of [
   "coverage", "fuel", "map_theme", "map_height", "cluster", "show_my_location",
   "follow_me", "show_cars", "car_picker", "navigation", "show_list",
+  "show_distance", "sort",
 ]) {
   assert.ok(mapOn.includes(name), `map on must offer ${name}`);
 }
+
+// Distances and their sort order belong to the list; hidden list, neither.
+assert.ok(
+  !fields({ show_map: true }).includes("show_distance"),
+  "no distance option for a map-only card"
+);
+assert.ok(
+  !fields({ show_map: true }).includes("sort"),
+  "nothing to sort when the list is hidden"
+);
+// Nothing is measured with distances off, so "nearest first" would sort by a
+// number that was never computed.
+assert.ok(
+  !fields({ show_map: false, show_distance: false }).includes("sort"),
+  "no distance order without distances"
+);
 
 // `fuel` is read by the national map only — _areaStations() never looks at it.
 assert.ok(
@@ -236,6 +253,15 @@ assert.ok(
   !_predEditorSchema({ show_donate: false }).map((f) => f.name).includes("donate_url"),
   "no donation link field when the ask is off"
 );
+// Every prediction field needs a label too, and the car picker is a list now.
+const predLabels = vm.runInContext("PRED_EDITOR_LABELS", ctx);
+for (const field of _predEditorSchema({})) {
+  assert.ok(predLabels[field.name], `no editor label for ${field.name}`);
+}
+assert.ok(
+  _predEditorSchema({}).map((f) => f.name).includes("entities"),
+  "the prediction editor picks cars as a list"
+);
 
 // Identical shape must reuse one array: ha-form re-renders when `schema`
 // changes, so a fresh array per keystroke takes focus out of the title field.
@@ -256,5 +282,48 @@ const labels = vm.runInContext("EDITOR_LABELS", ctx);
 for (const name of mapOn) {
   assert.ok(labels[name], `no editor label for ${name}`);
 }
+
+// 7. Distances, and the order they can put the list in.
+const { _distanceKm, _orderRows } = ctx;
+const SILKEBORG = [56.1697, 9.5451];
+const AARHUS = [56.1629, 10.2039];
+
+// ~41 km apart, and the same answer whichever way round it is asked. The
+// integration's nearby sensors use the same haversine, so a distance spoken in
+// the car and one printed in the list must not disagree.
+const km = _distanceKm(SILKEBORG, AARHUS);
+assert.ok(km > 40 && km < 42, `Silkeborg-Aarhus should be ~41 km, got ${km}`);
+assert.strictEqual(
+  _distanceKm(SILKEBORG, AARHUS).toFixed(6),
+  _distanceKm(AARHUS, SILKEBORG).toFixed(6)
+);
+assert.strictEqual(_distanceKm(SILKEBORG, SILKEBORG), 0);
+
+// A station with no position, or a card with nowhere to measure from, gives no
+// distance at all — never a wrong one measured from [0, 0] off Africa.
+assert.strictEqual(_distanceKm(null, AARHUS), null);
+assert.strictEqual(_distanceKm(SILKEBORG, [null, null]), null);
+assert.strictEqual(_distanceKm(SILKEBORG, ["56.1", "10.2"]), null);
+
+// Price order is what the sensor already delivers, so the rows come back as
+// given; distance order re-sorts them and keeps the unmeasurable ones last.
+const rows = [
+  { s: { name: "cheap far", price: 16.49 }, km: 30 },
+  { s: { name: "dear near", price: 17.29 }, km: 2 },
+  { s: { name: "unplaced", price: 16.99 }, km: null },
+];
+assert.deepStrictEqual(
+  _orderRows(rows, "price").map((r) => r.s.name),
+  ["cheap far", "dear near", "unplaced"],
+  "price order is the sensor's own"
+);
+assert.deepStrictEqual(
+  _orderRows(rows, "distance").map((r) => r.s.name),
+  ["dear near", "cheap far", "unplaced"],
+  "distance order: nearest first, unmeasured last"
+);
+// Sorting must not rewrite the caller's array — the same rows are rendered by
+// two sections when a card lists several fuels.
+assert.strictEqual(rows[0].s.name, "cheap far", "_orderRows must copy, not sort in place");
 
 console.log("card helper tests passed");

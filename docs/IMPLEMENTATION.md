@@ -30,7 +30,8 @@ custom_components/tankpriser/
   geo.py             DAWA area resolution + postnummer centres
   geocode.py         DAWA address -> coordinates for Q8/F24 (disk-cached)
   coordinator.py     per-entry DataUpdateCoordinator (+ .cars trackers)
-  sensor.py          TankpriserSensor, CarPredictionSensor
+  nearby.py          pure ranking of stations around a point (haversine)
+  sensor.py          TankpriserSensor, NearbyStationsSensor, CarPredictionSensor
   websocket.py       tankpriser/stations command
   notifications.py   price-change notify + event
   config_flow.py     initial + options + car-subentry flows
@@ -48,6 +49,8 @@ tests/
   test_discounts.py  chain matching + per-chain loyalty discounts
   test_geocode.py    address parsing + geocode cache policy
   test_card_registration.py   the Lovelace resource registration
+  test_spoken.py     the sentence the nearby sensor hands to Siri
+  test_nearby.py     ranking stations around a position
 package.json         jsdom, for the tests only — the integration ships no JS deps
 scratchpad/          local-only experiments (git-ignored)
 ```
@@ -278,7 +281,8 @@ What each file is for, and which function to open first.
 | `geo.py` | `postnumre_within_point`, `centers_for` | DAWA takes `cirkel=lon,lat,radius` — the reversed order is a 400. `visueltcenter` is `[lon, lat]`. Batches up to 100 postnumre per request; caches for process life. |
 | `geocode.py` | `apply`, then `_async_lookup` | Three passes, most precise first, each verified against the postnummer. `apply()` is cache-only and safe on every refresh; `async_schedule()` is the only thing that touches the network. |
 | `coordinator.py` | `_async_update_data` | The whole price pipeline in ~40 lines. `_resolve_area` is cached per radius; `self.cars` is populated by `__init__` *after* the first refresh. |
-| `sensor.py` | `extra_state_attributes` (all three classes) | Sensors are stateless views. `CarPredictionSensor` and `NearbyStationsSensor` also subscribe outside the coordinator's cycle — to their tracker and to the nominated device respectively. `NearbyStationsSensor` exists only because no car platform will render a map: it puts the cheapest nearby station's coordinates on itself, which is what Android Auto navigates to. See [IN_THE_CAR.md](IN_THE_CAR.md). |
+| `nearby.py` | `rank_nearby` | Pure, no HA imports. A bounding box rejects most of the country before any trigonometry, because this runs over every station on every GPS fix. |
+| `sensor.py` | `extra_state_attributes` (all three classes) | Sensors are stateless views. `CarPredictionSensor` and `NearbyStationsSensor` also subscribe outside the coordinator's cycle — to their tracker and to the nominated device respectively. `NearbyStationsSensor` exists only because no car platform will render a map: it puts the cheapest nearby station's coordinates on itself, which is what Android Auto navigates to. It ranks over `data.nationwide`, **not** the area list — the device it follows drives out of the area, and ranking inside it answered "cheapest near you" with the stations near *home*. See [IN_THE_CAR.md](IN_THE_CAR.md). |
 | `websocket.py` | `ws_stations` | Not admin-only, deliberately: any user's dashboard needs it. |
 | `notifications.py` | `_evaluate_fuel` | Four rules: `threshold` (fires on crossing, not while below), `decrease`, `cheapest` (any change to the cheapest), `any` (any station's price for that fuel). Compares two `TankpriserData` snapshots. |
 | `config_flow.py` | `async_step_user`, then `TankpriserOptionsFlow.async_step_init` | Single entry (`async_set_unique_id(DOMAIN)`). Options is a menu: settings / notifications / chains → provider. Cars are **subentries** (`CarSubentryFlowHandler`), which is why one entry can hold several cars. |
@@ -467,7 +471,13 @@ Two custom elements in one file:
   position-only changes still refresh. Car photo is clipped to a circle by
   `.ff-car-disc { overflow:hidden; border-radius:50% }`; a car without a photo
   gets the inlined `mdi:car` path.
-- `tankpriser-prediction-card` — a compact per-car panel with the donation ask.
+- `tankpriser-prediction-card` — one compact panel per car (`entities: [...]`,
+  or the original single `entity:`), each rendered by `_carSection()`. The
+  per-section car name only appears when there are several, because with one car
+  the `ha-card` header already carries it; the donation ask is emitted once for
+  the whole card by `_donate()`. Its editor picks cars with a `multiple: true`
+  entity selector filtered to `device_class: duration` — the only Tankpriser
+  sensors that have one.
 
 Client-side state, deliberately not in the card config (a dashboard is shared by
 everyone who can see it): the set of cars hidden on this device lives in
@@ -505,6 +515,8 @@ python tests/test_prediction.py         # refuel detection + the estimator
 python tests/test_discounts.py          # chain matching + loyalty discounts
 python tests/test_geocode.py
 python tests/test_card_registration.py
+python tests/test_spoken.py             # the sentence Siri reads out
+python tests/test_nearby.py             # ranking around a position
 ```
 
 - **`tests/map.test.js`** is the one that earns its keep. It loads the real card

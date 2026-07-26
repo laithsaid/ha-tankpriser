@@ -221,6 +221,143 @@ const clusterIcons = (card) =>
   assert.ok(second.includes("4000 Roskilde"), second);
   assert.ok(!second.includes("·"), "no dangling separator when there is no date");
 
+  // 8. Distances. With no live position the list measures from Home, and says
+  //    so — "3,2 km" from an unstated origin is not information.
+  card = await mount({ [PRICE_ENTITY]: priceState() }, { show_map: false });
+  const head = card.querySelector(".ff-sub").textContent.replace(/\s+/g, " ").trim();
+  const dists = [...card.querySelectorAll(".ff-dist")].map((el) => el.textContent.trim());
+  console.log("dist   ->", head, "|", dists.join(" / "));
+  assert.ok(head.includes("from home"), `the header must name the origin: ${head}`);
+  assert.strictEqual(dists.length, 2, "every placed station gets a distance");
+  // Home is 56.16,10.2 (Aarhus-ish): Silkeborg ~40 km west, Roskilde ~130 km east.
+  assert.ok(/^4[01],\d km$/.test(dists[0]), `Silkeborg from Home: ${dists[0]}`);
+  assert.ok(/^13\d,\d km$/.test(dists[1]), `Roskilde from Home: ${dists[1]}`);
+  // The Roskilde pin is a postnummer centre, not the forecourt. One ≈ per row:
+  // it sits beside the name, where it already carries the explanation, rather
+  // than being repeated against a distance derived from the same estimate.
+  const roskilde = [...card.querySelectorAll("tr")][1].textContent;
+  assert.ok(roskilde.includes("≈"), "an estimated position stays marked");
+  assert.strictEqual(roskilde.split("≈").length - 1, 1, "and marked exactly once");
+
+  // A live fix takes over from Home, and says *that* — this is the in-the-car
+  // case, where distances from the house are worse than none.
+  card._onPosition({ coords: { latitude: 56.1755, longitude: 9.5455, accuracy: 12 } });
+  const live = card.querySelector(".ff-sub").textContent.replace(/\s+/g, " ").trim();
+  const liveDist = card.querySelector(".ff-dist").textContent.trim();
+  console.log("live   ->", live, "|", liveDist);
+  assert.ok(live.includes("from you"), `origin must switch to you: ${live}`);
+  assert.ok(/^\d+ m$/.test(liveDist), `standing next to it reads in metres: ${liveDist}`);
+
+  // Switched off, nothing is measured and the header says nothing about it.
+  card = await mount({ [PRICE_ENTITY]: priceState() }, { show_map: false, show_distance: false });
+  assert.strictEqual(card.querySelectorAll(".ff-dist").length, 0, "no distances when off");
+  assert.ok(
+    !card.querySelector(".ff-sub").textContent.includes("from"),
+    "and no origin in the header"
+  );
+
+  // 9. sort: distance reorders the list — the sensor delivers cheapest-first,
+  //    and Silkeborg is both dearer and nearer than Roskilde from Home.
+  card = await mount({ [PRICE_ENTITY]: priceState() }, { show_map: false });
+  const byPrice = [...card.querySelectorAll(".ff-name")].map((el) => el.textContent.trim());
+  card = await mount({ [PRICE_ENTITY]: priceState() }, { show_map: false, sort: "distance" });
+  const byDistance = [...card.querySelectorAll(".ff-name")].map((el) => el.textContent.trim());
+  console.log("order  ->", byPrice[0].split("\n")[0], "|", byDistance[0].split("\n")[0]);
+  assert.ok(byPrice[0].startsWith("OK Nordre Ringvej"), byPrice[0]);
+  assert.ok(byDistance[0].startsWith("OK Nordre Ringvej"), byDistance[0]);
+  // Same first row here (it is both cheapest and nearest), so prove the sort
+  // works by moving Home next to the far station instead.
+  const eastHass = hass({ [PRICE_ENTITY]: priceState() });
+  eastHass.config = { latitude: 55.65, longitude: 12.08 }; // Roskilde
+  const east = new Card();
+  east.setConfig({ entity: PRICE_ENTITY, show_map: false, sort: "distance" });
+  window.document.getElementById("host").appendChild(east);
+  east.hass = eastHass;
+  await new Promise((r) => setTimeout(r, 20));
+  const fromEast = [...east.querySelectorAll(".ff-name")].map((el) => el.textContent.trim());
+  assert.ok(
+    fromEast[0].startsWith("F24 Motorvejen nord"),
+    `nearest first from Roskilde, got ${fromEast[0]}`
+  );
+
+  // 10. The prediction card says which car it is about. One card shows one car,
+  //     and two of them side by side were identical panels of numbers.
+  const Pred = window.customElements.get("tankpriser-prediction-card");
+  const predState = (name) => ({
+    state: "9.4",
+    attributes: {
+      car_name: name, friendly_name: `${name} Days until refuel`,
+      status: "ready", current_level_percent: 35, current_level_l: 23,
+      fuel_type: "Blyfri 95", device_class: "duration",
+    },
+  });
+  const PRED_ENTITY = "sensor.passat_days_until_refuel";
+  const mountPred = (config) => {
+    const el = new Pred();
+    el.setConfig({ entity: PRED_ENTITY, ...config });
+    window.document.getElementById("host").appendChild(el);
+    el.hass = hass({ [PRED_ENTITY]: predState("Passat") });
+    return el;
+  };
+  const header = (el) => el.querySelector("ha-card").getAttribute("header");
+
+  console.log("pred   -> header:", JSON.stringify(header(mountPred({}))));
+  assert.strictEqual(header(mountPred({})), "Passat", "untitled cards name the car");
+  assert.strictEqual(header(mountPred({ title: "Min bil" })), "Min bil", "an explicit title wins");
+  assert.strictEqual(header(mountPred({ title: "" })), null, "an empty title means no header");
+
+  // The car picker must offer cars, not every Tankpriser sensor: only the
+  // per-car predictions carry the duration device class. And it takes several.
+  const predFields = window.eval("PRED_EDITOR_FIELDS");
+  assert.strictEqual(
+    predFields.entities.selector.entity.device_class,
+    "duration",
+    "the entity picker must be narrowed to the car sensors"
+  );
+  assert.strictEqual(
+    predFields.entities.selector.entity.multiple,
+    true,
+    "and must accept more than one car"
+  );
+
+  // 11. Several cars in one card: a section each, named, and a single ask.
+  const TWO = ["sensor.passat_days_until_refuel", "sensor.polo_days_until_refuel"];
+  const both = new Pred();
+  both.setConfig({ entities: TWO });
+  window.document.getElementById("host").appendChild(both);
+  both.hass = hass({ [TWO[0]]: predState("Passat"), [TWO[1]]: predState("Polo") });
+  const names = [...both.querySelectorAll(".tp-pred-car")].map((el) => el.textContent.trim());
+  console.log("cars   ->", names.join(" + "), "| sections:", both.querySelectorAll(".tp-pred-section").length);
+  assert.deepStrictEqual(names, ["Passat", "Polo"], "each section names its car");
+  assert.strictEqual(both.querySelectorAll(".tp-pred-section").length, 2, "one section per car");
+  assert.strictEqual(
+    both.querySelectorAll(".tp-pred-donate").length, 1,
+    "the donation ask appears once per card, not once per car"
+  );
+  assert.strictEqual(header(both), null, "a multi-car card takes no car's name as its header");
+  assert.strictEqual(header(mountPred({})), "Passat", "…but a single-car card still does");
+  // A single car must not be labelled twice — the ha-card header already says it.
+  assert.strictEqual(
+    mountPred({}).querySelectorAll(".tp-pred-car").length, 0,
+    "no per-section name on a one-car card"
+  );
+
+  // A car that has gone missing must not take the other one down with it.
+  const half = new Pred();
+  half.setConfig({ entities: [TWO[0], "sensor.gone_days_until_refuel"] });
+  window.document.getElementById("host").appendChild(half);
+  half.hass = hass({ [TWO[0]]: predState("Passat") });
+  assert.strictEqual(half.querySelectorAll(".tp-pred-section").length, 1, "the live car still renders");
+  assert.ok(
+    half.querySelector(".tp-pred-notice").textContent.includes("sensor.gone_days_until_refuel"),
+    "and the missing one is named"
+  );
+
+  // The old single-entity config keeps working.
+  const legacy = new Pred();
+  legacy.setConfig({ entity: TWO[0] });
+  assert.deepStrictEqual([...legacy._config.entities], [TWO[0]], "entity: still accepted");
+
   console.log("\nmap tests passed");
 })().catch((err) => {
   console.error("\nFAILED:", err && err.message);

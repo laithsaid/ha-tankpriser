@@ -29,6 +29,9 @@
  *                                        #   | google | osm | off. "Navigate here"
  *                                        #   in a station popup; auto uses the
  *                                        #   device's own navigator
+ *   show_distance: true                  # optional, default true — km per station,
+ *                                        #   from your position or from Home
+ *   sort: price                          # optional, default price; or distance
  *   show_my_location: true               # optional, default true — live GPS dot
  *   follow_me: false                     # optional, default false — start with
  *                                        #   follow-me armed (➤ button toggles it)
@@ -159,6 +162,11 @@ function _saveHidden(hass, hidden) {
 
 // Lets two Tankpriser cards on the same dashboard stay in step.
 const CARS_CHANGED = "tankpriser-cars-changed";
+
+// How far you must move before the price list is redrawn with new distances.
+// 100 m is the point where a printed figure would change anyway, and a table
+// rebuilt on every GPS fix loses the scroll position mid-scroll.
+const LIST_REDRAW_KM = 0.1;
 
 // Cars live in their own map pane, above the station pins: a car must never be
 // buried under a forecourt marker that happens to share its patch of road.
@@ -383,6 +391,41 @@ function loadCluster() {
   return _clusterPromise;
 }
 
+// Great-circle distance in kilometres between two [lat, lon] pairs, or null if
+// either point is unusable. The same haversine the integration's nearby sensors
+// use, so a distance spoken in the car and one printed in the list agree.
+function _distanceKm(from, to) {
+  if (!from || !to) return null;
+  const [lat1, lon1] = from;
+  const [lat2, lon2] = to;
+  if (![lat1, lon1, lat2, lon2].every((n) => typeof n === "number" && isFinite(n))) {
+    return null;
+  }
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371.0088 * Math.asin(Math.sqrt(Math.min(1, h)));
+}
+
+// Put the rows in the order the card was configured for. A station we could not
+// measure sorts last under "distance" rather than counting as zero away, which
+// would park every unplaced forecourt at the top of a list meant to be walkable.
+function _orderRows(rows, mode) {
+  const ordered = rows.slice();
+  if (mode === "distance") {
+    ordered.sort((a, b) => {
+      if (a.km === null) return b.km === null ? 0 : 1;
+      if (b.km === null) return -1;
+      return a.km - b.km || a.s.price - b.s.price;
+    });
+  }
+  // "price" is the order the sensor already delivers: cheapest first.
+  return ordered;
+}
+
 class TankpriserCard extends HTMLElement {
   setConfig(config) {
     const entities = config.entities || (config.entity ? [config.entity] : []);
@@ -407,6 +450,14 @@ class TankpriserCard extends HTMLElement {
       cluster: config.cluster !== false,
       // list shows by default only when there is no map to carry the info
       show_list: config.show_list !== undefined ? config.show_list === true : !showMap,
+      // How far each station is, measured from your live position when the map
+      // is already tracking it, and from the Home location otherwise. The
+      // header says which, because "3,2 km" is worthless if you cannot tell
+      // whether it means from here or from the house.
+      show_distance: config.show_distance !== false,
+      // The list answers "where is it cheapest" first; "distance" turns it into
+      // "what is closest", with the price alongside.
+      sort: config.sort === "distance" ? "distance" : "price",
       show_donate: config.show_donate !== false,
       donate_url: _safeUrl(config.donate_url) || DONATE_URL,
       // Show a live "you are here" dot on the map, updated while you move.
@@ -513,15 +564,37 @@ class TankpriserCard extends HTMLElement {
   _update() {
     if (!this._hass || !this._config) return;
     if (!this._built) this._build();
-
-    // Always show the list when there is no map, else honour show_list.
-    const showList = this._config.show_map ? this._config.show_list : true;
-    this._bodyEl.innerHTML = showList
-      ? this._config.entities.map((e) => this._section(e)).filter(Boolean).join("") ||
-        this._notice("No Tankpriser sensor found.")
-      : "";
-
+    this._renderList();
     if (this._config.show_map) this._updateMap();
+  }
+
+  _listShown() {
+    // Always show the list when there is no map, else honour show_list.
+    return this._config.show_map ? this._config.show_list : true;
+  }
+
+  _renderList() {
+    if (!this._bodyEl) return;
+    if (!this._listShown()) {
+      this._bodyEl.innerHTML = "";
+      return;
+    }
+    const origin = this._config.show_distance ? this._listOrigin() : null;
+    // Remember what the printed distances were measured from, so a new GPS fix
+    // knows whether they are still true (see _onPosition).
+    this._listPos = origin ? [origin.lat, origin.lon] : null;
+    this._bodyEl.innerHTML =
+      this._config.entities.map((e) => this._section(e, origin)).filter(Boolean).join("") ||
+      this._notice("No Tankpriser sensor found.");
+  }
+
+  _listOrigin() {
+    // Your live position when the map is already tracking it — no extra
+    // permission prompt, and in the car it is the only honest answer. Otherwise
+    // Home, which is also what defines the area the list covers.
+    if (this._pos) return { lat: this._pos[0], lon: this._pos[1], from: "you" };
+    const home = this._homeView();
+    return home ? { lat: home[0], lon: home[1], from: "home" } : null;
   }
 
   _build() {
@@ -718,6 +791,8 @@ class TankpriserCard extends HTMLElement {
         table.ff tr.cheapest td { font-weight: 700; color: var(--primary-color); }
         .ff-name { color: var(--primary-text-color); }
         .ff-updated { color: var(--secondary-text-color); font-size: 0.8em; }
+        /* how far away, above the price it sits with */
+        .ff-dist { color: var(--secondary-text-color); font-size: 0.8em; font-weight: 400; }
         .ff-approx { color: var(--warning-color, #b8860b); font-size: 0.8em; }
         /* the loyalty-discount marker: "−20" next to a price you pay less for */
         .ff-disc {
@@ -755,7 +830,7 @@ class TankpriserCard extends HTMLElement {
   }
 
   // -- table ----------------------------------------------------------------
-  _section(entityId) {
+  _section(entityId, origin) {
     const st = this._hass.states[entityId];
     if (!st) return this._notice(`Unknown entity: ${entityId}`);
     const a = st.attributes;
@@ -763,13 +838,22 @@ class TankpriserCard extends HTMLElement {
     const unit = a.unit_of_measurement || "";
     const fuel = a.fuel_type || a.friendly_name || entityId;
 
-    let rows = stations;
+    // Measured here rather than server-side: the sensor covers an area, which
+    // has no one point to measure from, while the card knows where you are.
+    let rows = stations.map((s) => ({
+      s,
+      km:
+        origin && s.latitude != null && s.longitude != null
+          ? _distanceKm([origin.lat, origin.lon], [s.latitude, s.longitude])
+          : null,
+    }));
+    rows = _orderRows(rows, this._config.sort);
     if (this._config.max_stations > 0) rows = rows.slice(0, this._config.max_stations);
 
     const cheapest = a.cheapest_price;
     const body = rows.length
       ? rows
-          .map((s) => {
+          .map(({ s, km }) => {
             const isCheap = this._config.highlight_cheapest && s.price === cheapest;
             const approx = s.coord_approx
               ? `<span class="ff-approx" title="Approximate location (postnummer centre)"> ≈</span>`
@@ -777,35 +861,49 @@ class TankpriserCard extends HTMLElement {
             const cut = s.discount_ore
               ? `<span class="ff-disc" title="Pumpepris ${this._price(s.list_price, unit)} · rabat ${this._escape(s.discount_ore)} øre">−${this._escape(s.discount_ore)}</span>`
               : "";
-            // Where it is, written the Danish way ("8600 Silkeborg"). The list is
-            // sorted by price alone, so the cheapest row can be the far side of
-            // the area — without a town the name "OK Nordre Ringvej" tells you
-            // nothing about whether it is worth the trip. The map popup has
-            // carried the city all along; the list was the odd one out.
+            // Where it is, written the Danish way ("8600 Silkeborg"). Sorted by
+            // price, the cheapest row can be the far side of the area, and the
+            // town is what makes "OK Nordre Ringvej" judgeable at a glance. The
+            // map popup has carried the city all along; the list was the odd
+            // one out.
             const place = [s.postnummer, s.city].filter(Boolean).join(" ");
             const sub = [place, s.updated]
               .filter(Boolean)
               .map((part) => this._escape(part))
               .join(" · ");
+            // The ≈ beside the name already says this position is an estimate,
+            // and so then is the distance — one marker per row is enough.
+            const dist =
+              km === null ? "" : `<div class="ff-dist">${this._distance(km)}</div>`;
             return `
               <tr class="${isCheap ? "cheapest" : ""}">
                 <td class="ff-name">${this._escape(s.name)}${approx}
                   ${sub ? `<div class="ff-updated">${sub}</div>` : ""}
                 </td>
-                <td class="price">${cut}${this._price(s.price, unit)}</td>
+                <td class="price">${dist}${cut}${this._price(s.price, unit)}</td>
               </tr>`;
           })
           .join("")
       : `<tr><td colspan="2" class="ff-notice">No prices available.</td></tr>`;
 
+    // Distances are useless without their origin: the same "3,2 km" means
+    // something else measured from the car than from the house.
+    const from = origin ? ` · ${origin.from === "you" ? "from you" : "from home"}` : "";
     return `
       <div class="ff-section">
         <div class="ff-head">
           <span>${this._escape(fuel)}</span>
-          <span class="ff-sub">${this._escape(a.area || a.postnummer || "")} · ${this._escape(a.radius || "")} · ${a.station_count || rows.length} st.</span>
+          <span class="ff-sub">${this._escape(a.area || a.postnummer || "")} · ${this._escape(a.radius || "")} · ${a.station_count || rows.length} st.${from}</span>
         </div>
         <table class="ff"><tbody>${body}</tbody></table>
       </div>`;
+  }
+
+  _distance(km) {
+    // Metres below a kilometre — "0,3 km" is a walk described in the wrong unit.
+    const metres = Math.round(km * 100) * 10; // nearest 10 m
+    if (metres < 1000) return `${metres} m`;
+    return `${(metres / 1000).toFixed(1).replace(".", ",")} km`;
   }
 
   // -- map data -------------------------------------------------------------
@@ -1563,6 +1661,14 @@ class TankpriserCard extends HTMLElement {
     this._pos = here;
     this._posAccuracy = pos.coords.accuracy;
     this._drawMe(here, pos.coords.accuracy);
+    // The list quotes distances from this position, so it has to be redrawn as
+    // you move — but only once you have actually gone somewhere. Driving
+    // produces a fix a second, and rebuilding the table for each one would
+    // throw away the scroll position for a number that has not changed.
+    if (this._config.show_distance && this._listShown()) {
+      const moved = _distanceKm(this._listPos, here);
+      if (moved === null || moved > LIST_REDRAW_KM) this._renderList();
+    }
     if (!this._map) return;
     if (this._follow) {
       this._map.setView(here, Math.max(this._map.getZoom(), 13), { animate: true });
@@ -1771,6 +1877,19 @@ const EDITOR_FIELDS = {
     },
   },
   show_list: { name: "show_list", selector: { boolean: {} } },
+  show_distance: { name: "show_distance", selector: { boolean: {} } },
+  sort: {
+    name: "sort",
+    selector: {
+      select: {
+        mode: "dropdown",
+        options: [
+          { value: "price", label: "Cheapest first" },
+          { value: "distance", label: "Nearest first" },
+        ],
+      },
+    },
+  },
 };
 
 // Which fields are worth showing for a given config. With the map off, most of
@@ -1782,7 +1901,9 @@ const EDITOR_FIELDS = {
 // per-device car picker needs cars.
 function _editorFieldNames(config) {
   const names = ["title", "entity", "show_map"];
-  if (config.show_map !== true) return names;
+  // The list is always there without a map, so its two options come first and
+  // the map section can be skipped entirely.
+  if (config.show_map !== true) return names.concat(_listFieldNames(config));
 
   names.push("coverage");
   // `fuel` is read by _nationalStations() alone. In area coverage the map plots
@@ -1795,7 +1916,18 @@ function _editorFieldNames(config) {
   names.push("show_cars");
   if (config.show_cars !== false) names.push("car_picker");
   names.push("navigation", "show_list");
+  // Sorting and distances describe the list; with it hidden they order and
+  // annotate nothing.
+  if (config.show_list === true) names.push(..._listFieldNames(config));
   return names;
+}
+
+// The list's own options. With distances switched off nothing is measured, so
+// "nearest first" would have nothing to sort by and the picker goes too.
+function _listFieldNames(config) {
+  return config.show_distance === false
+    ? ["show_distance"]
+    : ["show_distance", "sort"];
 }
 
 // One array per distinct form shape, reused. ha-form re-renders whenever its
@@ -1828,6 +1960,8 @@ const EDITOR_LABELS = {
   car_picker: "Let each device choose which cars to show",
   navigation: "Navigate link in station popups",
   show_list: "Show price list",
+  show_distance: "Show how far away each station is",
+  sort: "Order the price list by",
 };
 
 class TankpriserCardEditor extends HTMLElement {
@@ -1881,8 +2015,9 @@ _define("tankpriser-card-editor", TankpriserCardEditor);
  *
  * Config:
  *   type: custom:tankpriser-prediction-card
- *   entity: sensor.<car>_days_until_refuel
- *   title: "Passat"            # optional
+ *   entity: sensor.<car>_days_until_refuel   # which car — one card per car
+ *   title: "Passat"            # optional; defaults to the car's own name,
+ *                              #   "" for no header at all
  *   show_donate: true          # optional, default true
  *   donate_url: "..."          # optional; defaults to the sensor's link
  *
@@ -1891,12 +2026,22 @@ _define("tankpriser-card-editor", TankpriserCardEditor);
  */
 class TankpriserPredictionCard extends HTMLElement {
   setConfig(config) {
-    if (!config || !config.entity) {
-      throw new Error("Set 'entity' to a sensor.<car>_days_until_refuel");
+    // One card can hold any number of cars — `entities:` for several, `entity:`
+    // for one (the original shape, still honoured). Several in one card beats a
+    // stack of cards: the donation ask appears once, not once per car.
+    const entities = Array.isArray(config && config.entities)
+      ? config.entities.filter(Boolean)
+      : (config && config.entity ? [config.entity] : []);
+    if (!entities.length) {
+      throw new Error("Set 'entity' (or 'entities') to your …_days_until_refuel sensor(s)");
     }
     this._config = {
-      entity: config.entity,
-      title: config.title || "",
+      entities,
+      // Left unset the card titles itself with the car's name — with several
+      // cars each section carries its own. Two untitled cards side by side were
+      // indistinguishable without a title nobody knew they had to write.
+      // `title: ""` still means no header.
+      title: config.title === undefined || config.title === null ? null : String(config.title),
       show_donate: config.show_donate !== false,
       donate_url: _safeUrl(config.donate_url) || "",
     };
@@ -1909,7 +2054,7 @@ class TankpriserPredictionCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 3;
+    return 3 * this._config.entities.length;
   }
 
   static getConfigElement() {
@@ -1917,12 +2062,12 @@ class TankpriserPredictionCard extends HTMLElement {
   }
 
   static getStubConfig(hass) {
-    const match = hass
-      ? Object.keys(hass.states).find((id) =>
-          id.endsWith("_days_until_refuel")
-        )
-      : "";
-    return { entity: match || "" };
+    // Every car, not the first one found: a household with two cars that adds
+    // this card wants both, and dropping one silently is the worse default.
+    const cars = hass
+      ? Object.keys(hass.states).filter((id) => id.endsWith("_days_until_refuel"))
+      : [];
+    return cars.length === 1 ? { entity: cars[0] } : { entities: cars };
   }
 
   _escape(s) {
@@ -1941,12 +2086,47 @@ class TankpriserPredictionCard extends HTMLElement {
 
   _render() {
     if (!this._hass || !this._config) return;
-    const st = this._hass.states[this._config.entity];
+    const cars = this._config.entities;
+    // With one car the card is titled after it; with several, each section
+    // names its own and the card stays untitled unless you say otherwise.
+    const first = this._hass.states[cars[0]];
+    const header =
+      this._config.title === null
+        ? cars.length === 1 && first
+          ? first.attributes.car_name || first.attributes.friendly_name || ""
+          : ""
+        : this._config.title;
+
+    const body = cars.map((id) => this._carSection(id, cars.length > 1)).join("");
+    // One ask for the whole card, however many cars are on it. Repeating it per
+    // car would turn a polite request into nagging.
+    const donate = this._config.show_donate ? this._donate(first) : "";
+
+    this.innerHTML = `
+      <ha-card ${header ? `header="${this._escape(header)}"` : ""}>
+        <div class="tp-pred-body">
+          ${body}
+          ${donate}
+        </div>
+        ${this._style()}
+      </ha-card>`;
+  }
+
+  _donate(st) {
+    const donateUrl =
+      this._config.donate_url ||
+      _safeUrl(st && st.attributes ? st.attributes.donate_url : "") ||
+      DONATE_URL;
+    return `<div class="tp-pred-donate">
+         This prediction took real work to build. If it's useful,
+         <a href="${this._escape(donateUrl)}" target="_blank" rel="noopener">please consider a donation 💛</a>
+       </div>`;
+  }
+
+  _carSection(entityId, showName) {
+    const st = this._hass.states[entityId];
     if (!st) {
-      this.innerHTML = `<ha-card><div class="tp-pred-notice">Entity ${this._escape(
-        this._config.entity
-      )} not found.</div>${this._style()}</ha-card>`;
-      return;
+      return `<div class="tp-pred-notice">Entity ${this._escape(entityId)} not found.</div>`;
     }
 
     const a = st.attributes || {};
@@ -2035,32 +2215,30 @@ class TankpriserPredictionCard extends HTMLElement {
       )
       .join("");
 
-    const donateUrl =
-      this._config.donate_url || _safeUrl(a.donate_url) || DONATE_URL;
-    const donate = this._config.show_donate
-      ? `<div class="tp-pred-donate">
-           This prediction took real work to build. If it's useful,
-           <a href="${this._escape(donateUrl)}" target="_blank" rel="noopener">please consider a donation 💛</a>
-         </div>`
+    // Whose tank this is. Only on a multi-car card — with one car the ha-card
+    // header already says it, and saying it twice looks like a bug.
+    const name = showName
+      ? `<div class="tp-pred-car">${this._escape(
+          a.car_name || st.attributes.friendly_name || entityId
+        )}</div>`
       : "";
 
-    this.innerHTML = `
-      <ha-card ${
-        this._config.title ? `header="${this._escape(this._config.title)}"` : ""
-      }>
-        <div class="tp-pred-body">
-          ${head}
-          ${bar}
-          <div class="tp-pred-details">${details}</div>
-          ${donate}
-        </div>
-        ${this._style()}
-      </ha-card>`;
+    return `<div class="tp-pred-section">
+        ${name}
+        ${head}
+        ${bar}
+        <div class="tp-pred-details">${details}</div>
+      </div>`;
   }
 
   _style() {
     return `<style>
       .tp-pred-body { padding: 12px 16px 16px; }
+      /* one block per car; the rule separates them without a heavy divider */
+      .tp-pred-section + .tp-pred-section {
+        margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--divider-color);
+      }
+      .tp-pred-car { font-weight: 600; color: var(--primary-text-color); margin-bottom: 4px; }
       .tp-pred-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
       .tp-pred-big { font-size: 2.4em; font-weight: 600; line-height: 1; color: var(--primary-text-color); }
       .tp-pred-unit { font-size: 1em; color: var(--secondary-text-color); margin-left: 4px; }
@@ -2086,7 +2264,22 @@ _define("tankpriser-prediction-card", TankpriserPredictionCard);
 
 const PRED_EDITOR_FIELDS = {
   title: { name: "title", selector: { text: {} } },
-  entity: { name: "entity", selector: { entity: { integration: "tankpriser", domain: "sensor" } } },
+  // Which cars this card is about — pick as many as you like. Narrowed to the
+  // duration device class: the only Tankpriser sensors carrying it are the
+  // per-car predictions, so the picker lists your cars and nothing else. Without
+  // it the price and cheapest-nearby sensors were offered too, and picking one
+  // gave a card that could never render.
+  entities: {
+    name: "entities",
+    selector: {
+      entity: {
+        integration: "tankpriser",
+        domain: "sensor",
+        device_class: "duration",
+        multiple: true,
+      },
+    },
+  },
   show_donate: { name: "show_donate", selector: { boolean: {} } },
   donate_url: { name: "donate_url", selector: { text: {} } },
 };
@@ -2096,7 +2289,7 @@ const PRED_EDITOR_FIELDS = {
 const _predSchemaCache = new Map();
 
 function _predEditorSchema(config) {
-  const names = ["title", "entity", "show_donate"];
+  const names = ["title", "entities", "show_donate"];
   if ((config || {}).show_donate !== false) names.push("donate_url");
   const key = names.join(",");
   if (!_predSchemaCache.has(key)) {
@@ -2105,15 +2298,20 @@ function _predEditorSchema(config) {
   return _predSchemaCache.get(key);
 }
 const PRED_EDITOR_LABELS = {
-  title: "Title",
-  entity: "Prediction sensor (…_days_until_refuel)",
+  title: "Title (default: the car's name)",
+  entities: "Which cars (their …_days_until_refuel sensors)",
   show_donate: "Show the donation ask",
   donate_url: "Donation link (optional)",
 };
 
 class TankpriserPredictionCardEditor extends HTMLElement {
   setConfig(config) {
+    // The editor manages an `entities` list; adopt a single `entity` from an
+    // older card rather than showing an empty picker over a working config.
     this._config = { ...config };
+    if (!Array.isArray(this._config.entities) && this._config.entity) {
+      this._config.entities = [this._config.entity];
+    }
     this._render();
   }
 
@@ -2129,9 +2327,13 @@ class TankpriserPredictionCardEditor extends HTMLElement {
       this._form.computeLabel = (s) => PRED_EDITOR_LABELS[s.name] || s.name;
       this._form.addEventListener("value-changed", (ev) => {
         ev.stopPropagation();
+        const next = { ...ev.detail.value };
+        // The list is now authoritative; leaving a stale single `entity` behind
+        // would quietly win back on the next load for an older card.
+        if (Array.isArray(next.entities) && next.entities.length) delete next.entity;
         this.dispatchEvent(
           new CustomEvent("config-changed", {
-            detail: { config: { ...ev.detail.value } },
+            detail: { config: next },
             bubbles: true,
             composed: true,
           })

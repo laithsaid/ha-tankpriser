@@ -27,7 +27,14 @@ sensor.tankpriser_blyfri_95_e10_cheapest_nearby
     spoken: "Nummer 1: Q8 Hummeltoftevej, 16,79 kroner, 1,2 kilometer. …"
     stations: [ {name, company, city, price, list_price, discount_ore,
                  distance_km, latitude, longitude, coord_approx}, … ]
+    origin_latitude / origin_longitude   ← where this was measured from
+    origin_source: "tracker"             ← or "zone:home", or "none"
+    position_updated: "2026-07-26T14:03:11+02:00"
 ```
+
+The candidates are **every station in Denmark**, not the ones your price sensors
+cover. Those sensors describe an area around Home; this one describes wherever
+the device is, and the two stop being the same place the moment you leave town.
 
 `spoken` names the three cheapest, using each station's road (the house number
 is dropped — it is unusable when heard and the map action navigates anyway).
@@ -134,8 +141,15 @@ adding anything — then there is only ever one new thing to debug.
    English Siri gets transcribed as nonsense, matches nothing, and Siri quietly
    web-searches it instead. On an English Siri, call it *Cheap fuel*.
 3. **Add action** → search `Home Assistant` → **Update location**.
-   *Why first: it forces a fresh GPS fix, so the distances describe where you
-   are, not where you were when the app last checked in.*
+   Then **Add action** → search `Wait` → **Wait**, and set it to **2 seconds**.
+
+   *Why these two first: "Update location" forces a fresh GPS fix and sends it,
+   so the answer describes where you are rather than where the app last checked
+   in; the wait gives that fix time to reach Home Assistant before the next step
+   reads the sensor. Skip them and the phone can still be reporting your
+   driveway while you are 20 km down the road — and the shortcut will read out
+   the stations at home, distances and all, with no hint that anything is
+   wrong.*
 4. **Add action** → search `Home Assistant` → **Render template**. The action
    appears with two fields: **Server** (leave it on your Home Assistant) and
    **Template**, pre-filled with Apple's example `{{ now() }}`. Select that
@@ -280,6 +294,7 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
 | Speaks, then nothing happens | Google Maps is not installed, or the last station has no coordinates (approximate positions are deliberately omitted). Try the Apple Maps variant. |
 | A web page opens instead of the map app | "Open URLs **in Chrome**" (or another browser's action) was used instead of Apple's plain **Open URLs**. A browser cannot hand the link on to Google Maps, and is not a CarPlay app. |
 | Nothing opens, and the spoken sentence appeared as a URL | **Open URLs** is pointing at the *first* Render template. Point it at the lower one. |
+| It names stations in the town you *left*, with distances to match | Your phone has not reported its position recently, so the ranking was measured from wherever it last checked in. Add the **Update location** + **Wait 2 seconds** actions from step 3 if they are missing, and give the companion app **Location: Always** plus **Background App Refresh**. To confirm it after the fact, look at `origin_latitude` / `origin_longitude` / `position_updated` on the sensor: they say where the answer was measured from and when that position arrived. The station list itself is nationwide, so the wrong town can only come from the wrong position. |
 | Distances look stale | The **Update location** action is missing or not first. |
 | It picks the station either side of the one you said | Shortcuts numbers lists from **1**, so "one" is the cheapest. Say the position in the spoken list, not an offset. |
 | Nothing opens at all in Part 4 | **Ask for Input** returned nothing or a number above 3, so **Get Item from List** produced an empty item. This is the intended failure — better a visible nothing than quietly routing you somewhere you did not ask for. Answer 1, 2 or 3. |
@@ -294,6 +309,20 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
   three lines, with no blank line above or below them.
 - **No conversation, just take me there:** keep Part 1 and delete the Speak Text
   action. Two spoken words, one destination.
+- **Say so when the position is old.** The one failure you cannot hear is a
+  confident answer about the town you left. This template speaks a warning first
+  when the phone has not reported for five minutes, and is otherwise identical:
+
+  ```jinja
+  {%- set sensor = 'sensor.tankpriser_blyfri_95_e10_cheapest_nearby' -%}
+  {%- set tracker = states[state_attr(sensor, 'tracked_entity')] -%}
+  {%- set minutes = ((now() - tracker.last_updated).total_seconds() / 60) | round -%}
+  {% if minutes > 5 %}Bemærk: positionen er {{ minutes }} minutter gammel. {% endif %}
+  {{- state_attr(sensor, 'spoken') }}
+  ```
+
+  Paste it into **Developer tools → Template** first: it must show the sentence
+  on one line, with the warning only when it belongs there.
 - **Just tell me, do not navigate:** keep actions 1–5 only. This variant also
   works as a saved **Assist prompt** in CarPlay's Quick Access tab.
 

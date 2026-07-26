@@ -123,15 +123,19 @@ picker as **"Tankpriser Prices"**, with a **visual editor** that offers only the
 options that currently do something — switch the map off and the map settings
 step out of the way.
 
-Without the map it is a compact price table — station, town, price, cheapest
-highlighted — that makes **no external network request at all**. It repaints
-when the integration says there is new data, not on a timer of its own.
+Without the map it is a compact price table — station, town, distance, price,
+cheapest highlighted — that makes **no external network request at all**. It
+repaints when the integration says there is new data, not on a timer of its own.
 
-The table is sorted by **price alone**; there is no distance in it, so the
-cheapest row may well be the far side of your radius. That is why each row names
-its postnummer and town. If you want stations ranked by how far away they are,
-that is the [cheapest-nearby sensor](#11-in-the-car-carplay-siri-and-android-auto),
-which measures from a device you nominate.
+Each row says **how far away** the station is. Measured from your live position
+when the map is already tracking it, and from your Home location otherwise; the
+section header says which of the two, because "3,2 km" means something different
+from the car than from the house. On a phone with the map and position dot on,
+the distances follow you as you drive. Nothing new is asked of the browser: a
+card that never had permission to know where you are still measures from Home.
+
+The order is **cheapest first**. Set `sort: distance` for nearest first, or
+`show_distance: false` to leave distances out altogether.
 
 ### 6. The map
 
@@ -215,6 +219,10 @@ Neither CarPlay nor Android Auto lets Home Assistant draw a map, so the card
 cannot appear there. Instead, nominate a device (your phone, or the car itself)
 and you get a **`…_cheapest_nearby` sensor per fuel**: stations within a radius
 of *that device*, cheapest first, each with its distance.
+
+These rank against **every station in Denmark**, not the area your price sensors
+cover — the point is the device, which drives out of that area. Halfway to the
+next town you are offered the forecourts halfway to the next town.
 
 - **Android Auto** shows the sensor's price while driving, and — because the
   sensor carries the cheapest station's latitude/longitude — can **navigate
@@ -432,6 +440,8 @@ entities:
 | `show_list` | shown only when the map is off | Set `true` to show map *and* table |
 | `highlight_cheapest` | `true` | Emphasise the cheapest row |
 | `max_stations` | `0` (all) | Cap the number of rows in the table |
+| `show_distance` | `true` | How far away each station is, above its price. Measured from your live position when the map is tracking it, otherwise from Home — the header says which |
+| `sort` | `price` | `price` = cheapest first; `distance` = nearest first |
 | `show_my_location` | `true` | Live GPS dot and the ◎ / ➤ buttons. `false` removes all three and never asks for your location |
 | `follow_me` | `false` | Start with follow-me armed |
 | `show_cars` | `true` | Plot your configured cars on the map |
@@ -572,15 +582,32 @@ Editing a car later: the car appears as a sub-item on the Tankpriser device
 page with its own **Edit** button. Changing the tank size is a good moment to
 run [`tankpriser.reset_history`](#services-events-and-diagnostics).
 
-**The prediction card:** Add card → **"Tankpriser Prediction"**, or:
+**The prediction card:** Add card → **"Tankpriser Prediction"**. Pick your cars
+in the editor's *"Which cars"* field — it lists only cars, and takes **as many as
+you like**. Added from the picker it starts with all of them.
 
 ```yaml
 type: custom:tankpriser-prediction-card
-entity: sensor.passat_days_until_refuel
-title: Passat            # optional
+entities:
+  - sensor.passat_days_until_refuel
+  - sensor.polo_days_until_refuel
 show_donate: true        # optional
+```
+
+Each car gets its own block, named, with its own gauge and figures; the donation
+ask appears once for the whole card rather than once per car. With a **single**
+car the card titles itself with that car's name and the block heading is
+dropped, so nothing is said twice:
+
+```yaml
+type: custom:tankpriser-prediction-card
+entity: sensor.passat_days_until_refuel   # the single-car form still works
+title: Passat            # optional; defaults to the car's own name, "" for none
 donate_url: ""           # optional; defaults to the sensor's link
 ```
+
+Prefer one card per car — different dashboard positions, or a card each in
+separate columns? That still works; add the card once per car.
 
 <!-- 📸 SCREENSHOT S20 prediction-card.png — the prediction card with the tank gauge, ideally in "ready" state -->
 
@@ -625,6 +652,8 @@ integration something else, that name is used instead.
 | `latitude`, `longitude` | The winner's position — **this is what Android Auto navigates to**. Omitted when the position is only estimated |
 | `station_count` / `listed_count` | How many are in range / how many are listed above |
 | `tracked_entity`, `radius_km` | What "nearby" means here |
+| `origin_latitude`, `origin_longitude`, `origin_source` | The position this ranking was measured from, and where it came from: `tracker` (the device's own coordinates), `zone:home` (it reported a zone instead), or `none` |
+| `position_updated` | When that device last told Home Assistant anything. If it is old, so is the answer — see [docs/IN_THE_CAR.md](docs/IN_THE_CAR.md) |
 
 ### `sensor.<car>_days_until_refuel` — one per car
 
@@ -671,6 +700,8 @@ report as-is.
 | No blue position dot | HA served over plain `http`, or location permission denied for the site. Browsers disable geolocation on `http`. |
 | A station has a dashed `≈` pin and no navigate button | Its position is only estimated — deliberately not handed to a navigator. |
 | No `…_cheapest_nearby` sensors | No device nominated under *Configure → Area & fuel types*, or the entity you chose carries no latitude/longitude. |
+| `…_cheapest_nearby` names stations in the town you left | The nominated device has not reported its position recently, so the answer was measured from wherever it last checked in. The candidates are nationwide, so a wrong town means a wrong position: check `origin_latitude` / `origin_longitude` / `position_updated` on the sensor. For Siri, [`docs/IN_THE_CAR.md`](docs/IN_THE_CAR.md) has the fix. |
+| Card distances measured from the wrong place | With no live position the card measures from Home — the header says `from home`. It switches to `from you` only once the map's position dot has a fix, which needs HTTPS and permission. |
 | Prediction stuck on `learning` | It needs ≥ 3 days *and* ≥ 5 % of the tank consumed. A parked car never leaves this state. `tankpriser.seed_demo_history` shows what the card looks like meanwhile. |
 | Prediction looks wrong after changing tank size | Run `tankpriser.reset_history` for that car. |
 | Notifications never arrive | Check the notify service exists (*Developer Tools → Actions*), and remember the "below threshold" rule fires on the *crossing*, not on every refresh. |

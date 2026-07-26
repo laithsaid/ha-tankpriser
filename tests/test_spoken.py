@@ -63,10 +63,12 @@ def _load() -> types.ModuleType:
     sys.modules["tp"] = package
     sys.modules["tp.consumption"] = types.ModuleType("tp.consumption")
     sys.modules["tp.consumption"].ConsumptionTracker = object
+    sys.modules["tp.consumption"].zone_coords = lambda *_a: (None, None)
     sys.modules["tp.coordinator"] = types.ModuleType("tp.coordinator")
     sys.modules["tp.coordinator"].TankpriserCoordinator = object
 
-    for name in ("const", "sensor"):
+    # `nearby` is pure, so it loads for real like `const`.
+    for name in ("const", "nearby", "sensor"):
         spec = importlib.util.spec_from_file_location(
             f"tp.{name}", os.path.join(BASE, f"{name}.py")
         )
