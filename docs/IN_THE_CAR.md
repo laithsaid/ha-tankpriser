@@ -371,20 +371,32 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
   on one line, with the warning only when it belongs there.
 - **Just tell me, do not navigate:** keep actions 1–5 only. This variant also
   works as a saved **Assist prompt** in CarPlay's Quick Access tab.
-- **Open the app from the shortcut** *(untested — worth a driveway try)*. If
-  *"something went wrong"* keeps happening because the Home Assistant app is not
-  running, the obvious move is to launch it first: **Add action** → search
-  `Open App` → **Open App**, choose **Home Assistant**, drag it to the very top,
-  and add a **Wait 2 seconds** under it so the app is up before the next action
-  asks anything of it.
+- **Open the app from the shortcut** *(worth a driveway try)*. If *"something
+  went wrong"* keeps happening because the Home Assistant app is not running,
+  launch it first: **Add action** → search `Open App` → **Open App**, choose
+  **Home Assistant**, and drag it to the **very top**, above Update location.
 
-  Two reasons this is a variant and not the main path. **A locked iPhone may
-  refuse** — iOS often answers "unlock your iPhone first" when a shortcut tries
-  to open an app, and unlocking a phone in a moving car is exactly what this
-  whole page exists to avoid. And Home Assistant **has its own CarPlay screen**,
-  so launching it can take over the car display before the shortcut moves on to
-  Google Maps. Neither is certain; both depend on your phone and head unit,
-  which is why it is worth ten seconds in the driveway rather than a guess.
+  **No extra Wait is needed.** The shortcut already waits two seconds after
+  Update location, and that pause covers the app finishing its start-up just as
+  well as it covers the position reaching Home Assistant. Add a second one only
+  if it fails without it — a car does not need four seconds of silence before an
+  answer.
+
+  There is **no way to open it only when it is not already running**: Shortcuts
+  cannot test whether an app is open. That costs nothing, though — Open App on
+  an app that is already running just brings it forward.
+
+  Two things to expect, neither of them a blocker:
+
+  - **A locked iPhone may want unlocking.** iOS sometimes answers "unlock your
+    iPhone first" when a shortcut opens an app. If **Open URLs** already starts
+    Google Maps for you in the car, your phone is evidently in a state where a
+    shortcut can launch apps, and this will behave the same way.
+  - **The car screen may flash Home Assistant.** The companion app has a CarPlay
+    screen of its own (entity controls — it cannot navigate, which is the whole
+    reason this page routes through Google Maps), so launching it can take the
+    display for a moment before Open URLs hands over to Maps. Cosmetic, and it
+    does not touch the route.
 
   The dependable fixes remain: do not force-quit the app, and — if you like a
   clean App Switcher — the token variant below, which never touches the app.
