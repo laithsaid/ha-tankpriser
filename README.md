@@ -647,7 +647,7 @@ the right one.
    entity id:
 
    ```jinja
-   {{ state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'spoken_cheapest') }} Jeg sætter kurs mod den nu.
+   {{ states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby.attributes.spoken_cheapest }} Jeg sætter kurs mod den nu.
    ```
 
    The first part is a finished sentence built by the integration — *"Billigste
@@ -658,15 +658,31 @@ the right one.
    whatever you want announced**, or delete them if you would rather it just
    read the station and go.
 
+   **Danish or English is decided by Home Assistant, not by the iPhone.** The
+   sentence is built server-side, so it follows the **system** language under
+   *Settings → System → General → Language*. On an English Home Assistant you
+   get "kilometres" and a decimal point — *"16.19"*, which Siri reads as "sixteen
+   point one nine" — and it sounds odd next to a Danish shortcut name. Set the
+   system language to **Dansk** and it becomes *"Billigste er …, 16,19 kroner,
+   1,9 kilometer væk."* Your own interface language is separate, in your user
+   profile, so the dashboard can stay in English if you prefer it that way.
+
+   **There is not a single quote mark in it, deliberately.** The obvious way to
+   write this uses `state_attr('sensor.…', 'spoken_cheapest')` — and a template
+   copied through a phone, a note app or a chat window comes out with `'` turned
+   into a curly `'`, which Jinja cannot parse. The dotted form above has nothing
+   to curl, so it survives being copied anywhere.
+
    > **Try it in Home Assistant before pasting it into Shortcuts.** *Developer
-   > tools → Template*, paste it in, and read the result pane. That one step
-   > splits every later problem in half:
+   > tools → Template*, paste it in, read the result pane. That one step splits
+   > every later problem in half:
    >
    > | Result pane | Meaning |
    > | --- | --- |
    > | The sentence | The template is right. Anything that fails afterwards is the shortcut or the app, not this. |
-   > | `None Jeg sætter kurs…` | The template ran but found no such attribute. Either the entity id is wrong (it follows your **area name** — copy it from *Developer tools → States*), or you are on a version before 0.12.0b6, which is where `spoken_cheapest` was added. Check the sensor's attributes in *States*: if `spoken` is there but `spoken_cheapest` is not, redownload in HACS and restart. |
-   > | A red error | The template text itself. Almost always **smart quotes**: `'` turned into `'` or `'` by copying through something that "helpfully" curls them. Retype the four quote characters by hand. |
+   > | A red error mentioning `has no attribute` | The entity id is wrong. It follows your **area name**, so an area called "Silkeborg" gives `sensor.silkeborg_blyfri_95_e10_cheapest_nearby`. Copy it from *Developer tools → States*. |
+   > | A red error about the template syntax | The text itself, and almost always **smart quotes** from copying it through something that curls them. The version above avoids quotes entirely — retype it by hand rather than pasting a curled copy. |
+   > | Nothing but your own trailing words | `spoken_cheapest` is missing, which means a version before 0.12.0b6. Redownload in HACS and restart. |
 5. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
    **Render template** from the variable bar above the keyboard. Expand it (tap
    ⌄) and turn **Wait Until Finished** on.
@@ -677,8 +693,8 @@ the right one.
    this. It returns the route to that same station:
 
    ```jinja
-   {%- set s = state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations')[0] -%}
-   https://www.google.com/maps/dir/?api=1&destination={{ s.latitude }},{{ s.longitude }}
+   {%- set s = states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby.attributes.stations -%}
+   {%- if s %}https://www.google.com/maps/dir/?api=1&destination={{ s[0].latitude }},{{ s[0].longitude }}{% endif -%}
    ```
 
    The `-` in `{%- … -%}` is load-bearing: without it the tag leaves its newline
@@ -766,11 +782,11 @@ Small edits to the one shortcut, if you want them:
   phone has not reported for five minutes, and is otherwise identical:
 
   ```jinja
-  {%- set sensor = 'sensor.tankpriser_blyfri_95_e10_cheapest_nearby' -%}
-  {%- set tracker = states[state_attr(sensor, 'tracked_entity')] -%}
+  {%- set sensor = states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby -%}
+  {%- set tracker = states[sensor.attributes.tracked_entity] -%}
   {%- set minutes = ((now() - tracker.last_updated).total_seconds() / 60) | round -%}
   {% if minutes > 5 %}Bemærk: positionen er {{ minutes }} minutter gammel. {% endif %}
-  {{- state_attr(sensor, 'spoken_cheapest') }} Jeg sætter kurs mod den nu.
+  {{- sensor.attributes.spoken_cheapest }} Jeg sætter kurs mod den nu.
   ```
 
 - **Name three and let you choose one.** The sensor also carries `spoken`, which
