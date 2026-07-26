@@ -238,6 +238,11 @@ The sensors re-rank when the device *moves*, not only on the price poll — and
 only write state when the ranking actually changed, so a driving phone does not
 flood the recorder.
 
+The Siri route is **confirmed working on CarPlay** (2026-07-26): asked by name,
+three stations read out, chosen by number, route started on the car screen. It
+does depend on a handful of iPhone settings — see
+[Setting up your iPhone](#setting-up-your-iphone).
+
 ### 12. Fuel-consumption prediction
 
 Tankpriser predicts **when each of your cars will next need refuelling**,
@@ -552,6 +557,26 @@ You then get one `sensor.…_cheapest_nearby` per fuel. From there:
   you, so that part is built by hand, once.
   **[`docs/IN_THE_CAR.md`](docs/IN_THE_CAR.md) walks through it action by
   action**, including the version that lets you say *"nummer to"*.
+
+#### Setting up your iPhone
+
+Six settings on the phone decide whether any of this works in a car. None is
+obvious, and each fails quietly in its own way — the sensor keeps answering,
+just about the wrong place, or Siri stops mid-sentence. Set them before building
+anything.
+
+| Setting | Where | Why it matters |
+| --- | --- | --- |
+| **Location: Always** | Settings → Home Assistant → Location | A Shortcut runs the app in the *background*. On "While Using the App" iOS refuses it a position, so Home Assistant keeps the one from when you last opened the app — usually your driveway. Everything then answers confidently about the town you left. |
+| **Precise Location: on** | same screen | Without it iOS reports a coarse area, and "the cheapest station within 10 km" stops meaning anything. |
+| **Background App Refresh: on** | Settings → Home Assistant | Lets the app send a position and answer a Shortcut without being open. |
+| **Never force-quit Home Assistant** | the App Switcher | Swiping the app away tells iOS not to background-launch it again until you open it by hand. Every Home Assistant action in a Shortcut then fails, with Siri saying only *"something went wrong"*. Open it once after a phone restart and leave it alone. |
+| **Siri Responses: Prefer Spoken** | Settings → Siri & Search → Siri Responses | On the default *Automatic*, Siri **prints** her answer whenever the ring switch is silent. A shortcut whose whole point is being heard then does nothing useful. |
+| **Siri language** | Settings → Siri & Search → Language | Your shortcut's *name* must be words in this language. A Danish name spoken to an English Siri transcribes as nonsense, matches nothing, and gets web-searched instead. |
+
+Two of these — Location: Always, and not force-quitting the app — are the
+difference between a shortcut that works in the car and one that fails in ways
+nothing on screen explains.
 
 <!-- 📸 SCREENSHOT S17 nearby-sensor.png — Developer Tools → States showing a _cheapest_nearby sensor with its `spoken` and `stations` attributes -->
 <!-- 📸 SCREENSHOT S18 (optional) siri-shortcut.png — the finished Shortcut, or a photo of the CarPlay screen. Place it in docs/IN_THE_CAR.md, not here. -->

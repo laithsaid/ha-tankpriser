@@ -113,25 +113,29 @@ Two things that are easy to assume otherwise:
 
 ### Before you start
 
+**Set the phone up first.** Six iOS settings decide whether any of this works in
+a car, and each fails quietly in its own way — the
+**["Setting up your iPhone" checklist in the README](../README.md#setting-up-your-iphone)**
+is the one to work through: Location **Always**, Precise Location, Background
+App Refresh, never force-quitting the app, Siri Responses set to **Prefer
+Spoken**, and Siri's language. The two that bite hardest:
+
+- **Location: Always.** On "While Using the App" a shortcut gets no position at
+  all, so every answer describes wherever the app last checked in — usually
+  your driveway, whatever road you are actually on.
+- **Never force-quit Home Assistant.** Every Home Assistant action below is
+  provided by that app, and iOS reads a swipe-away in the App Switcher as "never
+  background-launch this again" until you open it by hand. The shortcut then
+  fails with Siri saying only *"something went wrong"*.
+
+Then, in Home Assistant and on the phone:
+
 - The `…_cheapest_nearby` sensor exists (see the top of this page) and shows a
   price in **Developer tools → States**. Copy its exact entity id — you will
   paste it into two templates.
 - The Home Assistant app is installed and signed in **on the iPhone** (not just
   on the desktop).
-- **Do not force-quit the Home Assistant app.** Every Home Assistant action in
-  this shortcut is provided by that app, and iOS treats swiping an app away in
-  the App Switcher as "never run this in the background again" until you next
-  open it by hand. A shortcut built on those actions then fails with Siri
-  saying only *"something went wrong"*. Open Home Assistant once after a phone
-  restart, leave it in the background, and keep **Settings → Home Assistant →
-  Background App Refresh** on.
 - Google Maps is installed on the iPhone. (Prefer Apple Maps? See *Variants*.)
-- **Settings → Siri & Search → Siri Responses** is set to **Prefer Spoken
-  Responses**. On the default *Automatic*, Siri prints its answer instead of
-  speaking it whenever the ring switch is silent — and a shortcut whose whole
-  point is being heard while driving then does nothing useful.
-- Note which **language** Siri is set to, in the same settings screen. The
-  shortcut's name has to be words in *that* language or Siri will not match it.
 
 ### Part 1 — the simple version, five actions
 
@@ -171,10 +175,12 @@ adding anything — then there is only ever one new thing to debug.
    Assistant language. Danish phrasing follows Home Assistant's language
    setting, not the iPhone's: on an English Home Assistant you get "kilometres"
    and a decimal point, which Siri reads as "sixteen point one nine".
-5. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
-   **Render template** from the variable bar above the keyboard. Expand the
-   action (tap the ⌄) and turn **Wait Until Finished** on, so it finishes
-   reading before anything else happens.
+5. **Add action** → search `Speak` → **Speak Text**. This is the **first** of
+   two Speak Text actions in the finished shortcut — this one reads the three
+   stations out; the other is added in Part 4 and confirms your choice. Tap its
+   text field and pick **Render template** from the variable bar above the
+   keyboard. Expand the action (tap the ⌄) and turn **Wait Until Finished** on,
+   so it finishes reading before anything else happens.
 6. **Add action** → **Render template** again. Clear its `{{ now() }}` and paste
    this — again with your entity id. It returns the route to the cheapest:
 
@@ -279,11 +285,16 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
    Text**. Get: **Item at Index**. Index: tap the field and pick **Provided
    Input** from the variable bar.
 
-5. **Add action** → search `Speak` → **Speak Text**, and put it *before* Open
-   URLs. Type `Kører til nummer ` and then pick **Provided Input** from the
-   variable bar above the keyboard, so it reads *"Kører til nummer to."*
-   (English: `Starting route to number `.) Expand the action with the ⌄ and turn
-   **Wait Until Finished** on.
+5. **Add a SECOND Speak Text** — a new action, not the one from Part 1. That
+   one reads the stations out and stays exactly as it is; this one confirms
+   which you picked, and so it goes near the end, *after* Get Item from List and
+   *before* Open URLs.
+
+   **Add action** → search `Speak` → **Speak Text**. Type `Kører til nummer `
+   into its text field and then pick **Provided Input** from the variable bar
+   above the keyboard, so it reads *"Kører til nummer to."* (English:
+   `Starting route to number `.) Expand the action with the ⌄ and turn **Wait
+   Until Finished** on.
 
    This is not decoration. Opening a map hands the screen and the audio to
    Google Maps, which cuts Siri off mid-sentence — so without an action that
@@ -314,7 +325,7 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
 
 | What happens | Why, and what to do |
 | --- | --- |
-| Siri: *"something went wrong"*, and the Home Assistant app was not running | Every Home Assistant action here belongs to that app, and iOS stops background-launching an app you have **force-quit** (swiped away in the App Switcher) until you open it by hand again. A phone restart has the same effect until the first launch. Open Home Assistant once, leave it in the background, and check **Settings → Home Assistant → Background App Refresh** is on. If you habitually swipe apps away, the shortcut cannot survive it — ask for the token-based variant, which talks to Home Assistant over the network and needs no app at all. |
+| Siri: *"something went wrong"*, and the Home Assistant app was not running | Every Home Assistant action here belongs to that app, and iOS stops background-launching an app you have **force-quit** (swiped away in the App Switcher) until you open it by hand again. A phone restart has the same effect until the first launch. Open Home Assistant once, leave it in the background, and check **Settings → Home Assistant → Background App Refresh** is on. Two ways round it if you keep clearing the App Switcher: *Open the app from the shortcut*, or the token variant that needs no app — both under **Variants**. |
 | Siri asks *"What is the text?"* instead of about the station | **Ask for Input** was left on its defaults. Set **Prompt** to your own question and **Input type** to **Number** (Part 4, step 3). "Text" in her question is the giveaway that the type was never changed. |
 | Siri starts saying something, gets cut off, and the map opens | Opening a map takes the screen and the audio, so whatever she was mid-sentence on is chopped. Any **Speak Text** before it needs **Wait Until Finished** on (expand the action with ⌄) — that is what makes the shortcut hold until she is done. Part 4, step 5. |
 | Siri: *"I don't see an app for that"* | The shortcut name is being misheard. Rename it to something more distinct and say it exactly. |
@@ -360,6 +371,30 @@ wrong opens nothing at all rather than quietly opening the wrong thing.
   on one line, with the warning only when it belongs there.
 - **Just tell me, do not navigate:** keep actions 1–5 only. This variant also
   works as a saved **Assist prompt** in CarPlay's Quick Access tab.
+- **Open the app from the shortcut** *(untested — worth a driveway try)*. If
+  *"something went wrong"* keeps happening because the Home Assistant app is not
+  running, the obvious move is to launch it first: **Add action** → search
+  `Open App` → **Open App**, choose **Home Assistant**, drag it to the very top,
+  and add a **Wait 2 seconds** under it so the app is up before the next action
+  asks anything of it.
+
+  Two reasons this is a variant and not the main path. **A locked iPhone may
+  refuse** — iOS often answers "unlock your iPhone first" when a shortcut tries
+  to open an app, and unlocking a phone in a moving car is exactly what this
+  whole page exists to avoid. And Home Assistant **has its own CarPlay screen**,
+  so launching it can take over the car display before the shortcut moves on to
+  Google Maps. Neither is certain; both depend on your phone and head unit,
+  which is why it is worth ten seconds in the driveway rather than a guess.
+
+  The dependable fixes remain: do not force-quit the app, and — if you like a
+  clean App Switcher — the token variant below, which never touches the app.
+- **No app at all: talk to Home Assistant over the network** *(not yet written
+  up)*. Every Home Assistant action here is provided by the iPhone app, which is
+  why force-quitting it breaks the shortcut. Apple's **Get contents of URL**
+  action can call Home Assistant's REST API directly with a long-lived access
+  token, so the shortcut works whatever the app is doing. It needs your Home
+  Assistant to be reachable from mobile data (Nabu Casa or your own remote
+  access), and a token pasted into the shortcut. Ask and it gets written up.
 
 ### Verified in a car, 2026-07-26
 
