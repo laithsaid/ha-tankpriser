@@ -9,7 +9,7 @@ provider fetches are cached and shared across areas.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -45,11 +45,24 @@ class TankpriserData:
     """Parsed result of one refresh."""
 
     stations: list[Station]
+    # fuel_key -> cheapest-first stations, built on first use. A refresh always
+    # produces a new TankpriserData, so this cannot outlive its prices.
+    _by_fuel: dict[str, list[Station]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     def stations_for(self, fuel_key: str) -> list[Station]:
-        """Return stations offering the given fuel, cheapest first."""
-        matching = [s for s in self.stations if fuel_key in s.prices]
-        return sorted(matching, key=lambda s: s.prices[fuel_key])
+        """Return stations offering the given fuel, cheapest first.
+
+        The list is shared between callers — every sensor read used to redo this
+        filter and sort — so treat it as read-only.
+        """
+        ordered = self._by_fuel.get(fuel_key)
+        if ordered is None:
+            matching = [s for s in self.stations if fuel_key in s.prices]
+            ordered = sorted(matching, key=lambda s: s.prices[fuel_key])
+            self._by_fuel[fuel_key] = ordered
+        return ordered
 
     def cheapest(self, fuel_key: str) -> Station | None:
         """Return the cheapest station for a fuel, or None."""
@@ -72,8 +85,10 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
             update_interval=timedelta(minutes=scan_minutes),
         )
         self._session = async_get_clientsession(hass)
-        # Cached area resolution: (radius_m) -> set of postnumre.
-        self._area_cache: tuple[int, set[str]] | None = None
+        # Cached area resolution: (radius_m, origin) -> set of postnumre. The
+        # origin is part of the key because moving HA's Home location changes
+        # the answer, and that used to keep serving the old area until reload.
+        self._area_cache: tuple[tuple[int, object], set[str]] | None = None
         # Per-car consumption trackers (subentry_id -> ConsumptionTracker),
         # populated by __init__.py after the first refresh.
         self.cars: dict = {}
@@ -134,27 +149,28 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         still resolve from their stored postnummer.
         """
         radius_m = radius_to_metres(self.radius)
-        if self._area_cache is not None and self._area_cache[0] == radius_m:
+        lat = self.hass.config.latitude
+        lon = self.hass.config.longitude
+        origin: object = self.postnummer or (lat, lon)
+        key = (radius_m, origin)
+        if self._area_cache is not None and self._area_cache[0] == key:
             return self._area_cache[1]
 
         if self.postnummer:
             postnumre = await geo.postnumre_within(
                 self._session, self.postnummer, radius_m
             )
+        elif lat is None or lon is None:
+            _LOGGER.warning(
+                "No HA Home location set; Tankpriser cannot resolve an area"
+            )
+            postnumre = set()
         else:
-            lat = self.hass.config.latitude
-            lon = self.hass.config.longitude
-            if lat is None or lon is None:
-                _LOGGER.warning(
-                    "No HA Home location set; Tankpriser cannot resolve an area"
-                )
-                postnumre = set()
-            else:
-                postnumre = await geo.postnumre_within_point(
-                    self._session, lat, lon, radius_m
-                )
+            postnumre = await geo.postnumre_within_point(
+                self._session, lat, lon, radius_m
+            )
 
-        self._area_cache = (radius_m, postnumre)
+        self._area_cache = (key, postnumre)
         _LOGGER.debug(
             "Area %s (%s) -> %d postnumre",
             self.area_label,

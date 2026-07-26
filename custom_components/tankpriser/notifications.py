@@ -57,6 +57,14 @@ async def evaluate_and_notify(
         return
 
     domain, _, object_id = service.partition(".")
+    # The options dialog only ever offers notify.* services. Enforced again here
+    # because this value is a plain string in the entry's options: anything that
+    # could rewrite it would otherwise get an arbitrary service call for free.
+    if domain != "notify":
+        _LOGGER.warning(
+            "Refusing to call %s: Tankpriser only notifies via notify.*", service
+        )
+        return
     area = entry.title
     try:
         await hass.services.async_call(

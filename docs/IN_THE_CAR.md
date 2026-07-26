@@ -205,59 +205,64 @@ limitation of this integration.
 
 ### Part 4 — optional: choose the station out loud
 
-Only once Part 2 works — *including under Siri*, not just when you tap it. This
-adds one idea: **a variable**.
+Only once Part 2 works — *including under Siri*, not just when you tap it.
 
 **Use Ask for Input, not Dictate Text.** Both collect something you say, but
 only one survives Siri. When Siri launches a shortcut it keeps the microphone
 for the whole run, so a **Dictate Text** action asks for a microphone it cannot
 have: the shortcut spins for a while and then ends silently, with no error.
 **Ask for Input** has Siri do the asking, so it never needs the handover — and
-when you tap the shortcut instead, it falls back to an on-screen prompt. Whatever
-you say arrives as a variable called **Provided Input**.
+when you tap the shortcut instead, it falls back to an on-screen prompt.
 
-1. Between **Speak Text** and the second **Render template**, add **Ask for
-   Input** (search `Ask`). Set **Input type** to `Text` and the **Prompt** to
-   something short — *"Hvilken?"* — because Siri reads the prompt aloud before
-   listening.
-2. Replace the second Render template's contents with:
+**The number never goes into the template.** The obvious design — paste the
+spoken words into a Jinja template and let Home Assistant work out which station
+you meant — fails in a way that is very hard to see: if the variable is not
+inserted exactly right, the template still renders, still returns a valid URL,
+and still opens a map. It just always opens the *cheapest* one, so it looks like
+the matching is broken when really the answer never arrived. Pasting the
+template from this page is enough to cause it, because pasting replaces the
+inserted variable with the plain word again.
+
+So instead the template returns **all three URLs**, and Shortcuts picks the line.
+The only variable you insert goes into a numeric index field, where getting it
+wrong opens nothing at all rather than quietly opening the wrong thing.
+
+1. Replace the second **Render template**'s contents with this — your own entity
+   id, as before. It returns three lines, one URL per station:
 
    ```jinja
-   {%- set said = "SPOKEN" | lower -%}
-   {%- set s = state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations')[:3] -%}
-   {%- set words = {1: ['1','en','et','one'], 2: ['2','to','two'], 3: ['3','tre','three']} -%}
-   {%- set ns = namespace(pick=s[0]) -%}
-   {%- for st in s -%}
-     {%- if words[loop.index] | select('in', said) | list or st.company | lower in said -%}
-       {%- set ns.pick = st -%}
-     {%- endif -%}
-   {%- endfor -%}
-   https://www.google.com/maps/dir/?api=1&destination={{ ns.pick.latitude }},{{ ns.pick.longitude }}
+   {%- for st in state_attr('sensor.tankpriser_blyfri_95_e10_cheapest_nearby', 'stations')[:3] %}{% if not loop.first %}
+   {% endif %}https://www.google.com/maps/dir/?api=1&destination={{ st.latitude }},{{ st.longitude }}{%- endfor -%}
    ```
 
-3. `SPOKEN` is a placeholder *for you to replace* — Shortcuts never shows you
-   that word. Double-tap **SPOKEN** to select just that word, delete it, leave
-   the cursor **between the two `"` quotes**, and tap **Provided Input** in the
-   variable bar above the keyboard (or long-press → **Insert Variable** →
-   *Provided Input*).
+   The whitespace control is load-bearing. Without it the result starts with a
+   blank line, and the blank line becomes item 1.
 
-   How to tell it worked: a variable is a **coloured pill you can tap**, not
-   plain black letters.
+2. **Add action** → search `Split` → **Split Text**. Input: the **Render
+   template**. Separator: **New Lines**.
+3. **Add action** → search `Ask` → **Ask for Input**. Input type: **Number**.
+   Prompt: something short like *"Hvilken?"* — Siri reads it aloud before
+   listening.
+4. **Add action** → search `Get Item` → **Get Item from List**. List: **Split
+   Text**. Get: **Item at Index**. Index: tap the field and pick **Provided
+   Input** from the variable bar.
+5. Point **Open URLs** at **Get Item from List** instead of at the Render
+   template.
 
-   ```
-   "nummer 2"           typed text     -> always station 2
-   "SPOKEN"             left as-is     -> never matches -> always the cheapest
-   "[Provided Input]"   the variable   -> whatever you said, each run
-   ```
+   The finished order is: Update location → Render template (spoken) → Speak
+   Text → Render template (URLs) → Split Text → Ask for Input → Get Item from
+   List → Open URLs.
 
-   At run time, saying *"nummer to"* makes Home Assistant receive
-   `{%- set said = "nummer to" | lower -%}`.
+6. Test parked, **via Siri** — say the shortcut's name, then *"three"* when it
+   asks. Shortcuts numbers lists from 1, so three gets you the third station.
+   Tapping the shortcut tests the template but not the voice path, and the voice
+   path is the one that has to work in the car.
 
-4. Test parked again, **via Siri** — say the shortcut's name, then *"nummer
-   tre"* when it asks. If Google Maps opens the *third* station rather than the
-   cheapest, the variable is wired correctly. Tapping the shortcut tests the
-   template but not the voice path, and the voice path is the one that has to
-   work in the car.
+> Prefer to keep the choice inside the template anyway? It can be done, but
+> match **whole words**, not substrings: `en` and `et` appear inside `benzin`
+> and `hvilken`, and `ok` appears inside the word `spoken` itself — so the
+> placeholder, left unreplaced, matches the OK chain. That class of bug is
+> exactly why the list-index version above is the documented one.
 
 ### If something does not work
 
@@ -269,25 +274,26 @@ you say arrives as a variable called **Provided Input**.
 | It shows the text instead of reading it aloud | Not the shortcut — **Settings → Siri & Search → Siri Responses**. On *Automatic* Siri prints rather than speaks whenever the ring switch is silent. Set **Prefer Spoken Responses**, and check the physical silent switch. Matters most in CarPlay, where printed text is useless. |
 | *"Ingen stationer i nærheden"* | No station within the radius, or the tracked device has no position. Check the sensor in Developer tools → States: `station_count`, `tracked_entity`, `radius_km`. |
 | Speaks nothing at all | The entity id in the template is wrong — it follows your **area name**, not always `tankpriser_…`. Copy it from Developer tools → States. |
-| It always routes to the first station | Either you are on the Part 1 version (which does that by design), or the **Provided Input** variable never got inserted — the line must show a coloured chip inside the quotes, not the literal word `SPOKEN`. |
+| It always routes to the first station | You are on the Part 1 version, which does that by design. If you have built Part 4, check **Open URLs** points at **Get Item from List** and not at the Render template — pointing at the template opens its first line, which is the cheapest, every time. |
+| Part 4 opens the cheapest no matter what you answer | The answer is not reaching the shortcut. Replace **Open URLs** with **Show Result** fed by `you said: [Provided Input]` and run it: an empty result means **Ask for Input** is not returning anything, and no template change will help. |
 | A template action returns a date/time | Apple's default `{{ now() }}` was left in place — clear the field completely before pasting. |
 | Speaks, then nothing happens | Google Maps is not installed, or the last station has no coordinates (approximate positions are deliberately omitted). Try the Apple Maps variant. |
 | A web page opens instead of the map app | "Open URLs **in Chrome**" (or another browser's action) was used instead of Apple's plain **Open URLs**. A browser cannot hand the link on to Google Maps, and is not a CarPlay app. |
 | Nothing opens, and the spoken sentence appeared as a URL | **Open URLs** is pointing at the *first* Render template. Point it at the lower one. |
 | Distances look stale | The **Update location** action is missing or not first. |
-| It picks the wrong station | Say the **chain** ("Shell", "Q8", "OK") instead of the number — it matches either. If it hears neither, it routes to the cheapest on purpose, rather than failing. |
+| It picks the station either side of the one you said | Shortcuts numbers lists from **1**, so "one" is the cheapest. Say the position in the spoken list, not an offset. |
+| Nothing opens at all in Part 4 | **Ask for Input** returned nothing or a number above 3, so **Get Item from List** produced an empty item. This is the intended failure — better a visible nothing than quietly routing you somewhere you did not ask for. Answer 1, 2 or 3. |
 
 ### Variants
 
-- **Apple Maps instead of Google:** change the last line of template B to
-  `http://maps.apple.com/?daddr={{ ns.pick.latitude }},{{ ns.pick.longitude }}&dirflg=d`.
-- **Check what the template returns** before wiring it to Open URLs: in Home
-  Assistant, **Developer tools → Template**, paste the block with `SPOKEN`
-  replaced by e.g. `nummer to`. The result pane must show one line — the URL and
-  nothing else.
-- **No conversation, just take me there:** delete actions 6 and 7 and point
-  **Open URLs** at a template that returns the URL for `stations[0]`. Two spoken
-  words, one destination.
+- **Apple Maps instead of Google:** swap the URL inside the loop for
+  `http://maps.apple.com/?daddr={{ st.latitude }},{{ st.longitude }}&dirflg=d`.
+- **Check what the template returns** before wiring it up: in Home Assistant,
+  **Developer tools → Template**, paste the block in. For Part 1 the result pane
+  must show one line — the URL and nothing else. For Part 4 it must show exactly
+  three lines, with no blank line above or below them.
+- **No conversation, just take me there:** keep Part 1 and delete the Speak Text
+  action. Two spoken words, one destination.
 - **Just tell me, do not navigate:** keep actions 1–5 only. This variant also
   works as a saved **Assist prompt** in CarPlay's Quick Access tab.
 

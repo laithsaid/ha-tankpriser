@@ -299,6 +299,8 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         self._attr_name = f"{display} cheapest nearby"
         self._attr_native_unit_of_measurement = unit
         self._attr_unique_id = f"{entry.entry_id}_{fuel_key}_nearby"
+        # The ranking for the state currently being written; None means "recompute".
+        self._ranked_cache: list[dict] | None = None
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title or "Tankpriser",
@@ -323,7 +325,25 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
 
     @callback
     def _handle_tracker_move(self, _event) -> None:
+        """Re-rank on a tracker event, and write state only if it changed.
+
+        The tracker fires for everything, not just movement — a battery level or
+        any other attribute update arrives here too. Writing unconditionally put
+        a fresh copy of the whole station list into the recorder every time, and
+        while driving the distances differ on every GPS fix, so the database
+        grew for readings nobody would ever look at.
+        """
+        fresh = self._compute_ranked()
+        if fresh == self._ranked_cache:
+            return
+        self._ranked_cache = fresh
         self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """New prices invalidate the ranking, so drop it before writing."""
+        self._ranked_cache = None
+        super()._handle_coordinator_update()
 
     def _origin(self) -> tuple[float, float] | None:
         """Where 'nearby' is measured from, or None if the device has no fix."""
@@ -340,6 +360,16 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
             return None
 
     def _ranked(self) -> list[dict]:
+        """The current ranking, computed at most once per state write.
+
+        `native_value` and `extra_state_attributes` are both read on every
+        write, and each used to redo the whole filter-sort-and-measure pass.
+        """
+        if self._ranked_cache is None:
+            self._ranked_cache = self._compute_ranked()
+        return self._ranked_cache
+
+    def _compute_ranked(self) -> list[dict]:
         """Every station within the radius, cheapest first, with its distance.
 
         Deliberately *not* truncated here: ``station_count`` must report how

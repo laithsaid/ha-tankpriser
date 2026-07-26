@@ -2,9 +2,28 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Final
 
 DOMAIN: Final = "tankpriser"
+
+
+def _manifest_version() -> str:
+    """The installed version, read from the manifest.
+
+    Read rather than repeated as a literal: a hand-maintained copy drifts, and
+    ours did — the User-Agent claimed 0.7.1 for four minor releases, which is
+    exactly the field a chain would use to identify our traffic.
+    """
+    try:
+        manifest = Path(__file__).with_name("manifest.json")
+        return str(json.loads(manifest.read_text(encoding="utf-8"))["version"])
+    except (OSError, ValueError, KeyError):
+        return "0"
+
+
+VERSION: Final = _manifest_version()
 
 # --- Data sources ----------------------------------------------------------
 # Since 2026-01-01 Danish law requires every fuel chain to publish an open
@@ -31,7 +50,7 @@ OIL_FUELTYPES: Final = {"95E10": "blyfri95", "DieselB7": "diesel"}
 # blocking what looks like a fake Chrome.
 REQUEST_HEADERS: Final = {
     "User-Agent": (
-        "HomeAssistant-Tankpriser/0.7.1 "
+        f"HomeAssistant-Tankpriser/{VERSION} "
         "(+https://github.com/laithsaid/ha-tankpriser)"
     ),
     "Accept": "application/json, text/plain, */*",
