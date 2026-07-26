@@ -689,8 +689,14 @@ the right one.
 
    That switch is what makes the shortcut wait for her to finish the sentence.
    Without it, opening the map takes the audio and cuts her off mid-word.
-6. **Add action** → **Render template** again. Clear its `{{ now() }}` and paste
-   this. It returns the route to that same station:
+6. **Add action** → **Render template** again. **Check its Server field before
+   anything else:** Shortcuts fills a new action's fields with the *previous
+   action's output*, so the second Render template often arrives with **Server**
+   set to `Render template` instead of your Home Assistant. It looks plausible
+   and fails every time. Tap it and pick your server.
+
+   Then clear its `{{ now() }}` and paste this. It returns the route to that
+   same station:
 
    ```jinja
    {%- set s = states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby.attributes.stations -%}
@@ -744,7 +750,7 @@ screen — voice is the only trigger.
 | A template action returns a date/time | Apple's default `{{ now() }}` was left in place — clear the field completely before pasting. |
 | Speaks, then nothing happens | Google Maps is not installed, or that station has no exact coordinates (approximate positions are deliberately omitted rather than sending you to a postnummer centre). Try the Apple Maps variant below. |
 | Google Maps opens but asks you to choose a starting point | The URL is missing `dir_action=navigate` (step 6), so Maps opened a route preview rather than navigating — and it could not resolve your position by itself. Add it, and give **Google Maps** its own **Location** permission in iOS Settings; it does not inherit Home Assistant's. |
-| Every action fails, even with the template replaced by the word `hello` | The Home Assistant action instance inside the shortcut has gone stale — it keeps failing while still looking correctly configured, and no template change reaches it. Rebuilding the shortcut from scratch is the cure; debugging the template is not. Confirm first that the Home Assistant **app** opens your dashboard, which rules out the connection. |
+| A Render template fails, even with the template replaced by the word `hello` | **Look at that action's Server field.** Shortcuts pre-fills new actions from the previous action's output, so a second Render template commonly ends up with **Server** set to `Render template` rather than your Home Assistant — it reads as configured and fails every time, and no change to the template can help, which is exactly what makes it so slow to find. Tap the field and pick your server. If the Server is right and `hello` still fails, check the Home Assistant **app** opens your dashboard (that rules out the connection), then rebuild the shortcut: an action instance can go stale. |
 | A web page opens instead of the map app | "Open URLs **in Chrome**" was used instead of Apple's plain **Open URLs**. |
 | Nothing opens, and the spoken sentence appeared as a URL | **Open URLs** is pointing at the *first* Render template. Point it at the lower one. |
 | **You are already navigating somewhere, and nothing happens** | Expected, and not fixable from a shortcut — see 11d. |
