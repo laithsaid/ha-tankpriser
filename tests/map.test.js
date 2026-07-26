@@ -334,6 +334,20 @@ const clusterIcons = (card) =>
     both.querySelectorAll(".tp-pred-donate").length, 1,
     "the donation ask appears once per card, not once per car"
   );
+  // It is not a setting. A leftover `show_donate: false` from an older config
+  // must not take it away — the prediction is given in full, and this is the
+  // only thing asked in return.
+  assert.strictEqual(
+    mountPred({ show_donate: false }).querySelectorAll(".tp-pred-donate").length, 1,
+    "show_donate cannot hide the prediction card's ask"
+  );
+  const noDonate = await mount({ [PRICE_ENTITY]: priceState() }, {
+    show_map: false, show_donate: false,
+  });
+  assert.strictEqual(
+    noDonate.querySelectorAll(".ff-donate").length, 1,
+    "nor the price card's"
+  );
   assert.strictEqual(header(both), null, "a multi-car card takes no car's name as its header");
   assert.strictEqual(header(mountPred({})), "Passat", "…but a single-car card still does");
   // A single car must not be labelled twice — the ha-card header already says it.

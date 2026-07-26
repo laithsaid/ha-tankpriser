@@ -336,7 +336,7 @@ Then vary one thing at a time:
 | `sort: distance` | **Nearest first**, price still shown and the cheapest still highlighted — so the highlight is now somewhere down the list. With `max_stations` set, the cap is applied *after* sorting: the 5 nearest, not the 5 cheapest |
 | `show_distance: false` | No distances, and the header stops saying `from home`. `sort: distance` then does nothing — nothing is measured — and the editor stops offering it |
 | `title` removed | No card header; the per-fuel block headers remain |
-| `show_donate: false` | Footer link gone |
+| `show_donate: false` | **Nothing** — the footer stays. The ask is not a setting, and an old config carrying this must not remove it |
 | `donate_url: https://example.com` | Footer points there instead |
 | `donate_url: javascript:alert(1)` | **Silently ignored** — falls back to the default link. This is a deliberate guard; if the alert fires, that is a security bug |
 | A bad entity id | `Unknown entity: sensor.nope` |
@@ -546,7 +546,7 @@ Actions) to move between them on demand instead of waiting days.
 | Any state with a level | A fuel gauge bar at the current percentage, labelled `45 % · 27 L` |
 | `ready` / `estimating` | Detail rows: **Consumption** (with its unit — `L/100 km` only if you configured an odometer, otherwise a time-based rate), **Confidence** as a percentage with the tank count (`30 % · 2 tanks`), and **Cheapest \<fuel\>** naming the station and price |
 | Entity id that does not exist | `Entity sensor.nope not found.` |
-| Footer | "This prediction took real work to build… **please consider a donation 💛**". `show_donate: false` removes it; `donate_url:` overrides the target |
+| Footer | "This prediction took real work to build… **please consider a donation 💛**", always present and once per card. `donate_url:` overrides the target; nothing removes it, including an old `show_donate: false` |
 
 Two things worth confirming deliberately:
 

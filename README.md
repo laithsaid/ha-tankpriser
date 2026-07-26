@@ -448,8 +448,7 @@ entities:
 | `cars` | auto-detect | Explicit list of `…_days_until_refuel` entities to plot |
 | `car_picker` | `true` | The 🚗 button: hide/show cars **on this device only** |
 | `navigation` | `auto` | `auto` / `geo` / `apple` / `google` / `osm` / `off` |
-| `show_donate` | `true` | The "Support the project ♥" footer link |
-| `donate_url` | project link | Your own donation URL |
+| `donate_url` | project link | Where the footer's "Support the project ♥" points. The footer itself is always shown |
 
 ### 6. Turning on the map
 
@@ -591,7 +590,6 @@ type: custom:tankpriser-prediction-card
 entities:
   - sensor.passat_days_until_refuel
   - sensor.polo_days_until_refuel
-show_donate: true        # optional
 ```
 
 Each car gets its own block, named, with its own gauge and figures; the donation
@@ -786,8 +784,9 @@ Bugs and chain requests: [issues](https://github.com/laithsaid/ha-tankpriser/iss
 Tankpriser is free and open source, prediction included. If it saves you money,
 a donation is genuinely appreciated: **[paypal.me/tankpriser](https://paypal.me/tankpriser)**.
 
-The same link sits in both cards' footers. `show_donate: false` hides it for
-good, and `donate_url:` points it somewhere else if you fork this.
+The same link sits in both cards' footers, always — it is one line, it never
+withholds anything, and it is all the project asks in return, so there is no
+setting to remove it. `donate_url:` points it somewhere else if you fork this.
 
 ## Disclaimer
 

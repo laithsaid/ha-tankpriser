@@ -248,10 +248,17 @@ assert.ok(
   !fields({ show_map: true, show_cars: false }).includes("car_picker"),
   "the car picker is meaningless with no cars"
 );
-// …and the prediction card's donation URL needs the ask.
+// The donation ask is not a setting: nothing in either editor switches it off,
+// and no config value can either (see the render assertions in map.test.js).
+for (const config of [{}, { show_donate: false }]) {
+  assert.ok(
+    !_predEditorSchema(config).map((f) => f.name).includes("show_donate"),
+    "the prediction editor must not offer to hide the donation ask"
+  );
+}
 assert.ok(
-  !_predEditorSchema({ show_donate: false }).map((f) => f.name).includes("donate_url"),
-  "no donation link field when the ask is off"
+  !fields({ show_map: true, show_list: true }).includes("show_donate"),
+  "nor the price card's editor"
 );
 // Every prediction field needs a label too, and the car picker is a list now.
 const predLabels = vm.runInContext("PRED_EDITOR_LABELS", ctx);
