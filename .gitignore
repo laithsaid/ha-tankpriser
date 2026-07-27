@@ -15,8 +15,7 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Local Claude/session artifacts
-.claude/
+# Local session artifacts
 scratchpad/
 memory/
 
