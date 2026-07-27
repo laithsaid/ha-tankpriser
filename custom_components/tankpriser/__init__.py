@@ -80,6 +80,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_register_card(hass)
 
     coordinator = TankpriserCoordinator(hass, entry)
+    # Before the first refresh, so that refresh has last run's prices to compare
+    # against instead of silently becoming the new baseline.
+    await coordinator.async_restore_baseline()
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator

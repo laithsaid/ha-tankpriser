@@ -119,6 +119,11 @@ unchanged price cannot repeat itself, so it fires at most once per price change.
 The threshold box is used by that rule only; leaving a number in it does not
 affect the other three.
 
+The prices each refresh saw are remembered on disk, so a restart no longer
+swallows a change: the first refresh after one is compared against the last
+prices seen before it, not treated as a fresh start. A baseline older than a
+week is ignored — by then it is history rather than news.
+
 Every successful refresh also fires a `tankpriser_price_updated` event you can
 build your own automations on.
 

@@ -9,16 +9,22 @@ provider fetches are cached and shared across areas.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import geo, geocode
 from .const import (
+    BASELINE_SAVE_DELAY,
+    MAX_BASELINE_AGE,
+    PRICE_STORAGE_KEY_PREFIX,
+    PRICE_STORAGE_VERSION,
     CONF_CREDENTIALS,
     CONF_DISCOUNTS,
     CONF_NEARBY_RADIUS_KM,
@@ -131,6 +137,61 @@ class TankpriserData:
         return ordered[0] if ordered else None
 
 
+def baseline_payload(stations: list[Station], now: float) -> dict:
+    """What has to survive a restart for change detection to keep working.
+
+    Only the name and the prices: those are all the notification rules read
+    (`cheapest`, and the per-station map behind "any price change"). Positions,
+    addresses and coordinates are re-fetched every refresh anyway, and leaving
+    them out keeps the stored file small and free of anything worth redacting.
+    """
+    return {
+        "saved": now,
+        "stations": [
+            {"name": station.name, "prices": dict(station.prices)}
+            for station in stations
+            if station.prices
+        ],
+    }
+
+
+def stations_from_baseline(stored: object, now: float) -> list[Station] | None:
+    """Rebuild the stored prices, or None if there is nothing usable.
+
+    Deliberately forgiving: this file is read once at startup, and a corrupt or
+    half-written one must cost a single missed comparison, never a failed setup.
+    Anything unparseable is simply no baseline at all.
+    """
+    if not isinstance(stored, dict):
+        return None
+    try:
+        age = now - float(stored.get("saved") or 0)
+    except (TypeError, ValueError):
+        return None
+    # A negative age means the clock moved backwards (a Pi with no RTC catching
+    # up over NTP is the usual cause); trusting it would compare against the
+    # future, so treat it as no baseline rather than guess.
+    if age < 0 or age > MAX_BASELINE_AGE:
+        return None
+
+    stations: list[Station] = []
+    for record in stored.get("stations") or []:
+        if not isinstance(record, dict):
+            continue
+        name = str(record.get("name") or "")
+        prices: dict[str, float] = {}
+        for fuel, price in (record.get("prices") or {}).items():
+            try:
+                prices[str(fuel)] = float(price)
+            except (TypeError, ValueError):
+                continue
+        if name and prices:
+            stations.append(
+                Station(name=name, company="", postnummer="", updated="", prices=prices)
+            )
+    return stations or None
+
+
 class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
     """Fetches and filters fuel prices for one configured area."""
 
@@ -153,6 +214,15 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         # Per-car consumption trackers (subentry_id -> ConsumptionTracker),
         # populated by __init__.py after the first refresh.
         self.cars: dict = {}
+        # Last prices seen before this process started, so the first refresh
+        # after a restart still has something to compare against. Used once,
+        # then the live snapshot takes over.
+        self._store: Store = Store(
+            hass,
+            PRICE_STORAGE_VERSION,
+            f"{PRICE_STORAGE_KEY_PREFIX}_{entry.entry_id}",
+        )
+        self._restored: TankpriserData | None = None
 
     # -- configuration helpers ---------------------------------------------
     @property
@@ -201,6 +271,35 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
     def credentials(self) -> dict[str, str]:
         """Per-chain API keys, for the chains that require one."""
         return dict(self.entry.data.get(CONF_CREDENTIALS, {}))
+
+    # -- change-detection baseline ------------------------------------------
+    async def async_restore_baseline(self) -> None:
+        """Load the last prices we saw, before the first refresh runs.
+
+        Without this a restart silently swallowed one price change: `self.data`
+        started empty, so the first refresh became the new baseline and the move
+        it spanned was never announced. Prices change about once a day, so that
+        was most of them for anyone who restarts often.
+        """
+        try:
+            stored = await self._store.async_load()
+        except Exception:  # noqa: BLE001 - a bad file must not block setup
+            _LOGGER.debug("Could not read the stored prices", exc_info=True)
+            return
+        stations = stations_from_baseline(stored, time.time())
+        if stations is None:
+            return
+        self._restored = TankpriserData(stations=stations)
+        _LOGGER.debug(
+            "Restored %d stations to compare this refresh against", len(stations)
+        )
+
+    def _remember_baseline(self, data: TankpriserData) -> None:
+        """Persist the prices this refresh saw, for the next process to use."""
+        stations = list(data.stations)
+        self._store.async_delay_save(
+            lambda: baseline_payload(stations, time.time()), BASELINE_SAVE_DELAY
+        )
 
     # -- area resolution ----------------------------------------------------
     async def _resolve_area(self) -> set[str]:
@@ -276,13 +375,17 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         stations.sort(key=lambda s: s.name.lower())
         data = TankpriserData(stations=stations, nationwide=nationwide)
 
-        # Change detection / notifications (needs the previous snapshot).
-        previous = self.data
+        # Change detection / notifications (needs the previous snapshot). On the
+        # first refresh of a process that is whatever the last one stored, so a
+        # restart no longer eats the change it spanned.
+        previous = self.data if self.data is not None else self._restored
+        self._restored = None
         if previous is not None:
             try:
                 await evaluate_and_notify(self.hass, self.entry, previous, data)
             except Exception:  # noqa: BLE001 - never let notify break updates
                 _LOGGER.exception("Tankpriser notification handling failed")
+        self._remember_baseline(data)
 
         self.hass.bus.async_fire(
             EVENT_PRICE_UPDATED,

@@ -129,6 +129,22 @@ def radius_to_metres(radius: str | int | float) -> int:
 DEFAULT_SCAN_INTERVAL_MIN: Final = 30
 MIN_SCAN_INTERVAL_MIN: Final = 15
 
+# --- Change-detection baseline ---------------------------------------------
+# Notifications compare each refresh with the one before it. Held only in
+# memory, that baseline died with every restart: the first refresh afterwards
+# became the new baseline, and whatever the price did across the gap was never
+# announced. Since the chains move prices about once a day, a daily restart
+# meant a notification could never arrive at all.
+PRICE_STORAGE_VERSION: Final = 1
+PRICE_STORAGE_KEY_PREFIX: Final = "tankpriser_prices"
+# Written a few seconds after a refresh rather than during it; Home Assistant
+# flushes pending saves on shutdown, so a clean restart loses nothing.
+BASELINE_SAVE_DELAY: Final = 10.0
+# Past this, the last prices we saw are history rather than news, and comparing
+# against them would announce a "drop" that happened while HA was switched off
+# weeks ago. A week covers every realistic outage.
+MAX_BASELINE_AGE: Final = 7 * 24 * 3600.0
+
 # --- Notification rules ----------------------------------------------------
 RULE_ANY: Final = "any_change"
 RULE_CHEAPEST: Final = "cheapest_change"
