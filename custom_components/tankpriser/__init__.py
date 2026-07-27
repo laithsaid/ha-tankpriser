@@ -179,6 +179,21 @@ async def _async_register_card(hass: HomeAssistant) -> None:
             _RESOURCE_REGISTERED = await _async_register_lovelace_resource(hass, url)
         except Exception:  # noqa: BLE001 - never block setup over a dashboard nicety
             _LOGGER.debug("Could not register the Tankpriser Lovelace resource", exc_info=True)
+        if _RESOURCE_REGISTERED:
+            _LOGGER.debug("Tankpriser card published as a Lovelace resource: %s", url)
+        elif hass.is_running:
+            # Only the extra_js route is left, and that one misses any client
+            # holding an older index.html — which is how a phone or tablet ends
+            # up showing every Tankpriser card as a red error box while every
+            # other device is fine. Said once, at startup, because it is the
+            # only warning that explains that symptom.
+            _LOGGER.warning(
+                "Tankpriser could not add its card to the Lovelace resource "
+                "list (dashboards in YAML mode own that list). If a device "
+                "shows the cards as an error box, add %s as a dashboard "
+                "resource of type 'JavaScript Module'.",
+                url,
+            )
 
 
 async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
