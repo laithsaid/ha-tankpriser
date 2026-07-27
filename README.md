@@ -109,8 +109,15 @@ snapshot and can send a notification to any `notify.*` service. Four rules:
 | --------------------------------------------------| ------------------------------------------------------------- |
 | Any price change in the area                      | *any* station's price for a tracked fuel moved                |
 | When the cheapest price changes                   | the cheapest price moved, up or down                          |
-| When the cheapest price drops below the threshold | it crosses your threshold downwards (once, not every refresh) |
+| When the cheapest price drops below the threshold | the cheapest price falls *and* is under your threshold        |
 | Only when the cheapest price decreases            | good news only                                                |
+
+The threshold rule reports **every** fall while the price is under your line,
+not only the one refresh that first crossed it — so with a threshold of 17,00 a
+drop from 16,19 to 16,09 still reaches you. A rise stays silent, and an
+unchanged price cannot repeat itself, so it fires at most once per price change.
+The threshold box is used by that rule only; leaving a number in it does not
+affect the other three.
 
 Every successful refresh also fires a `tankpriser_price_updated` event you can
 build your own automations on.
@@ -937,6 +944,7 @@ integration something else, that name is used instead.
 | `tankpriser.nearby` | The cheapest stations around a position **you supply**, returned directly to the caller — a spoken sentence, the ranked stations, and one navigation URL per station. No entity, no device tracker, nothing that can be stale in between. Fields: `latitude`, `longitude` (both required), `fuel`, `radius_km`, `maps`. Returns `spoken_cheapest`, `spoken`, `stations` and `urls`. For automations that announce prices unprompted — and for a Shortcut built on Apple's *Get contents of URL* and a long-lived token, which needs no Home Assistant app at all. |
 | `tankpriser.seed_demo_history` | Injects synthetic tanks into a car so the prediction shows a number immediately. For testing and demos — **it overwrites learned history**. Fields: `car` (blank = all), `tanks`, `litres_per_day`, `days_per_tank` |
 | `tankpriser.reset_history` | Clears a car's learned history, returning it to `learning`. Use after changing the tank size, or to undo a demo seed. Field: `car` (blank = all) |
+| `tankpriser.test_notification` | Rehearses a price drop and sends the notification it would produce, titled `… (test)`. Checks the rule, the threshold and the notify service in one call, instead of waiting for the chains to move. If nothing can be sent it tells you which of those is the reason. Field: `drop_ore` (how much cheaper to pretend, default 10 øre/L) |
 
 | Event | Payload |
 | --- | --- |
@@ -954,7 +962,8 @@ report as-is.
 | Sensors have no stations | **Home location not set** (*Settings → System → General*), or your radius is small and rural. The log says `No HA Home location set` in that case. The map is unaffected in `national` coverage — it does not use the radius. |
 | The map shows stations far outside my radius | That is `coverage: national`, the default: the viewport is the filter, not your radius. Set `coverage: area` to pin it. |
 | A chain you expect is missing | Only OK, Q8, F24, Shell and OIL! publish open APIs today. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
-| The card says "Configuration error" | A browser holding an old `index.html`. Fully close and reopen the HA app, or hard-refresh the browser. The card is also registered as a Lovelace resource, which fixes this on the next dashboard open. |
+| Every Tankpriser card is a small red error box on one device, and fine on the others | That device is not loading the card script. Fully close and reopen the HA app there (on iPhone/iPad: *Settings → Companion app → Debugging → Reset frontend cache*), or hard-refresh the browser. If it comes back, check *Settings → Dashboards → ⋮ → Resources* lists `/tankpriser/tankpriser-card.js` — if it does not, the integration logs a warning saying so at startup, and adding it by hand as a **JavaScript Module** is the fix. |
+| The card says "Configuration error" | Same cause as the row above: a browser holding an old `index.html`. |
 | The map is blank/grey but markers show | The background tiles are blocked (no internet, or a DNS/ad blocker). The prices are unaffected; `show_map: false` removes the dependency. |
 | No blue position dot | HA served over plain `http`, or location permission denied for the site. Browsers disable geolocation on `http`. |
 | A station has a dashed `≈` pin and no navigate button | Its position is only estimated — deliberately not handed to a navigator. |
@@ -963,7 +972,7 @@ report as-is.
 | Card distances measured from the wrong place | With no live position the card measures from Home — the header says `from home`. It switches to `from you` only once the map's position dot has a fix, which needs HTTPS and permission. |
 | Prediction stuck on `learning` | It needs ≥ 3 days *and* ≥ 5 % of the tank consumed. A parked car never leaves this state. `tankpriser.seed_demo_history` shows what the card looks like meanwhile. |
 | Prediction looks wrong after changing tank size | Run `tankpriser.reset_history` for that car. |
-| Notifications never arrive | Check the notify service exists (*Developer Tools → Actions*), and remember the "below threshold" rule fires on the *crossing*, not on every refresh. |
+| Notifications never arrive | Run `tankpriser.test_notification` — it rehearses a 10 øre drop and either delivers one or names the reason it cannot. Reloading the integration is *not* a test: that clears the comparison baseline, so the first refresh after a reload is deliberately silent. A notify service belonging to a phone or tablet you have since removed is the common cause. |
 
 More depth — logs, installing a build by hand, running the test suite — is in
 [`docs/TESTING.md`](docs/TESTING.md).

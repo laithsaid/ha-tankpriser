@@ -15,11 +15,17 @@ Two more for the per-car prediction:
   tank size, or to undo a demo seed).
 
 Both of those act on all configured cars, optionally filtered by name.
+
+* ``test_notification`` — rehearse a price drop so the notification rule and its
+  delivery can be checked without waiting for the chains to move. A reload
+  cannot stand in for this: it clears the comparison baseline, so the first
+  refresh after one is deliberately silent.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 
 import voluptuous as vol
 
@@ -30,23 +36,36 @@ from homeassistant.core import (
     SupportsResponse,
     callback,
 )
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
     CONF_FUEL_TYPES,
+    CONF_NOTIFY_ENABLED,
+    CONF_NOTIFY_RULE,
+    CONF_NOTIFY_SERVICE,
+    DEFAULT_NOTIFY_RULE,
     DEFAULT_NEARBY_RADIUS_KM,
     DOMAIN,
     FUEL_TYPES,
     NEARBY_MAX_STATIONS,
     SPOKEN_STATIONS,
 )
-from .coordinator import async_national_stations, credentials_of, discounts_of
+from .coordinator import (
+    TankpriserData,
+    async_national_stations,
+    credentials_of,
+    discounts_of,
+)
 from .nearby import rank_nearby, spoken_cheapest, spoken_sentence
+from .notifications import evaluate_and_notify
 
 SERVICE_NEARBY = "nearby"
 SERVICE_SEED_DEMO = "seed_demo_history"
 SERVICE_RESET = "reset_history"
+SERVICE_TEST_NOTIFICATION = "test_notification"
+
+ATTR_DROP_ORE = "drop_ore"
 
 ATTR_CAR = "car"
 ATTR_TANKS = "tanks"
@@ -101,6 +120,35 @@ _SEED_SCHEMA = vol.Schema(
     }
 )
 _RESET_SCHEMA = vol.Schema({vol.Optional(ATTR_CAR): cv.string})
+_TEST_NOTIFICATION_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_DROP_ORE, default=10): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=500)
+        ),
+    }
+)
+
+
+def _prices_before_a_drop(data: TankpriserData, ore: int) -> TankpriserData:
+    """The same stations as they would have been `ore` øre/L dearer.
+
+    Used as the "previous" half of a rehearsed comparison. Copies rather than
+    mutates: `data` is the coordinator's live snapshot, and raising the prices
+    the card is reading from would be a lie with a 30-minute half-life.
+    """
+    krone = ore / 100.0
+    return TankpriserData(
+        stations=[
+            replace(
+                station,
+                prices={
+                    fuel: round(price + krone, 2)
+                    for fuel, price in station.prices.items()
+                },
+            )
+            for station in data.stations
+        ]
+    )
 
 
 def _default_fuel(hass: HomeAssistant) -> str | None:
@@ -190,6 +238,47 @@ def async_register_services(hass: HomeAssistant) -> None:
         for tracker in _cars(hass, call.data.get(ATTR_CAR)):
             await tracker.reset()
 
+    async def _test_notification(call: ServiceCall) -> None:
+        ore = call.data[ATTR_DROP_ORE]
+        areas = 0
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+            if coordinator is None or coordinator.data is None:
+                continue
+            areas += 1
+            options = entry.options
+            if not options.get(CONF_NOTIFY_ENABLED):
+                raise ServiceValidationError(
+                    f'Notifications are switched off for "{entry.title}". Turn '
+                    "them on under the integration's Configure -> Notifications."
+                )
+            if not str(options.get(CONF_NOTIFY_SERVICE) or ""):
+                raise ServiceValidationError(
+                    f'No notify service is set for "{entry.title}", so there is '
+                    "nowhere to send one. Pick one under Configure -> "
+                    "Notifications."
+                )
+            sent = await evaluate_and_notify(
+                hass,
+                entry,
+                _prices_before_a_drop(coordinator.data, ore),
+                coordinator.data,
+                test=True,
+            )
+            if not sent:
+                rule = options.get(CONF_NOTIFY_RULE, DEFAULT_NOTIFY_RULE)
+                raise ServiceValidationError(
+                    f'Nothing was sent for "{entry.title}": a {ore} øre drop '
+                    f'does not satisfy the "{rule}" rule with the current '
+                    "prices. Check the rule, and the threshold if that rule "
+                    "uses one — the log says which test failed."
+                )
+        if not areas:
+            raise HomeAssistantError(
+                "No Tankpriser area has prices yet, so there is nothing to "
+                "compare against. Wait for the first refresh and try again."
+            )
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_NEARBY,
@@ -199,3 +288,9 @@ def async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(DOMAIN, SERVICE_SEED_DEMO, _seed, schema=_SEED_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_RESET, _reset, schema=_RESET_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_TEST_NOTIFICATION,
+        _test_notification,
+        schema=_TEST_NOTIFICATION_SCHEMA,
+    )

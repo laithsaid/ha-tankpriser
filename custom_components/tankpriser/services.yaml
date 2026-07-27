@@ -131,3 +131,26 @@ reset_history:
       example: VW Passat
       selector:
         text:
+
+test_notification:
+  name: Test a price notification
+  description: >-
+    Rehearse a price drop and send the notification it would produce, marked
+    "(test)" in the title. Checks the whole chain at once — the rule, the
+    threshold and the notify service — instead of waiting for the chains to
+    change their prices. Reloading the integration is not a substitute: it
+    clears the comparison baseline, so the first refresh after a reload is
+    deliberately silent. If nothing can be sent, the reason is reported.
+  fields:
+    drop_ore:
+      name: Pretend drop
+      description: >-
+        How much cheaper to pretend every station just became, in øre per litre.
+      required: false
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 500
+          unit_of_measurement: øre/L
+          mode: box

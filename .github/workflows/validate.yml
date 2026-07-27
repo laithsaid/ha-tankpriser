@@ -36,6 +36,7 @@ jobs:
           python tests/test_discounts.py
           python tests/test_geocode.py
           python tests/test_card_registration.py
+          python tests/test_notifications.py
           python tests/test_spoken.py
           python tests/test_nearby.py
           python tests/test_service_urls.py
