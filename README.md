@@ -38,9 +38,10 @@ Two different scopes, worth knowing up front:
 6. [Entities and attributes](#entities-and-attributes)
 7. [Services, events and diagnostics](#services-events-and-diagnostics)
 8. [Troubleshooting](#troubleshooting)
-9. [Privacy and data sources](#privacy-and-data-sources)
-10. [Screenshots to capture](#screenshots-to-capture)
-11. [For developers](#for-developers)
+9. [Known issues](#known-issues)
+10. [Privacy and data sources](#privacy-and-data-sources)
+11. [Screenshots to capture](#screenshots-to-capture)
+12. [For developers](#for-developers)
 
 ---
 
@@ -967,7 +968,7 @@ report as-is.
 | Sensors have no stations | **Home location not set** (*Settings → System → General*), or your radius is small and rural. The log says `No HA Home location set` in that case. The map is unaffected in `national` coverage — it does not use the radius. |
 | The map shows stations far outside my radius | That is `coverage: national`, the default: the viewport is the filter, not your radius. Set `coverage: area` to pin it. |
 | A chain you expect is missing | Only OK, Q8, F24, Shell and OIL! publish open APIs today. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
-| Every Tankpriser card is a small red error box on one device, and fine on the others | That device is not loading the card script. Fully close and reopen the HA app there (on iPhone/iPad: *Settings → Companion app → Debugging → Reset frontend cache*), or hard-refresh the browser. If it comes back, check *Settings → Dashboards → ⋮ → Resources* lists `/tankpriser/tankpriser-card.js` — if it does not, the integration logs a warning saying so at startup, and adding it by hand as a **JavaScript Module** is the fix. |
+| Every Tankpriser card is a small red error box on one device, and fine on the others | That device is not loading the card script. Fully close and reopen the HA app there (on iPhone/iPad: *Settings → Companion app → Debugging → Reset frontend cache*), or hard-refresh the browser. If it comes back, check *Settings → Dashboards → ⋮ → Resources* lists `/tankpriser/tankpriser-card.js` — if it does not, the integration logs a warning saying so at startup, and adding it by hand as a **JavaScript Module** is the fix. If the device is an **iPad running the companion app** and none of that helps, see [Known issues](#the-cards-do-not-load-in-the-ipad-companion-app). |
 | The card says "Configuration error" | Same cause as the row above: a browser holding an old `index.html`. |
 | The map is blank/grey but markers show | The background tiles are blocked (no internet, or a DNS/ad blocker). The prices are unaffected; `show_map: false` removes the dependency. |
 | No blue position dot | HA served over plain `http`, or location permission denied for the site. Browsers disable geolocation on `http`. |
@@ -981,6 +982,44 @@ report as-is.
 
 More depth — logs, installing a build by hand, running the test suite — is in
 [`docs/TESTING.md`](docs/TESTING.md).
+
+## Known issues
+
+### The cards do not load in the iPad companion app
+
+**Symptom.** In the Home Assistant app on iPad, every Tankpriser card — the
+price card, the map card and the prediction card alike — renders as a small
+dark red box with an exclamation mark. That is Home Assistant's error card: the
+custom elements are not defined, meaning the card's JavaScript never ran on that
+client. The **same dashboard, same user, same iPad, opened in Safari, works**.
+
+**Status: unresolved.** It is recorded here rather than left as folklore
+because the usual advice does not fix it, and the list of things that have been
+*eliminated* is more useful than another guess.
+
+| Ruled out | How |
+| --- | --- |
+| A permissions problem | A non-admin user loads the cards fine in Safari on the same iPad. Home Assistant's `websocket_lovelace_resources_impl` carries no `require_admin`, so non-admin users do receive the resource list. |
+| The card's JavaScript | The app's WKWebView is the same WebKit engine as Safari on that device, and Safari runs it. The file uses no syntax newer than the rest of the frontend. |
+| A missing Lovelace resource | `/tankpriser/tankpriser-card.js` is present in `.storage/lovelace_resources`. |
+| *Suspend background connections* | Turning that profile setting off changed nothing. |
+| The app's frontend cache | *Settings → Companion app → Debugging → Reset frontend cache* changed nothing. |
+
+One observation that has not been explained: after upgrading, the **admin** user
+began loading the cards in the app, while a non-admin user on the same device
+still did not. An upgrade changes the resource URL (`?v=` follows the installed
+version), which is consistent with a cached failed response somewhere in the
+app's storage — but that does not account for the two users differing.
+
+**Workaround.** Open the dashboard in **Safari** on the iPad and add it to the
+Home Screen; it then behaves like an app and the cards load normally.
+
+**If you hit this, the single most useful thing you can tell us** is whether
+*other* custom cards (any HACS card, Mushroom, anything with a `custom:` type)
+also fail for the same user in the same app. If they do, this is Home
+Assistant's delivery of Lovelace resources to that client and not Tankpriser. If
+only Tankpriser fails, the difference worth investigating is that this card is
+served from an integration static path rather than from `/hacsfiles/`.
 
 ## Privacy and data sources
 
