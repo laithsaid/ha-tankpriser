@@ -18,6 +18,7 @@ Thumbs.db
 # Local Claude/session artifacts
 .claude/
 scratchpad/
+memory/
 
 # Never commit signing/private keys
 *.pem
