@@ -229,31 +229,37 @@ filter is never silent.
 ### 11. In the car: CarPlay, Siri and Android Auto
 
 Neither CarPlay nor Android Auto lets Home Assistant draw a map, so the card
-cannot appear there. Instead, nominate a device (your phone, or the car itself)
-and you get a **`…_cheapest_nearby` sensor per fuel**: stations within a radius
-of *that device*, cheapest first, each with its distance.
+cannot appear there. Two routes get you the answer anyway, and they are built
+differently on purpose.
 
-These rank against **every station in Denmark**, not the area your price sensors
-cover — the point is the device, which drives out of that area. Halfway to the
-next town you are offered the forecourts halfway to the next town.
+**Siri and CarPlay ask the `tankpriser.nearby` service.** The shortcut takes the
+iPhone's *own* position at the moment you ask, hands it over with the question,
+and gets back a finished sentence, the ranked stations and one navigation link
+each. Nothing is stored in between — no sensor to go stale, no device tracker
+that last checked in an hour ago in a town you have left. Ask *"billigste
+benzin"*, hear *"Billigste er OK Nordre Ringvej, 16,19 kroner, 1,9 kilometer
+væk"*, and the route starts on the CarPlay screen. The sentence is built
+server-side, in Home Assistant's own language, so the shortcut is one action
+rather than a Jinja loop.
 
-- **Android Auto** shows the sensor's price while driving, and — because the
-  sensor carries the cheapest station's latitude/longitude — can **navigate
-  straight to it**.
-- **Siri** can read out the three cheapest and navigate to the one you name. Ask
-  *"billigste benzin"*, hear *"Nummer 1: Q8 Virum, 16,79 kroner, 1,2
-  kilometer…"*, say *"nummer to"*, and Google Maps starts the route on the
-  CarPlay screen. The sentence is pre-built in the `spoken` attribute, in Home
-  Assistant's own language, so the Shortcut is one action instead of a Jinja
-  loop.
+**Android Auto reads the `…_cheapest_nearby` sensors**, because a car head unit
+lists entities and cannot ask a question. Nominate a device — your phone, or the
+car itself — and you get one sensor per fuel: the stations within a radius of
+*that device*, cheapest first, each with its distance. Android Auto shows the
+price while driving and, because the sensor carries the cheapest station's
+latitude/longitude, can **navigate straight to it**.
+
+Both rank against **every station in Denmark**, not the area your price sensors
+cover — the point is where you are, and you drive out of that area. Halfway to
+the next town you are offered the forecourts halfway to the next town.
 
 The sensors re-rank when the device *moves*, not only on the price poll — and
 only write state when the ranking actually changed, so a driving phone does not
 flood the recorder.
 
 The Siri route is **confirmed working on CarPlay** (2026-07-26): asked by name,
-three stations read out, chosen by number, route started on the car screen. It
-does depend on a handful of iPhone settings — see
+the station read out, route started on the car screen. It does depend on a
+handful of iPhone settings — see
 [11a, setting up your iPhone](#11a-setting-up-your-iphone).
 
 ### 12. Fuel-consumption prediction
@@ -555,7 +561,12 @@ source entity reports coordinates, it appears on the map automatically.
 
 *([what this feature does](#11-in-the-car-carplay-siri-and-android-auto))*
 
-**Configure → Area & fuel types**, two fields:
+**The iPhone shortcut needs nothing set up here** — it asks the
+`tankpriser.nearby` service with the phone's own position, so it works with
+these two fields left empty. Skip to [11a](#11a-setting-up-your-iphone) if Siri
+is all you want.
+
+**Android Auto needs the sensors.** *Configure → Area & fuel types*, two fields:
 
 | Field | Notes |
 | --- | --- |
@@ -580,13 +591,13 @@ sensor.tankpriser_blyfri_95_e10_cheapest_nearby
     position_updated: "2026-07-26T14:03:11+02:00"
 ```
 
-> **Copy your own entity id before using the templates below.** Home Assistant
-> builds it from the *area name* you chose, so it is `sensor.tankpriser_…` only
-> if you kept the default — name the area "Silkeborg" and it becomes
+> **Copy your own entity id if you use these.** Home Assistant builds it from
+> the *area name* you chose, so it is `sensor.tankpriser_…` only if you kept the
+> default — name the area "Silkeborg" and it becomes
 > `sensor.silkeborg_blyfri_95_e10_cheapest_nearby`. **Developer tools →
 > States**, filter `cheapest_nearby`, and copy what is actually there.
 
-**Android Auto needs nothing more.** Parked, open the companion app →
+**Android Auto then needs nothing more.** Parked, open the companion app →
 **Settings → Companion app → Android Auto favorites** and add the sensor.
 Android Auto renders sensor states in its driving list, and offers navigation to
 any entity carrying a location — which this one does, pointing at the cheapest
@@ -598,24 +609,27 @@ the shortcut, built once in about five minutes.
 
 #### 11a. Setting up your iPhone
 
-Six settings decide whether any of this works in a car. None is obvious, and
-each fails quietly in its own way — the sensor keeps answering, just about the
-wrong place, or Siri stops mid-sentence. Set them before building anything.
+Five settings decide whether any of this works in a car. None is obvious, and
+each fails quietly in its own way — you get a confident answer about the wrong
+place, or Siri stops mid-sentence. Set them before building anything.
 
 | Setting | Where | Why it matters |
 | --- | --- | --- |
-| **Location: Always** | Settings → Home Assistant → Location | A Shortcut runs the app in the *background*. On "While Using the App" iOS refuses it a position, so Home Assistant keeps the one from when you last opened the app — usually your driveway. Everything then answers confidently about the town you left. |
-| **Precise Location: on** | same screen | Without it iOS reports a coarse area, and "the cheapest station within 10 km" stops meaning anything. |
-| **Background App Refresh: on** | Settings → Home Assistant | Lets the app send a position and answer a Shortcut without being open. |
-| **Never force-quit Home Assistant** | the App Switcher | Swiping the app away tells iOS not to background-launch it again until you open it by hand. Every Home Assistant action in a Shortcut then fails, with Siri saying only *"something went wrong"*. Open it once after a phone restart and leave it alone. |
+| **Shortcuts → Location: While Using the App** | Settings → Shortcuts → Location | The shortcut reads the phone's position with Apple's own *Get current location*. Denied, it has nothing to ask about and the run fails at the first action. This is the **Shortcuts** app's permission, not Home Assistant's. |
+| **Shortcuts → Precise Location: on** | same screen | Without it iOS hands over a coarse area, and "the cheapest station within 15 km" stops meaning anything. |
+| **Never force-quit Home Assistant** | the App Switcher | The *Perform action* step belongs to the Home Assistant app, and iOS stops background-launching an app you have **force-quit** (swiped away) until you open it by hand. A phone restart does the same. Open it once afterwards and leave it alone. |
 | **Siri Responses: Prefer Spoken** | Settings → Siri & Search → Siri Responses | On the default *Automatic*, Siri **prints** her answer whenever the ring switch is silent. A shortcut whose whole point is being heard then does nothing useful. |
 | **Siri language** | Settings → Siri & Search → Language | Your shortcut's *name* must be words in this language. A Danish name spoken to an English Siri transcribes as nonsense, matches nothing, and gets web-searched instead. |
 
-Two of these — Location: Always, and not force-quitting the app — are the
-difference between a shortcut that works in the car and one that fails in ways
-nothing on screen explains.
+> **The old *Location: Always* requirement is gone.** Earlier versions of this
+> guide had the shortcut push a position through the Home Assistant app and then
+> read a sensor, which meant the app needed background location and a head start
+> to report it. The shortcut now carries its own coordinates in the question, so
+> Home Assistant's own location permission no longer affects the answer. It
+> still matters for the `…_cheapest_nearby` sensors and Android Auto, which do
+> follow the app's reported position.
 
-<!-- 📸 SCREENSHOT S17 nearby-sensor.png — Developer Tools → States showing a _cheapest_nearby sensor with its `spoken` and `stations` attributes -->
+<!-- 📸 SCREENSHOT S17 nearby-sensor.png — Developer Tools → Actions running tankpriser.nearby, showing the returned spoken_cheapest and urls -->
 
 Two more things that are easy to assume otherwise:
 
@@ -633,116 +647,101 @@ If it is missing it was deleted at some point; reinstall it free.
 
 Also have **Google Maps** installed (Apple Maps works too — see 11e).
 
-#### 11b. The shortcut — six actions
+#### 11b. The shortcut — eight actions
 
 One shortcut, one behaviour: you ask, it names the cheapest station near you,
 says it is taking you there, and starts the route. Nothing to choose, no number
 to say, no prompt to answer — in a moving car the shortest useful exchange is
 the right one.
 
+It needs a **recent Home Assistant companion app**: the *Perform action* step
+only returns an action's reply in newer builds. If your Shortcuts action picker
+has no *Perform action*, or it hands back nothing, use the sensor-based build in
+[11e](#11e-variants) instead.
+
 1. On the **iPhone**, open **Shortcuts** and tap **+** for a new, empty one.
 2. Tap its name at the top → **Rename** → **Billigste benzin**. *This is the
    phrase you will say to Siri*, so pick something you pronounce cleanly and
    that sounds unlike your other shortcuts. It must be words in **Siri's own
    language**. On an English Siri, call it *Cheap fuel*.
-3. **Add action** → search `Home Assistant` → **Update location**.
-   Then **Add action** → search `Wait` → **Wait**, set to **2 seconds**.
+3. **Add action** → search `location` → Apple's **Get current location**.
 
-   *Why these first: Update location forces a fresh GPS fix and sends it, so the
-   answer describes where you are and not where the app last checked in; the
-   wait gives it time to arrive before the next step reads the sensor. Skip them
-   and the phone can still be reporting your driveway while you are 20 km down
-   the road — and it will name the station at home, distance and all, with no
-   hint anything is wrong.*
-4. **Add action** → search `Home Assistant` → **Render template**. It appears
-   with two fields: **Server** (leave it) and **Template**, pre-filled with
-   Apple's `{{ now() }}`. Select that, delete it, and paste this — with your own
-   entity id:
+   *This is the whole reason the shortcut is built this way: the position that
+   answers the question is taken at the moment you ask it. There is nothing to
+   go stale, and no "did the app report in?" step that can quietly be skipped.*
+4. **Add action** → search `Home Assistant` → **Perform action**.
 
-   ```jinja
-   {{ states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby.attributes.spoken_cheapest }} Jeg sætter kurs mod den nu.
+   Set **Server** to your Home Assistant, and **Action** to
+   **`Tankpriser: Cheapest stations near a point`** (`tankpriser.nearby`). In its
+   data/JSON field, type this:
+
+   ```json
+   {"latitude": , "longitude": }
    ```
 
-   The first part is a finished sentence built by the integration — *"Billigste
-   er OK Nordre Ringvej, 16,19 kroner, 1,9 kilometer væk."* — in your **Home
-   Assistant** language, with the house number dropped (unusable when heard) and
-   a Danish decimal comma, so "16,19" is read as sixteen nineteen rather than
-   "sixteen point one nine". The words after it are plain text: **change them to
-   whatever you want announced**, or delete them if you would rather it just
-   read the station and go.
+   then put the cursor after each `:` and insert the **Current Location**
+   variable from the bar above the keyboard — tapping the inserted chip lets you
+   choose which detail it passes, so set the first to **Latitude** and the
+   second to **Longitude**. Both must be the *number*, not the place name.
 
-   **Danish or English is decided by Home Assistant, not by the iPhone.** The
-   sentence is built server-side, so it follows the **system** language under
-   *Settings → System → General → Language*. On an English Home Assistant you
-   get "kilometres" and a decimal point — *"16.19"*, which Siri reads as "sixteen
-   point one nine" — and it sounds odd next to a Danish shortcut name. Set the
-   system language to **Dansk** and it becomes *"Billigste er …, 16,19 kroner,
-   1,9 kilometer væk."* Your own interface language is separate, in your user
-   profile, so the dashboard can stay in English if you prefer it that way.
+   Nothing else is required. `fuel`, `radius_km` and `maps` all have defaults —
+   the first fuel your area is configured for, 15 km, and Google Maps links.
+   [11e](#11e-variants) shows what to add if you want to change them.
 
-   **There is not a single quote mark in it, deliberately.** The obvious way to
-   write this uses `state_attr('sensor.…', 'spoken_cheapest')` — and a template
-   copied through a phone, a note app or a chat window comes out with `'` turned
-   into a curly `'`, which Jinja cannot parse. The dotted form above has nothing
-   to curl, so it survives being copied anywhere.
+   > **Look at what comes back, once.** Add a **Quick Look** action after this
+   > one, run the shortcut on the phone, and read the dictionary: you should see
+   > `spoken_cheapest`, `count`, `stations` and `urls`. That one look tells you
+   > whether the rest of the shortcut is reading the right keys, and splits every
+   > later problem in half. Some app versions hand over the whole reply, with the
+   > answer nested under **`service_response`**; others hand you the answer
+   > itself. **Whichever you see is what the next steps must use** — if yours is
+   > nested, prefix the keys below with `service_response.`. Delete the Quick
+   > Look once you know.
 
-   > **Try it in Home Assistant before pasting it into Shortcuts.** *Developer
-   > tools → Template*, paste it in, read the result pane. That one step splits
-   > every later problem in half:
-   >
-   > | Result pane | Meaning |
-   > | --- | --- |
-   > | The sentence | The template is right. Anything that fails afterwards is the shortcut or the app, not this. |
-   > | A red error mentioning `has no attribute` | The entity id is wrong. It follows your **area name**, so an area called "Silkeborg" gives `sensor.silkeborg_blyfri_95_e10_cheapest_nearby`. Copy it from *Developer tools → States*. |
-   > | A red error about the template syntax | The text itself, and almost always **smart quotes** from copying it through something that curls them. The version above avoids quotes entirely — retype it by hand rather than pasting a curled copy. |
-   > | Nothing but your own trailing words | `spoken_cheapest` is missing, which means a version older than 0.12.0. Redownload in HACS and restart. |
-5. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
-   **Render template** from the variable bar above the keyboard. Expand it (tap
-   ⌄) and turn **Wait Until Finished** on.
+5. **Add action** → search `dictionary` → **Get dictionary value**. Set it to
+   get **Value** for key `spoken_cheapest`, from the *Perform action* result.
+6. **Add action** → search `Speak` → **Speak Text**. Tap its text field and pick
+   **Dictionary Value** from the variable bar. Expand it (tap ⌄) and turn
+   **Wait Until Finished** on.
 
    That switch is what makes the shortcut wait for her to finish the sentence.
    Without it, opening the map takes the audio and cuts her off mid-word.
 
-   Then **Add action** → search `Wait` → **Wait**, set to **1 second**. When the
-   shortcut ends, Siri says "OK" on top of it — her own acknowledgement, which
-   nothing here produces and no setting suppresses. Without this pause the map
-   opens over her and clips it. One second of silence lets her finish.
-6. **Add action** → **Render template** again. **Check its Server field before
-   anything else:** Shortcuts fills a new action's fields with the *previous
-   action's output*, so the second Render template often arrives with **Server**
-   set to `Render template` instead of your Home Assistant. It looks plausible
-   and fails every time. Tap it and pick your server.
+   To have it say something of your own afterwards — *"Jeg sætter kurs mod den
+   nu"* — type that into the same field after the variable. The sentence itself
+   is built by the integration, with the house number dropped (unusable when
+   heard) and a Danish decimal comma, so "16,19" is read as sixteen nineteen
+   rather than "sixteen point one nine".
 
-   Then clear its `{{ now() }}` and paste this. It returns the route to that
-   same station:
+   **Danish or English is decided by Home Assistant, not by the iPhone**, under
+   *Settings → System → General → Language*. On an English Home Assistant you
+   get "kilometres" and *"16.19"*, which sounds odd next to a Danish shortcut
+   name. Your own interface language is separate, in your user profile, so the
+   dashboard can stay in English if you prefer it that way.
+7. **Add action** → search `Wait` → **Wait**, set to **1 second**.
 
-   ```jinja
-   {%- set s = states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby.attributes.stations -%}
-   {%- if s %}https://www.google.com/maps/dir/?api=1&destination={{ s[0].latitude }},{{ s[0].longitude }}&travelmode=driving&dir_action=navigate{% endif -%}
-   ```
+   When the shortcut ends, Siri says "OK" on top of it — her own
+   acknowledgement, which nothing here produces and no setting suppresses.
+   Without this pause the map opens over her and clips it. One second of silence
+   lets her finish.
+8. **Add action** → **Get dictionary value** again, this time for key `urls`,
+   from the same *Perform action* result. Then **Add action** → search `list` →
+   **Get item from list**, set to **First Item**.
 
-   The `-` in `{%- … -%}` is load-bearing: without it the tag leaves its newline
-   behind and the action returns a blank line followed by the URL. The
-   **`dir_action=navigate`** on the end is what starts turn-by-turn immediately —
-   without it Google Maps opens a route *preview*, and if it cannot work out
-   where you are it asks you to pick a starting point first. If it still asks,
-   give Google Maps itself **Location: While Using the App** and **Precise
-   Location** in iOS Settings; it needs its own permission, separate from Home
-   Assistant's.
-7. **Add action** → search `Open URLs` → **Open URLs**.
+   `urls` is index-aligned with `stations`, so its first entry is the route to
+   the station she just named.
+9. **Add action** → search `Open URLs` → **Open URLs**.
 
    Take Apple's plain **Open URLs**, *not* "Open URLs in Chrome" or any other
    app's version — a browser would open the link as a **web page**, and browsers
    are not CarPlay apps, so nothing would reach the car screen.
 
-   Its input must be the **second** Render template, the one returning the URL.
-   Already showing a `Render template` chip? Leave it — Shortcuts fills in the
-   action directly above, which is the right one. Empty? Tap the field and pick
-   it from the variable bar. Getting a **"Select Variable"** list? It is asking
-   *which* earlier result, not for a name you invent: two entries are called
-   *Render template*, and you want the **lower** one.
-8. **Done.** The finished order is: Update location → Wait → Render template →
-   Speak Text → Wait → Render template → Open URLs.
+   Its input must be the **Item from List**. Already showing that chip? Leave
+   it — Shortcuts fills in the action directly above, which is the right one.
+   Empty, or offering a **"Select Variable"** list? Pick **Item from List**.
+10. **Done.** The finished order is: Get current location → Perform action → Get
+    dictionary value (`spoken_cheapest`) → Speak Text → Wait → Get dictionary
+    value (`urls`) → Get item from list → Open URLs.
 
 **Test it parked, on the phone.** Say *"Hey Siri, Billigste benzin"* with the
 engine off: it should name one station and open Google Maps to it.
@@ -757,23 +756,23 @@ screen — voice is the only trigger.
 
 | What happens | Why, and what to do |
 | --- | --- |
-| Siri: *"something went wrong"*, and the Home Assistant app was not running | Every Home Assistant action here belongs to that app, and iOS stops background-launching an app you have **force-quit** (swiped away in the App Switcher) until you open it by hand. A phone restart does the same until the first launch. Open Home Assistant once, leave it in the background, and check Background App Refresh is on. **Adding an "Open App" action does not fix this** — tested in a car: Siri opens the app and the shortcut stops there, because handing the foreground to another app ends the run. |
+| Siri: *"something went wrong"*, and the Home Assistant app was not running | The *Perform action* step belongs to that app, and iOS stops background-launching an app you have **force-quit** (swiped away in the App Switcher) until you open it by hand. A phone restart does the same until the first launch. Open Home Assistant once and leave it in the background. **Adding an "Open App" action does not fix this** — tested in a car: Siri opens the app and the shortcut stops there, because handing the foreground to another app ends the run. |
+| The run stops at the first action, or names a station nowhere near you | **Shortcuts** has no location permission, or not a precise one. *Settings → Shortcuts → Location* (11a). This is the Shortcuts app's own permission — Home Assistant's makes no difference here. |
+| *Perform action* errors, or the action picker has no such action | Check its **Server** field first, then that the action is `tankpriser.nearby`. If *Perform action* is not in the picker at all, the companion app is too old — update it, or use the sensor-based build in [11e](#11e-variants). |
+| Speak Text says nothing, and the dictionary value is empty | The key path is wrong for your app version. Put a **Quick Look** after *Perform action* (step 4) and read the reply: if the answer sits under **`service_response`**, use `service_response.spoken_cheapest` and `service_response.urls`. |
+| *Perform action* complains the data is not valid JSON | A variable went in as the location's *name* rather than its number, or the phone wrote the decimal with a **comma** — `56,17` is not a number in JSON. Tap the variable chip and pick **Latitude** / **Longitude** explicitly. |
 | Siri starts saying something, gets cut off, and the map opens | **Wait Until Finished** is off on the Speak Text. Expand the action with ⌄ and turn it on — that is what makes the shortcut hold until she is done. |
-| Siri starts to say "OK" and is cut off as the map opens | Hers, not the shortcut's — she acknowledges the run finishing, and the map takes the audio as it comes forward. The **Wait of 1 second** after Speak Text (step 5) gives her time to finish. |
+| Siri starts to say "OK" and is cut off as the map opens | Hers, not the shortcut's — she acknowledges the run finishing, and the map takes the audio as it comes forward. The **Wait of 1 second** (step 7) gives her time to finish. |
 | Siri: *"I don't see an app for that"* | The shortcut name is being misheard. Rename it to something more distinct and say it exactly. |
 | Siri web-searches the phrase instead of running anything | She could not match what she heard to any shortcut. Almost always a language mismatch: **Settings → Siri & Search → Language**. Either set Siri to Dansk, or rename the shortcut to words in Siri's language. Saying *"kør \<name\>"* also helps her treat it as a shortcut rather than a query. |
 | It shows the text instead of reading it aloud | Not the shortcut — **Siri Responses** is on *Automatic*, so she prints whenever the ring switch is silent. Set **Prefer Spoken Responses** (11a). |
 | It runs, spins, then ends silently — no speech, no map | A **Dictate Text** action, left over from an older version of this guide. Siri holds the microphone for the whole run, so it waits for audio that never arrives. Delete it; nothing here needs it. |
-| *"Ingen stationer i nærheden"* | No station within the radius, or the tracked device has no position. Check `station_count`, `tracked_entity`, `radius_km` on the sensor. |
-| Speaks nothing at all | The entity id in the template is wrong — it follows your **area name**. Copy it from Developer tools → States. |
-| A template action returns a date/time | Apple's default `{{ now() }}` was left in place — clear the field completely before pasting. |
-| Speaks, then nothing happens | Google Maps is not installed, or that station has no exact coordinates (approximate positions are deliberately omitted rather than sending you to a postnummer centre). Try the Apple Maps variant below. |
-| Google Maps opens but asks you to choose a starting point | The URL is missing `dir_action=navigate` (step 6), so Maps opened a route preview rather than navigating — and it could not resolve your position by itself. Add it, and give **Google Maps** its own **Location** permission in iOS Settings; it does not inherit Home Assistant's. |
-| A Render template fails, even with the template replaced by the word `hello` | **Look at that action's Server field.** Shortcuts pre-fills new actions from the previous action's output, so a second Render template commonly ends up with **Server** set to `Render template` rather than your Home Assistant — it reads as configured and fails every time, and no change to the template can help, which is exactly what makes it so slow to find. Tap the field and pick your server. If the Server is right and `hello` still fails, check the Home Assistant **app** opens your dashboard (that rules out the connection), then rebuild the shortcut: an action instance can go stale. |
+| *"Ingen stationer i nærheden"* | Nothing sells that fuel within the radius. Not an error, and not a position problem — the service answers about wherever you actually are. Widen it with `radius_km` ([11e](#11e-variants)). |
+| Speaks, then nothing happens | Google Maps is not installed, or that station's position is only estimated — those get an **empty** URL on purpose rather than being dropped, because dropping one would shift every station after it and navigate you to the wrong forecourt. Try the Apple Maps variant below. |
+| Google Maps opens but asks you to choose a starting point | It opened a route *preview* and could not resolve your position by itself. Give **Google Maps** its own **Location** permission in iOS Settings; it does not inherit Home Assistant's. (The `dir_action=navigate` that prevents this is already in the URL the service builds.) |
 | A web page opens instead of the map app | "Open URLs **in Chrome**" was used instead of Apple's plain **Open URLs**. |
-| Nothing opens, and the spoken sentence appeared as a URL | **Open URLs** is pointing at the *first* Render template. Point it at the lower one. |
+| Nothing opens, and the spoken sentence appeared as a URL | **Open URLs** is pointing at the wrong variable — it must be the **Item from List** from step 8, not the first dictionary value. |
 | **You are already navigating somewhere, and nothing happens** | Expected, and not fixable from a shortcut — see 11d. |
-| It names a station in the town you *left* | The phone has not reported its position recently, so the ranking was measured from wherever it last checked in. Check **Location: Always** (11a) and that **Update location** + **Wait** are the first two actions. To confirm after the fact, read `origin_latitude` / `origin_longitude` / `position_updated` on the sensor. The station list is nationwide, so a wrong town can only come from a wrong position. |
 
 #### 11d. Already navigating? What that can and cannot do
 
@@ -799,36 +798,58 @@ start the route. It takes you to the pump; you set your real destination after.
 
 #### 11e. Variants
 
-Small edits to the one shortcut, if you want them:
+The first three are one field in the *Perform action* JSON — no template to
+edit, no second entity to find:
 
-- **Apple Maps instead of Google:** in the URL template, swap the link for
-  `http://maps.apple.com/?daddr={{ s.latitude }},{{ s.longitude }}&dirflg=d`.
-- **A different fuel:** point both templates at that fuel's sensor, e.g.
-  `sensor.tankpriser_diesel_b7_cheapest_nearby`. A second shortcut with its own
-  name gives you one per fuel.
-- **Just tell me, do not navigate:** delete actions 6 and 7 (the URL template
-  and Open URLs), and drop the *"Jeg sætter kurs mod den nu"* wording from the
-  first template. This variant also works as a saved **Assist prompt** in
-  CarPlay's Quick Access tab.
-- **Say so when the position is old.** The one failure you cannot hear is a
-  confident answer about the town you left. This speaks a warning first when the
-  phone has not reported for five minutes, and is otherwise identical:
+- **Apple Maps instead of Google:** add `"maps": "apple"`. `"osm"` gives
+  OpenStreetMap directions.
+- **A different fuel:** add `"fuel": "diesel"` (or `blyfri98`, `blyfri95plus`,
+  `oktan100`, `dieselplus`, `hvo100`). A second shortcut with its own name gives
+  you one per fuel.
+- **Look further:** add `"radius_km": 30`. Anything from 1 to 100.
 
-  ```jinja
-  {%- set sensor = states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby -%}
-  {%- set tracker = states[sensor.attributes.tracked_entity] -%}
-  {%- set minutes = ((now() - tracker.last_updated).total_seconds() / 60) | round -%}
-  {% if minutes > 5 %}Bemærk: positionen er {{ minutes }} minutter gammel. {% endif %}
-  {{- sensor.attributes.spoken_cheapest }} Jeg sætter kurs mod den nu.
+  ```json
+  {"latitude": , "longitude": , "fuel": "diesel", "radius_km": 30, "maps": "apple"}
   ```
 
-- **Name three and let you choose one.** The sensor also carries `spoken`, which
-  names the three cheapest with distances, and `stations` holds all of them.
-  Building a shortcut that asks which one you want takes four more actions and
-  an **Ask for Input**. It is deliberately not documented here: one station and a
-  route is the version that works while driving.
+- **Just tell me, do not navigate:** delete the last three actions (the `urls`
+  lookup, Item from List and Open URLs). This variant also works as a saved
+  **Assist prompt** in CarPlay's Quick Access tab.
+- **Name three and let you choose one.** The reply also carries `spoken`, which
+  names the three cheapest with distances, and `urls` is index-aligned with
+  them — so "number two" is item 2 of that list. Building a shortcut that asks
+  takes two more actions and an **Ask for Input**. It is deliberately not
+  documented here: one station and a route is the version that works while
+  driving.
+- **No Home Assistant app at all.** Swap *Perform action* for Apple's **Get
+  contents of URL**: method **POST** to
+  `https://<your-ha>/api/services/tankpriser/nearby?return_response`, headers
+  `Authorization: Bearer <a long-lived token>` and
+  `Content-Type: application/json`, and the same JSON as the request body. Make
+  a token under your Home Assistant profile → **Security** → *Long-lived access
+  tokens*. The reply is nested here, so read `service_response.spoken_cheapest`.
+  This removes the force-quit failure entirely, at two costs: the token sits in
+  the shortcut, and **you must use an address that works away from home** —
+  nothing is switching between your internal and external URLs for you.
+- **The older, sensor-based shortcut.** Before `tankpriser.nearby` existed, this
+  guide pushed a position through the app with *Update location*, waited two
+  seconds, and read `spoken_cheapest` off the `…_cheapest_nearby` sensor with
+  two **Render template** actions. It still works if you have the sensors
+  configured, and it is the fallback if your companion app is too old for
+  *Perform action*. The template was
+  `{{ states.sensor.tankpriser_blyfri_95_e10_cheapest_nearby.attributes.spoken_cheapest }}`
+  — dotted, with no quote marks, because a `'` copied through a phone comes back
+  curled and Jinja cannot parse it. Two traps came with it: a second *Render
+  template* action arrives with its **Server** field pre-filled from the
+  previous action's output and fails every time until you set it, and — the one
+  this section exists to avoid — if the app has not reported a position
+  recently it answers confidently about the town you left, with nothing on
+  screen to say so.
 
-**Verified in a car, 2026-07-26.**
+**Verified in a car, 2026-07-26** — on the sensor-based build above. The
+service-based shortcut in 11b is the same exchange with that stale position
+designed out, but it is new here: **test it parked before trusting it on a
+motorway.**
 
 ### 12. Adding a car for prediction
 
@@ -917,14 +938,14 @@ integration something else, that name is used instead.
 | Attribute | Meaning |
 | --- | --- |
 | `stations` | Up to 8, cheapest first, each with `distance_km` |
-| `spoken_cheapest` | The **single** cheapest as a ready-to-speak sentence, in HA's language — what the documented Siri shortcut reads out |
+| `spoken_cheapest` | The **single** cheapest as a ready-to-speak sentence, in HA's language — the same sentence `tankpriser.nearby` returns to the Siri shortcut |
 | `spoken` | The three cheapest as a ready-to-speak sentence, for a shortcut that lets you choose |
 | `cheapest_station`, `cheapest_price`, `distance_km` | The winner |
 | `latitude`, `longitude` | The winner's position — **this is what Android Auto navigates to**. Omitted when the position is only estimated |
 | `station_count` / `listed_count` | How many are in range / how many are listed above |
 | `tracked_entity`, `radius_km` | What "nearby" means here |
 | `origin_latitude`, `origin_longitude`, `origin_source` | The position this ranking was measured from, and where it came from: `tracker` (the device's own coordinates), `zone:home` (it reported a zone instead), or `none` |
-| `position_updated` | When that device last told Home Assistant anything. If it is old, so is the answer — see [11c, when it does not work](#11c-when-it-does-not-work) |
+| `position_updated` | When that device last told Home Assistant anything. If it is old, so is the answer. Only the sensors are exposed to this — the Siri shortcut carries its own fresh position, see [11b](#11b-the-shortcut--eight-actions) |
 
 ### `sensor.<car>_days_until_refuel` — one per car
 
@@ -947,7 +968,7 @@ integration something else, that name is used instead.
 
 | Service | What it does |
 | --- | --- |
-| `tankpriser.nearby` | The cheapest stations around a position **you supply**, returned directly to the caller — a spoken sentence, the ranked stations, and one navigation URL per station. No entity, no device tracker, nothing that can be stale in between. Fields: `latitude`, `longitude` (both required), `fuel`, `radius_km`, `maps`. Returns `spoken_cheapest`, `spoken`, `stations` and `urls`. For automations that announce prices unprompted — and for a Shortcut built on Apple's *Get contents of URL* and a long-lived token, which needs no Home Assistant app at all. |
+| `tankpriser.nearby` | The cheapest stations around a position **you supply**, returned directly to the caller — a spoken sentence, the ranked stations, and one navigation URL per station. No entity, no device tracker, nothing that can be stale in between. Fields: `latitude`, `longitude` (both required), `fuel`, `radius_km`, `maps`. Returns `spoken_cheapest`, `spoken`, `stations` and `urls`. This is what the Siri shortcut in [11b](#11b-the-shortcut--eight-actions) calls, through the companion app's *Perform action*; Apple's *Get contents of URL* with a long-lived token reaches it without the app at all. Also for automations that announce prices unprompted. |
 | `tankpriser.seed_demo_history` | Injects synthetic tanks into a car so the prediction shows a number immediately. For testing and demos — **it overwrites learned history**. Fields: `car` (blank = all), `tanks`, `litres_per_day`, `days_per_tank` |
 | `tankpriser.reset_history` | Clears a car's learned history, returning it to `learning`. Use after changing the tank size, or to undo a demo seed. Field: `car` (blank = all) |
 | `tankpriser.test_notification` | Rehearses a price drop and sends the notification it would produce, titled `… (test)`. Checks the rule, the threshold and the notify service in one call, instead of waiting for the chains to move. If nothing can be sent it tells you which of those is the reason. Field: `drop_ore` (how much cheaper to pretend, default 10 øre/L) |
@@ -974,7 +995,7 @@ report as-is.
 | No blue position dot | HA served over plain `http`, or location permission denied for the site. Browsers disable geolocation on `http`. |
 | A station has a dashed `≈` pin and no navigate button | Its position is only estimated — deliberately not handed to a navigator. |
 | No `…_cheapest_nearby` sensors | No device nominated under *Configure → Area & fuel types*, or the entity you chose carries no latitude/longitude. |
-| `…_cheapest_nearby` names stations in the town you left | The nominated device has not reported its position recently, so the answer was measured from wherever it last checked in. The candidates are nationwide, so a wrong town means a wrong position: check `origin_latitude` / `origin_longitude` / `position_updated` on the sensor. For Siri, [11c](#11c-when-it-does-not-work) has the fix. |
+| `…_cheapest_nearby` names stations in the town you left | The nominated device has not reported its position recently, so the answer was measured from wherever it last checked in. The candidates are nationwide, so a wrong town means a wrong position: check `origin_latitude` / `origin_longitude` / `position_updated` on the sensor. This affects the sensors and Android Auto only; the Siri shortcut does not read them. |
 | Card distances measured from the wrong place | With no live position the card measures from Home — the header says `from home`. It switches to `from you` only once the map's position dot has a fix, which needs HTTPS and permission. |
 | Prediction stuck on `learning` | It needs ≥ 3 days *and* ≥ 5 % of the tank consumed. A parked car never leaves this state. `tankpriser.seed_demo_history` shows what the card looks like meanwhile. |
 | Prediction looks wrong after changing tank size | Run `tankpriser.reset_history` for that car. |

@@ -783,6 +783,13 @@ Tracked here and in the project notes so nothing is lost while testing:
       starting on the car screen. Three build details it exposed (force-quit
       app, unset **Ask for Input** prompt, Siri cut off by the map) are fixed in
       the [README's in-car section](../README.md#11-setting-up-the-in-car-sensors).
+- [ ] **The rebuilt Siri shortcut** — 11b now calls `tankpriser.nearby` through
+      the companion app's *Perform action* instead of pushing a position and
+      reading a sensor, which removes the stale-position failure. Build it,
+      confirm parked on the phone, then in the car. First thing to check is the
+      shape of what *Perform action* hands back: the keys may sit under
+      `service_response`, and 11b says to Quick Look it once. The old
+      sensor-based build is kept in 11e as the fallback.
 - [ ] **Card verification on a second client** — the desktop browser is covered;
       the mobile app takes the card by a different route (section 4a) and is the
       one that historically broke.
