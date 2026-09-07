@@ -261,8 +261,10 @@ class TankpriserConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_credentials()
             return await self.async_step_area()
 
-        # Home Assistant usually already knows where it is standing.
-        configured = str(getattr(self.hass.config, "country", "") or "").upper()
+        # Home Assistant usually already knows where it is standing. Its own
+        # country is an uppercase ISO code; ours are lowercase, because they
+        # are also translation keys.
+        configured = str(getattr(self.hass.config, "country", "") or "").lower()
         schema = vol.Schema(
             {
                 vol.Required(

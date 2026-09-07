@@ -89,7 +89,7 @@ def test_parses_a_real_response() -> None:
     check("coordinates are exact", first.latitude == 52.530831, first.latitude)
     check("the provider's id is kept", first.station_id.count("-") == 4, first.station_id)
     check("opening state is carried", first.is_open is True, first.is_open)
-    check("stations are marked German", first.country == "DE", first.country)
+    check("stations are marked German", first.country == "de", first.country)
     check(
         "the three German fuels map onto our keys",
         set(first.prices) == {"blyfri95", "blyfri95plus", "diesel"},
@@ -230,8 +230,8 @@ def test_one_cache_entry_per_circle() -> None:
 
 def test_countries_do_not_mix() -> None:
     print("providers are selected by country")
-    dk = {p.key for p in sources.providers_for("DK")}
-    de = {p.key for p in sources.providers_for("DE")}
+    dk = {p.key for p in sources.providers_for("dk")}
+    de = {p.key for p in sources.providers_for("de")}
     check("Denmark keeps its chains", "ok" in dk and "q8" in dk, dk)
     check("Germany is Tankerkoenig alone", de == {"tankerkoenig"}, de)
     check("and it is not offered to Denmark", "tankerkoenig" not in dk, dk)
@@ -249,13 +249,13 @@ def test_no_area_means_no_request() -> None:
     sources.PROVIDERS["tankerkoenig"] = _replace_fetch(original, _spy)
     try:
         creds = {"tankerkoenig": "k" * 36}
-        asyncio.run(sources.fetch_all(_FakeSession({}), creds, country="DE"))
+        asyncio.run(sources.fetch_all(_FakeSession({}), creds, country="de"))
         check("no circle, no request", calls == [], calls)
 
         sources.invalidate_cache("tankerkoenig")
         asyncio.run(
             sources.fetch_all(
-                _FakeSession({}), creds, country="DE",
+                _FakeSession({}), creds, country="de",
                 area=sources.Area(52.5, 13.4, 25_000),
             )
         )
@@ -282,7 +282,7 @@ def test_a_danish_discount_cannot_reach_a_german_price() -> None:
     print("loyalty discounts stop at the border")
     german_shell = sources.Station(
         name="Shell Hauptstr. 9", company="Shell", postnummer="10115",
-        updated="", prices={"diesel": 1.699}, country="DE",
+        updated="", prices={"diesel": 1.699}, country="de",
     )
     danish_shell = sources.Station(
         name="Shell Vejlevej 1", company="Shell", postnummer="7000",
@@ -296,10 +296,10 @@ def test_a_danish_discount_cannot_reach_a_german_price() -> None:
 # --- what the dialog offers matches what the source can deliver ------------
 def test_the_options_offered_match_the_source() -> None:
     print("the per-country UI tables agree with the providers behind them")
-    cap = sources.max_radius_km("DE")
+    cap = sources.max_radius_km("de")
     check("Germany has a radius ceiling", cap == 25, cap)
 
-    offered = [const.radius_to_metres(r) / 1000 for r in sources.radius_options("DE")]
+    offered = [const.radius_to_metres(r) / 1000 for r in sources.radius_options("de")]
     check(
         "no radius is offered that the source would silently shrink",
         max(offered) <= cap,
@@ -307,12 +307,12 @@ def test_the_options_offered_match_the_source() -> None:
     )
     check(
         "the default asks for the whole circle",
-        const.radius_to_metres(sources.default_radius("DE")) / 1000 == cap,
-        sources.default_radius("DE"),
+        const.radius_to_metres(sources.default_radius("de")) / 1000 == cap,
+        sources.default_radius("de"),
     )
     check(
         "Denmark keeps its wider choice",
-        sources.max_radius_km("DK") == 0 and "50 km" in sources.radius_options("DK"),
+        sources.max_radius_km("dk") == 0 and "50 km" in sources.radius_options("dk"),
     )
 
     # The fuels the dialog lists must be the fuels a price can ever arrive for,
@@ -320,31 +320,31 @@ def test_the_options_offered_match_the_source() -> None:
     deliverable = set(sources._TK_PRODUCT_MAP.values())
     check(
         "Germany lists exactly the three fuels MTS-K publishes",
-        set(sources.fuel_types_for("DE")) == deliverable,
-        sorted(sources.fuel_types_for("DE")),
+        set(sources.fuel_types_for("de")) == deliverable,
+        sorted(sources.fuel_types_for("de")),
     )
     check(
         "each one has a German name in the picker",
-        [const.fuel_label(k, "DE") for k in sources.fuel_types_for("DE")]
+        [const.fuel_label(k, "de") for k in sources.fuel_types_for("de")]
         == ["Super E10", "Super E5", "Diesel"],
-        [const.fuel_label(k, "DE") for k in sources.fuel_types_for("DE")],
+        [const.fuel_label(k, "de") for k in sources.fuel_types_for("de")],
     )
     check(
         "and the Danish names are untouched",
-        const.fuel_label("blyfri95", "DK") == "Blyfri 95 (E10)",
-        const.fuel_label("blyfri95", "DK"),
+        const.fuel_label("blyfri95", "dk") == "Blyfri 95 (E10)",
+        const.fuel_label("blyfri95", "dk"),
     )
     check(
         "the pre-ticked fuels are ones Germany sells",
-        set(sources.default_fuel_types("DE")) <= deliverable,
-        sources.default_fuel_types("DE"),
+        set(sources.default_fuel_types("de")) <= deliverable,
+        sources.default_fuel_types("de"),
     )
 
 
 def test_which_countries_need_a_circle() -> None:
     print("country_needs_area")
-    check("Denmark does not", sources.country_needs_area("DK") is False)
-    check("Germany does", sources.country_needs_area("DE") is True)
+    check("Denmark does not", sources.country_needs_area("dk") is False)
+    check("Germany does", sources.country_needs_area("de") is True)
     check(
         "and a country we do not support needs nothing",
         sources.country_needs_area("SE") is False,

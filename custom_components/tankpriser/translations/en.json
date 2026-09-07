@@ -210,8 +210,8 @@
     },
     "country": {
       "options": {
-        "DK": "Denmark — OK, Q8, F24, Shell and OIL!, no key needed",
-        "DE": "Germany — Tankerkönig (MTS-K), needs a free API key"
+        "dk": "Denmark — OK, Q8, F24, Shell and OIL!, no key needed",
+        "de": "Germany — Tankerkönig (MTS-K), needs a free API key"
       }
     },
     "maps": {

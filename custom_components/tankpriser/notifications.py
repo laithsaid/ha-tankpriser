@@ -95,7 +95,7 @@ async def evaluate_and_notify(
     fuel_types = options.get("fuel_types") or entry.data.get("fuel_types", [])
     # Both the fuel's name and the way its price is written are the country's
     # to decide, so the message is built for the country this entry covers.
-    country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))
+    country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY)).lower()
 
     messages: list[str] = []
     for fuel_key in fuel_types:
@@ -183,7 +183,7 @@ async def evaluate_and_notify_fillup(
     # of the configured area, and offering it stations back home is the bug that
     # pool exists to avoid.
     pool = data.nationwide or data.stations
-    country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))
+    country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY)).lower()
     danish = str(getattr(hass.config, "language", "") or "").lower().startswith("da")
     now = time.time()
 

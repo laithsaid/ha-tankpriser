@@ -53,9 +53,9 @@ def _load() -> dict[str, Any]:
         # rules now need those two out of const.py. Reimplemented here rather
         # than imported, for the same reason the rest of this file is: to keep
         # the test free of Home Assistant.
-        "DEFAULT_COUNTRY": "DK",
+        "DEFAULT_COUNTRY": "dk",
         "format_price": lambda value, country, decimals=None: (
-            f"{value:.{(3 if country == 'DE' else 2) if decimals is None else decimals}f}"
+            f"{value:.{(3 if country == 'de' else 2) if decimals is None else decimals}f}"
         ).replace(".", ","),
     }
     future = ast.parse("from __future__ import annotations").body

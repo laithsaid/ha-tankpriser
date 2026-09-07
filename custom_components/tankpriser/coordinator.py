@@ -114,7 +114,7 @@ def pool_target(hass: HomeAssistant) -> tuple[str, Area | None]:
     describe.
     """
     for entry in hass.config_entries.async_entries(DOMAIN):
-        country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))
+        country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY)).lower()
         coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
         if country_needs_area(country) and coordinator is not None:
             return country, coordinator.search_area
@@ -319,7 +319,7 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
     @property
     def country(self) -> str:
         """The country this entry covers. Entries predating countries are Danish."""
-        return str(self.entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))
+        return str(self.entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY)).lower()
 
     @property
     def anchor(self) -> tuple[float | None, float | None]:

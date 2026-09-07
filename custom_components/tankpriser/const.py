@@ -39,8 +39,12 @@ VERSION: Final = _manifest_version()
 # comes from the provider's own ceiling, and every price shown or spoken takes
 # its unit and its decimals from the `Country` record here. Nothing else in the
 # integration should learn a country's name.
-COUNTRY_DK: Final = "DK"
-COUNTRY_DE: Final = "DE"
+# Lowercase because these double as translation keys — Home Assistant requires
+# those to match [a-z0-9-_]+, and hassfest fails the build over it. They are our
+# own internal keys rather than ISO-3166 codes on the wire, so the case is free
+# to give away.
+COUNTRY_DK: Final = "dk"
+COUNTRY_DE: Final = "de"
 DEFAULT_COUNTRY: Final = COUNTRY_DK
 
 
@@ -95,8 +99,12 @@ COUNTRIES: Final[dict[str, Country]] = {
 
 def country_of(code: str) -> Country:
     """The country record, falling back to the default rather than raising:
-    a stored code we no longer recognise must not break an existing entry."""
-    return COUNTRIES.get(code) or COUNTRIES[DEFAULT_COUNTRY]
+    a stored code we no longer recognise must not break an existing entry.
+
+    Case-insensitive, because the codes were uppercase for one afternoon and an
+    entry written in that window would otherwise silently become Danish.
+    """
+    return COUNTRIES.get(str(code or "").lower()) or COUNTRIES[DEFAULT_COUNTRY]
 
 
 def price_unit(country: str) -> str:
