@@ -154,3 +154,120 @@ test_notification:
           max: 500
           unit_of_measurement: øre/L
           mode: box
+
+simulate_drive:
+  name: Simulate a drive
+  description: >-
+    Drive a virtual car along a route so the driving features can be tested
+    without driving. It writes positions, speed and heading onto a tracker
+    entity exactly as the companion app would, so the corridor search, the
+    dropping of stations behind you and the spoken answer all run for real —
+    nothing is stubbed. Point your Tankpriser area's tracker at the simulated
+    entity first, or it will not see the drive.
+  fields:
+    route:
+      name: Route
+      description: >-
+        A named route to drive. Use this or waypoints, not both.
+      required: false
+      example: de_north_south
+      selector:
+        select:
+          options:
+            - label: Germany, Flensburg to Munich (~830 km)
+              value: de_north_south
+            - label: Germany, Aachen to Dresden (~640 km)
+              value: de_west_east
+            - label: Odense to Flensburg and Schleswig (~200 km)
+              value: dk_de_border
+            - label: Denmark, Skagen to Copenhagen (~470 km)
+              value: dk_north_south
+    waypoints:
+      name: Waypoints
+      description: >-
+        Your own route, as a list of [latitude, longitude] pairs. Straight
+        lines are driven between them, so add one wherever the road turns.
+      required: false
+      example: "[[54.782, 9.436], [53.551, 9.994]]"
+      selector:
+        object:
+    speed_kmh:
+      name: Speed
+      description: How fast the car travels. Under 30 km/h counts as parked.
+      required: false
+      default: 110
+      selector:
+        number:
+          min: 1
+          max: 250
+          unit_of_measurement: km/h
+          mode: box
+    interval:
+      name: Step interval
+      description: >-
+        Real seconds between steps. With "ask for an answer" on, every step
+        costs a few requests against your API key where the source is queried
+        by area — so a short interval on a long route is a lot of requests.
+      required: false
+      default: 60
+      selector:
+        number:
+          min: 15
+          max: 3600
+          unit_of_measurement: s
+          mode: box
+    tracker:
+      name: Tracker entity
+      description: >-
+        Which entity to write the positions to. Defaults to
+        device_tracker.tankpriser_sim.
+      required: false
+      example: device_tracker.tankpriser_sim
+      selector:
+        text:
+    announce:
+      name: Ask for an answer at every step
+      description: >-
+        Call the nearby service from each position and write what it would say
+        to the log. Turn this off to move the car without spending requests.
+      required: false
+      default: true
+      selector:
+        boolean:
+    loop:
+      name: Loop
+      description: Start again from the beginning on arrival.
+      required: false
+      default: false
+      selector:
+        boolean:
+    fuel:
+      name: Fuel
+      description: Which fuel to ask about. Defaults to your first configured one.
+      required: false
+      example: diesel
+      selector:
+        text:
+
+stop_simulation:
+  name: Stop the simulated drive
+  description: >-
+    Stop the running simulation and leave the car parked where it got to, with
+    its speed set to zero so nothing goes on believing it is moving.
+
+prediction_accuracy:
+  name: Grade the fuel prediction
+  description: >-
+    Scores the consumption prediction against what each car actually did, tank
+    by tank, using only the tanks that came before each one. Says whether the
+    model is consistently off in one direction or merely noisy. Only exists
+    while "Grade the fuel prediction against reality" is switched on under
+    Configure → Area & fuel types.
+  fields:
+    car:
+      name: Car
+      description: Grade one car by name. Leave empty to grade them all.
+      required: false
+      example: Passat
+      selector:
+        text:

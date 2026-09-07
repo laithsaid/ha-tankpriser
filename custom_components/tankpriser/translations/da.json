@@ -3,15 +3,37 @@
     "step": {
       "user": {
         "title": "Opsæt Tankpriser",
-        "description": "Priser hentes fra de danske brændstofkæders officielle pris-API'er (OK, Q8, F24, Shell, OIL!). Dit område er din Hjem-placering — vælg blot de brændstoftyper, du vil følge. Radius (standard 10 km) kan ændres senere under Indstillinger.",
+        "description": "Hvilket land tanker du i? Én opsætning dækker ét land — tanker du også på den anden side af grænsen, kan du tilføje det land bagefter som endnu en Tankpriser-opsætning.",
+        "data": {
+          "country": "Land"
+        }
+      },
+      "area": {
+        "title": "Område og brændstoftyper",
+        "description": "Vælg de brændstoftyper, du vil følge. Dit område er din Hjem-placering, og radius kan ændres senere under Indstillinger.",
         "data": {
           "area_name": "Navn (valgfrit)",
-          "fuel_types": "Brændstoftyper"
+          "fuel_types": "Brændstoftyper",
+          "anchor": "Søg ud fra dette punkt"
+        },
+        "data_description": {
+          "anchor": "Tyske priser kan kun slås op omkring et punkt, og det punkt skal ligge fast: sensorer, historik og prisbeskeder sammenligner de samme stationer fra opdatering til opdatering. Spørger du højt, søges der stadig fra der, hvor du er."
+        }
+      },
+      "credentials": {
+        "title": "API-nøgle",
+        "description": "Priserne for dette land kommer fra en kilde, der kun svarer med en personlig API-nøgle. Den er gratis, og den er din — Home Assistant sender den kun til kilden selv.\n\n{guides}",
+        "data": {
+          "tankerkoenig": "Tankerkönig API-nøgle"
         }
       }
     },
     "error": {
-      "no_fuel_types": "Vælg mindst én brændstoftype."
+      "no_fuel_types": "Vælg mindst én brændstoftype.",
+      "key_required": "Denne kilde kræver en nøgle, før den kan sættes op.",
+      "invalid_auth": "Kilden afviste nøglen. En helt ny nøgle er som regel ikke aktiveret endnu — det sker manuelt og kan tage dage. Tjek at du har kopieret det hele, og prøv igen, når aktiveringsmailen kommer.",
+      "cannot_connect": "Kunne ikke få forbindelse til kilden. Tjek din internetforbindelse og prøv igen.",
+      "no_stations": "Nøglen blev accepteret, men der kom ingen tankstationer retur. Opret gerne et issue, hvis det bliver ved."
     },
     "abort": {
       "already_configured": "Tankpriser er allerede opsat."
@@ -83,7 +105,8 @@
           "settings": "Område og brændstoftyper",
           "notifications": "Prisnotifikationer",
           "chains": "Kæder og API-nøgler",
-          "discounts": "Rabatter"
+          "discounts": "Rabatter",
+          "prediction": "Optankningsforudsigelse"
         }
       },
       "settings": {
@@ -95,8 +118,10 @@
           "excluded_stations": "Skjul disse tankstationer",
           "scan_interval": "Opdateringsinterval (minutter)",
           "nearby_tracker": "Find stationer nær denne enhed (telefon eller bil)",
-          "nearby_radius_km": "Hvor langt væk må stationerne være"
-        }
+          "nearby_radius_km": "Hvor langt væk må stationerne være",
+          "anchor": "Søg ud fra dette punkt"
+        },
+        "data_description": {}
       },
       "notifications": {
         "title": "Prisnotifikationer",
@@ -105,12 +130,19 @@
           "notify_enabled": "Send notifikationer ved prisændringer",
           "notify_service": "Notifikationstjeneste (fx notify.mobile_app_telefon)",
           "notify_rule": "Hvornår skal der notificeres",
-          "notify_threshold": "Prisgrænse (for \"under grænse\")"
+          "notify_threshold": "Prisgrænse (for \"under grænse\")",
+          "fillup_enabled": "Giv også besked, når en bil er lav og kører forbi noget billigt",
+          "fillup_level_pct": "Giv besked under så meget af en tank",
+          "fillup_near_km": "…og der er en station inden for",
+          "fillup_maps": "Åbn navigation i"
+        },
+        "data_description": {
+          "fillup_enabled": "Kræver mindst én bil tilføjet til forbrugsberegning. Du får besked én gang pr. lav tank, ikke én gang pr. opdatering — næste besked venter, til bilen er tanket op."
         }
       },
       "chains": {
         "title": "Kæder og API-nøgler",
-        "description": "De fleste danske kæder offentliggør deres priser frit og kræver ingen opsætning — OK, Q8, F24, Shell og OIL! virker med det samme. Kæderne nedenfor svarer kun med en personlig API-nøgle, som du selv skal anmode om. Vælg en for at se hvordan.",
+        "description": "De fleste kilder offentliggør deres priser frit og kræver ingen opsætning — de danske kæder OK, Q8, F24, Shell og OIL! virker med det samme. Kilderne herunder svarer kun med en personlig API-nøgle, som du selv skal anmode om. Vælg en for at se hvordan.",
         "data": {
           "provider": "Kæde"
         }
@@ -138,6 +170,18 @@
           "unox": "Uno-X",
           "ok": "OK"
         }
+      },
+      "prediction": {
+        "title": "Optankningsforudsigelse",
+        "description": "Hvordan forudsigelsen pr. bil opfører sig. Begge indstillinger kræver mindst én tilføjet bil, og ingen af dem påvirker priserne.",
+        "data": {
+          "calibration_enabled": "Lær af tidligere forudsigelser og korrigér fremtidige",
+          "accuracy_enabled": "Vis mig hvor præcis forudsigelsen har været (avanceret)"
+        },
+        "data_description": {
+          "calibration_enabled": "Efter hver optankning sammenlignes forudsigelsen med, hvad tanken faktisk gjorde. Har den typiske tank hældet samme vej over mindst fem tanke, justeres senere forudsigelser tilbage — med halvdelen af den målte hældning og aldrig mere end 25 %. En ferietur med usædvanlige tanke ignoreres i stedet for at blive opfattet som en ny vane. Slået til som standard; slå den fra for at se den rå model.",
+          "accuracy_enabled": "Tilføjer handlingen tankpriser.prediction_accuracy og gør kortet Prediction Accuracy brugbart. Det bedømmer hver tank og siger, om modellen konsekvent rammer forkert eller bare svinger. Slået fra som standard — det er et værktøj til at bedømme forudsigelsen, ikke en del af den."
+        }
       }
     },
     "error": {
@@ -162,6 +206,19 @@
       "options": {
         "percent": "Procent af tank (%)",
         "litres": "Liter"
+      }
+    },
+    "country": {
+      "options": {
+        "DK": "Danmark — OK, Q8, F24, Shell og OIL!, kræver ingen nøgle",
+        "DE": "Tyskland — Tankerkönig (MTS-K), kræver en gratis API-nøgle"
+      }
+    },
+    "maps": {
+      "options": {
+        "google": "Google Maps",
+        "apple": "Apple Maps",
+        "osm": "OpenStreetMap"
       }
     }
   }

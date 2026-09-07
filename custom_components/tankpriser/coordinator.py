@@ -1,9 +1,15 @@
 """DataUpdateCoordinator for Tankpriser.
 
-Aggregates the free Danish per-station price APIs (see ``sources.py``), filters
-them to the configured postnummer + radius using DAWA (see ``geo.py``), and
-exposes the result to the sensor platform. One coordinator per configured area;
-provider fetches are cached and shared across areas.
+One coordinator per config entry, and one entry per country. How an entry gets
+its stations depends on what that country's sources can answer:
+
+* Denmark's chains publish the whole country, so we fetch it once (shared with
+  every other reader) and cut it down to the configured postnummer + radius
+  using DAWA — see ``geo.py``.
+* Germany's Tankerkoenig only answers about a circle, so the circle *is* the
+  query. It is anchored at a fixed point rather than at whatever the phone is
+  doing, because notifications and history compare one refresh with the next
+  and a moving area would swap the whole station list on every drive.
 """
 
 from __future__ import annotations
@@ -22,6 +28,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from . import geo, geocode
 from .const import (
     BASELINE_SAVE_DELAY,
+    CONF_ANCHOR,
+    CONF_FILLUP_ENABLED,
+    CONF_COUNTRY,
+    DEFAULT_COUNTRY,
     MAX_BASELINE_AGE,
     PRICE_STORAGE_KEY_PREFIX,
     PRICE_STORAGE_VERSION,
@@ -41,8 +51,16 @@ from .const import (
     CONF_SCAN_INTERVAL,
     radius_to_metres,
 )
-from .notifications import evaluate_and_notify
-from .sources import Station, apply_discounts, fetch_all
+from .notifications import evaluate_and_notify, evaluate_and_notify_fillup
+from .sources import (
+    Area,
+    Station,
+    apply_discounts,
+    area_for,
+    country_needs_area,
+    fetch_all,
+    without_hidden,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,24 +86,88 @@ def discounts_of(hass: HomeAssistant) -> dict[str, int]:
     return discounts
 
 
-async def async_national_stations(
+def exclusions_of(hass: HomeAssistant) -> set[str]:
+    """Station names the user has hidden, from every configured entry.
+
+    Hiding a station meant hiding it from the area sensor and nowhere else: the
+    map and the voice answer are built from the shared pool, which never saw
+    this list. So a forecourt you had told the integration you would never use
+    stayed on the map, and could still be the station Siri sent you to — which
+    is the one place being wrong actually costs you a detour.
+    """
+    hidden: set[str] = set()
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        for name in entry.options.get(CONF_EXCLUDED_STATIONS, []) or []:
+            cleaned = str(name).strip().lower()
+            if cleaned:
+                hidden.add(cleaned)
+    return hidden
+
+
+def pool_target(hass: HomeAssistant) -> tuple[str, Area | None]:
+    """Which country an integration-wide caller means, and which circle.
+
+    The map and the voice service are not tied to one entry; today there is at
+    most one per country, so the first entry answers for all of them. A country
+    whose sources only take a circle also needs one, and the entry's own
+    anchored area is the honest default — it is the pool its sensors already
+    describe.
+    """
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))
+        coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if country_needs_area(country) and coordinator is not None:
+            return country, coordinator.search_area
+        return country, None
+    return DEFAULT_COUNTRY, None
+
+
+def entry_coordinator(hass: HomeAssistant):
+    """The coordinator an integration-wide caller should ask, or None.
+
+    Same rule as `pool_target`: at most one entry per country today, so the
+    first one answers. Kept next to it so the two never disagree about which
+    entry that is.
+    """
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        return hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    return None
+
+
+async def async_station_pool(
     hass: HomeAssistant,
     credentials: dict[str, str],
     discounts: dict[str, int],
+    country: str = DEFAULT_COUNTRY,
+    area: Area | None = None,
 ) -> list[Station]:
-    """Every Danish station, priced for this driver and placed on the map.
+    """The stations an integration-wide caller may choose from, placed on the map.
 
-    Shared by the national map's websocket command and the ``nearby`` service so
-    both quote the same prices from the same positions. Everything underneath is
-    cached — the provider fetches, the geocode store, the postnummer centres —
-    so a repeat call costs little more than the discount pass.
+    Shared by the map's websocket command and the ``nearby`` service so both
+    quote the same prices from the same positions. For Denmark that pool is the
+    whole country; for an area-scoped country it is the one circle named by
+    ``area``, because no larger pool exists to draw from.
+
+    Everything underneath is cached — the provider fetches, the geocode store,
+    the postnummer centres — so a repeat call costs little more than the
+    discount pass.
 
     Stations that still cannot be placed keep ``latitude = None``; callers drop
     them, because a station without a position can be neither mapped nor ranked
     by distance.
     """
     session = async_get_clientsession(hass)
-    stations = apply_discounts(await fetch_all(session, credentials), discounts)
+    stations = without_hidden(
+        apply_discounts(
+            await fetch_all(session, credentials, country, area), discounts
+        ),
+        exclusions_of(hass),
+    )
+    if country_needs_area(country):
+        # Every station from an area source arrives with exact coordinates —
+        # it had to, to be found by a radius query — so there is nothing to
+        # geocode, and DAWA below only knows Danish addresses anyway.
+        return stations
 
     geocoder = geocode.async_get(hass)
     await geocoder.async_load()
@@ -214,6 +296,10 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         # Per-car consumption trackers (subentry_id -> ConsumptionTracker),
         # populated by __init__.py after the first refresh.
         self.cars: dict = {}
+        # What the fill-up alert has already said, per car, so a car parked low
+        # on the drive is mentioned once rather than every half hour. In memory
+        # on purpose — see fillup.FillupMemory.
+        self.fillup_memory: dict = {}
         # Last prices seen before this process started, so the first refresh
         # after a restart still has something to compare against. Used once,
         # then the live snapshot takes over.
@@ -229,6 +315,39 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
     def postnummer(self) -> str:
         """Legacy postnummer, if this entry was created the old way (else '')."""
         return str(self.entry.data.get(CONF_POSTNUMMER, "")).strip()
+
+    @property
+    def country(self) -> str:
+        """The country this entry covers. Entries predating countries are Danish."""
+        return str(self.entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))
+
+    @property
+    def anchor(self) -> tuple[float | None, float | None]:
+        """The fixed point this entry searches from.
+
+        A nominated point if there is one, else Home. Nominated matters for the
+        case the anchor was added for: a Dane watching German prices over the
+        border has a Home that is in the wrong country entirely.
+        """
+        stored = self.entry.options.get(CONF_ANCHOR) or {}
+        latitude = stored.get("latitude")
+        longitude = stored.get("longitude")
+        if latitude is None or longitude is None:
+            return self.hass.config.latitude, self.hass.config.longitude
+        return float(latitude), float(longitude)
+
+    @property
+    def search_area(self) -> Area | None:
+        """The circle to ask an area-scoped source about, or None if unplaced."""
+        latitude, longitude = self.anchor
+        if latitude is None or longitude is None:
+            return None
+        # Capped to what the source will serve: it silently answers a
+        # smaller circle than asked for, and what we *say* we searched has to
+        # stay true — the spoken "nothing within N kilometres" depends on it.
+        return area_for(
+            self.country, latitude, longitude, radius_to_metres(self.radius)
+        )
 
     @property
     def area_label(self) -> str:
@@ -266,6 +385,11 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         return float(
             self.entry.options.get(CONF_NEARBY_RADIUS_KM, DEFAULT_NEARBY_RADIUS_KM)
         )
+
+    @property
+    def fillup_enabled(self) -> bool:
+        """Whether the "fill up now" alert is switched on for this entry."""
+        return bool(self.entry.options.get(CONF_FILLUP_ENABLED, False))
 
     @property
     def credentials(self) -> dict[str, str]:
@@ -341,36 +465,11 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
 
     # -- fetching -----------------------------------------------------------
     async def _async_update_data(self) -> TankpriserData:
-        """Fetch providers, filter to the area, fill coords, notify."""
-        area = await self._resolve_area()
-        all_stations = await fetch_all(self._session, self.credentials)
-        if not all_stations:
-            raise UpdateFailed(
-                "No data returned from any fuel-price provider; will retry."
-            )
-
-        # Re-price for this driver's loyalty cards before anything reads a
-        # price: cheapest-of, notifications and the card then all agree, and
-        # none of them needs to know discounts exist. Done for the whole country
-        # so the area list and the nearby list quote the same numbers.
-        priced = apply_discounts(all_stations, self.discounts)
-
-        excluded = {e.strip().lower() for e in self.excluded_stations if e.strip()}
-        if excluded:
-            priced = [s for s in priced if s.name.strip().lower() not in excluded]
-
-        stations = [s for s in priced if s.postnummer in area]
-
-        # The nearby sensors rank against every station in the country: they
-        # follow a device that drives out of the area, and ranking within the
-        # area kept offering stations at home to someone halfway to the next
-        # town. Only paid for when such a sensor exists.
-        nationwide = priced if self.nearby_tracker else []
-
-        # Approximate coordinates for stations without exact ones, using the
-        # centre of their postnummer so they can still appear on a map. The
-        # area stations are members of `nationwide`, so filling that fills both.
-        await self._fill_coordinates(nationwide or stations)
+        """Fetch this country's prices, cut them to the area, notify."""
+        if country_needs_area(self.country):
+            stations, nationwide = await self._area_country_stations()
+        else:
+            stations, nationwide = await self._national_country_stations()
 
         stations.sort(key=lambda s: s.name.lower())
         data = TankpriserData(stations=stations, nationwide=nationwide)
@@ -385,6 +484,16 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
                 await evaluate_and_notify(self.hass, self.entry, previous, data)
             except Exception:  # noqa: BLE001 - never let notify break updates
                 _LOGGER.exception("Tankpriser notification handling failed")
+
+        # Needs no previous snapshot: it compares a car against the prices in
+        # front of it, not this refresh against the last one, so it is useful
+        # from the very first refresh after a restart. The snapshot is handed
+        # over rather than read back off the coordinator, which has not been
+        # given it yet at this point in the refresh.
+        try:
+            await evaluate_and_notify_fillup(self.hass, self.entry, self, data)
+        except Exception:  # noqa: BLE001 - never let an alert break updates
+            _LOGGER.exception("Tankpriser fill-up alert failed")
         self._remember_baseline(data)
 
         self.hass.bus.async_fire(
@@ -397,6 +506,65 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
             },
         )
         return data
+
+    def _priced(self, all_stations: list[Station]) -> list[Station]:
+        """Re-price for this driver's loyalty cards, then hide what they hid.
+
+        Prices are adjusted before anything reads one, so cheapest-of, the
+        notifications and the card all agree, and none of them needs to know
+        discounts exist.
+        """
+        if not all_stations:
+            raise UpdateFailed(
+                "No data returned from any fuel-price provider; will retry."
+            )
+        hidden = {e.strip().lower() for e in self.excluded_stations if e.strip()}
+        return without_hidden(apply_discounts(all_stations, self.discounts), hidden)
+
+    async def _national_country_stations(self) -> tuple[list[Station], list[Station]]:
+        """Denmark: fetch the country once, then cut it to the postnumre in range."""
+        area = await self._resolve_area()
+        priced = self._priced(
+            await fetch_all(self._session, self.credentials, self.country)
+        )
+        stations = [s for s in priced if s.postnummer in area]
+
+        # The nearby sensors rank against every station in the country: they
+        # follow a device that drives out of the area, and ranking within the
+        # area kept offering stations at home to someone halfway to the next
+        # town. The fill-up alert needs the same pool for the same reason — a
+        # car is exactly the thing that drives out of the area — so it also
+        # pays for it. Skipped entirely when neither is in use, because placing
+        # the whole country costs geocoding nobody else needs.
+        nationwide = priced if (self.nearby_tracker or self.fillup_enabled) else []
+
+        # Approximate coordinates for stations without exact ones, using the
+        # centre of their postnummer so they can still appear on a map. The
+        # area stations are members of `nationwide`, so filling that fills both.
+        await self._fill_coordinates(nationwide or stations)
+        return stations, nationwide
+
+    async def _area_country_stations(self) -> tuple[list[Station], list[Station]]:
+        """Germany: one circle around the anchor is the whole query.
+
+        The source returns exactly what is in range, with exact coordinates, so
+        there is nothing left to filter and nothing to geocode. The second list
+        stays empty on purpose: there is no national pool for the "nearby"
+        sensors to rank against and none can be built, so they fall back to
+        this circle (see sensor.py). A phone that has driven out of it is
+        answered by the `nearby` service instead, which searches from where the
+        phone actually is.
+        """
+        area = self.search_area
+        if area is None:
+            raise UpdateFailed(
+                "No search location set; give this area an anchor under "
+                "Options, or set Home Assistant's Home location."
+            )
+        stations = self._priced(
+            await fetch_all(self._session, self.credentials, self.country, area)
+        )
+        return stations, []
 
     async def _fill_coordinates(self, stations: list[Station]) -> None:
         """Position the stations whose provider ships no coordinates (Q8/F24).

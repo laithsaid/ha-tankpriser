@@ -49,6 +49,14 @@ def _load() -> dict[str, Any]:
         "RULE_CHEAPEST": RULE_CHEAPEST,
         "RULE_THRESHOLD": RULE_THRESHOLD,
         "RULE_DECREASE": RULE_DECREASE,
+        # The message writes a price the way its country writes it, so the
+        # rules now need those two out of const.py. Reimplemented here rather
+        # than imported, for the same reason the rest of this file is: to keep
+        # the test free of Home Assistant.
+        "DEFAULT_COUNTRY": "DK",
+        "format_price": lambda value, country, decimals=None: (
+            f"{value:.{(3 if country == 'DE' else 2) if decimals is None else decimals}f}"
+        ).replace(".", ","),
     }
     future = ast.parse("from __future__ import annotations").body
     exec(compile(ast.Module(future + nodes, []), "<notify>", "exec"), namespace)
@@ -57,6 +65,7 @@ def _load() -> dict[str, Any]:
 
 _NS = _load()
 evaluate = _NS["_evaluate_fuel"]
+FORMAT = _NS["format_price"]
 
 
 class Station:

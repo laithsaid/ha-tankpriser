@@ -24,7 +24,9 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util, slugify
 
+from .accuracy import backtest
 from .const import (
+    CONF_CALIBRATION_ENABLED,
     CONF_CAR_FUEL,
     CONF_LEVEL_ATTRIBUTE,
     CONF_LEVEL_UNIT,
@@ -38,6 +40,8 @@ from .const import (
 )
 from .prediction import (
     ConsumptionModel,
+    LiveBurn,
+    live_burn,
     Prediction,
     dig,
     predict,
@@ -116,6 +120,8 @@ class ConsumptionTracker:
         # dropouts (a parked car often stops reporting coordinates).
         self._last_location: tuple[float | None, float | None] = (None, None)
         self._last_picture: str | None = None
+        # ((tank count, last tank's end), factor) — see `calibration`.
+        self._calibration: tuple[tuple[int, float], float] | None = None
 
     # -- lifecycle ----------------------------------------------------------
     async def async_start(self) -> None:
@@ -249,8 +255,40 @@ class ConsumptionTracker:
 
     # -- prediction ---------------------------------------------------------
     def predict(self) -> Prediction | None:
-        """Current prediction, or None while still learning."""
-        return predict(self.model, self.model.current_litres)
+        """Current prediction, or None while still learning.
+
+        Carries the learned correction (see `calibration`), so what the sensor
+        reads and what the accuracy report grades are the same number.
+        """
+        return predict(self.model, self.model.current_litres, self.calibration)
+
+    def live_burn(self) -> LiveBurn | None:
+        """What this car is burning right now, or None when it is not running.
+
+        Measured, not predicted — so unlike `predict()` it carries no
+        correction and needs no learned history. A car on its first ever drive
+        can answer this.
+        """
+        return live_burn(self.model, dt_util.utcnow().timestamp())
+
+    @property
+    def calibration(self) -> float:
+        """How far this car's predictions have had to be nudged, from history.
+
+        Recomputed only when a tank closes: it walks the whole segment list
+        against the model, which is cheap at fifty tanks but not something to
+        redo on every fuel-level reading — and its answer cannot change until
+        there is a new tank to learn from.
+        """
+        if not self.entry.options.get(CONF_CALIBRATION_ENABLED, True):
+            return 1.0
+        segments = self.model.segments
+        key = (len(segments), segments[-1].end_ts if segments else 0.0)
+        if self._calibration is not None and self._calibration[0] == key:
+            return self._calibration[1]
+        factor = backtest(self.capacity_l, segments, self.name, calibrate=True).calibration
+        self._calibration = (key, factor)
+        return factor
 
     @property
     def current_litres(self) -> float | None:

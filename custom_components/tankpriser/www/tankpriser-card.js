@@ -12,7 +12,11 @@
  *   map_theme: auto                      # optional: auto | light | dark
  *                                        #   auto follows the HA theme
  *   coverage: national                   # optional: national (default) | area
- *                                        #   national = all DK stations, opens
+ *                                        #   national = every station the
+ *                                        #   configured country publishes;
+ *                                        #   where the source only answers
+ *                                        #   about a circle (Germany) that is
+ *                                        #   the entry's own circle. Opens
  *                                        #   centred on your location, the map
  *                                        #   viewport is the filter
  *   fuel: blyfri95                       # optional internal fuel key for the
@@ -486,6 +490,8 @@ class TankpriserCard extends HTMLElement {
     this._hidden = null;        // cars hidden on this device (loaded with hass)
     this._fitted = false;
     this._mapSig = null;
+    this._decimals = 2;         // price decimals for this country (see _price)
+    this._nationalUnit = "";    // and the unit that goes with them
     this._national = null;      // national station list (fetched over websocket)
     this._nationalLoading = false;
     this._nationalStale = false;
@@ -835,6 +841,7 @@ class TankpriserCard extends HTMLElement {
     const a = st.attributes;
     const stations = a.stations || [];
     const unit = a.unit_of_measurement || "";
+    if (a.price_decimals != null) this._decimals = a.price_decimals;
     const fuel = a.fuel_type || a.friendly_name || entityId;
 
     // Measured here rather than server-side: the sensor covers an area, which
@@ -992,6 +999,8 @@ class TankpriserCard extends HTMLElement {
       .sendMessagePromise({ type: "tankpriser/stations" })
       .then((res) => {
         this._national = (res && res.stations) || [];
+        if (res && res.decimals != null) this._decimals = res.decimals;
+        this._nationalUnit = (res && res.unit) || "";
         this._nationalLoading = false;
         this._mapSig = null; // force a rebuild with the fresh data
         this._update();
@@ -1790,9 +1799,15 @@ class TankpriserCard extends HTMLElement {
   }
 
   // -- helpers --------------------------------------------------------------
-  _price(v, unit) {
+  // Denmark quotes two decimals, Germany three — every German forecourt sign
+  // carries the 9/10 cent, and "1,72" on the card would disagree with the
+  // pump. The figure is never rounded before a comparison; this is display
+  // only. `_decimals` is set from whatever told us about this country: the
+  // sensor's attributes for the table, the websocket envelope for the map.
+  _price(v, unit, decimals) {
     if (v === null || v === undefined) return "–";
-    return `${Number(v).toFixed(2).replace(".", ",")}${unit ? " " + unit : ""}`;
+    const places = decimals != null ? decimals : this._decimals;
+    return `${Number(v).toFixed(places).replace(".", ",")}${unit ? " " + unit : ""}`;
   }
 
   _notice(text) {
@@ -1834,7 +1849,7 @@ const EDITOR_FIELDS = {
       select: {
         mode: "dropdown",
         options: [
-          { value: "national", label: "National (all of Denmark, viewport)" },
+          { value: "national", label: "National (the whole country, viewport)" },
           { value: "area", label: "Home area only" },
         ],
       },
@@ -2075,6 +2090,42 @@ class TankpriserPredictionCard extends HTMLElement {
     );
   }
 
+  // "2 h 24 m" reads better than "2,4 hours" to someone glancing at a phone
+  // while the fuel light is on.
+  _hoursText(hours) {
+    const total = Math.max(0, Math.round(Number(hours) * 60));
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+    if (h <= 0) return `${m} min`;
+    return m ? `${h} t ${m} min` : `${h} t`;
+  }
+
+  _driving(a) {
+    const left = this._hoursText(a.hours_until_empty);
+    const when = a.live_empty_at ? this._fmtTime(a.live_empty_at) : "";
+    const rate = a.live_consumption;
+    const per100 = a.live_l_per_100km;
+    return `<div class="tp-pred-head tp-pred-driving">
+        <div><span class="tp-pred-big">${this._escape(left)}</span></div>
+        <div class="tp-pred-sub">of fuel at this rate${
+          when ? ` · empty about ${this._escape(when)}` : ""
+        }</div>
+        <div class="tp-pred-early">Driving now — measured from the last
+          ${this._escape(this._hoursText(a.live_measured_over_hours || 0))}:
+          ${this._escape(rate)} L/h${
+            per100 ? ` · ${this._escape(per100)} L/100 km` : ""
+          }. Nothing learned or corrected goes into this.</div>
+      </div>`;
+  }
+
+  // Time of day only: "empty about 18:40". The date is noise when the answer
+  // is a couple of hours away.
+  _fmtTime(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+
   _fmtDate(iso) {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "";
@@ -2154,7 +2205,14 @@ class TankpriserPredictionCard extends HTMLElement {
           }</div>`;
 
     let head;
-    if (learning) {
+    if (a.mode === "driving" && a.hours_until_empty) {
+      // Measured, not learned: the level is dropping in front of us, so this
+      // needs no history and applies no correction. Shown while the engine is
+      // running because it answers the question you actually have then — does
+      // this tank get me there — and it is right even on a car's first drive,
+      // when there is nothing learned to fall back on.
+      head = this._driving(a);
+    } else if (learning) {
       head = `<div class="tp-pred-head tp-pred-learning">
           <div class="tp-pred-big">Learning…</div>
           <div class="tp-pred-sub">A day or two of driving is enough for a first estimate.</div>
@@ -2246,6 +2304,10 @@ class TankpriserPredictionCard extends HTMLElement {
       .tp-pred-sub { color: var(--secondary-text-color); font-size: 0.9em; }
       .tp-pred-learning .tp-pred-big { font-size: 1.6em; color: var(--secondary-text-color); }
       .tp-pred-early { color: var(--warning-color, #b8860b); font-size: 0.85em; margin-top: 2px; }
+      /* Driving: the headline is hours, not days, and it is measured
+         rather than predicted — coloured to say so at a glance. */
+      .tp-pred-driving .tp-pred-big { color: var(--info-color, #0288d1); }
+      .tp-pred-driving .tp-pred-early { color: var(--secondary-text-color); }
       .tp-pred-bar { height: 8px; border-radius: 4px; background: var(--divider-color); overflow: hidden; margin: 6px 0 4px; }
       .tp-pred-fill { height: 100%; background: var(--primary-color); border-radius: 4px; }
       .tp-pred-level { font-size: 0.85em; color: var(--secondary-text-color); margin-bottom: 8px; }
@@ -2347,6 +2409,244 @@ class TankpriserPredictionCardEditor extends HTMLElement {
 
 _define("tankpriser-prediction-card-editor", TankpriserPredictionCardEditor);
 
+// -- accuracy card ---------------------------------------------------------
+// Grades the fuel-consumption prediction against what the cars actually did.
+// Unlike the other two cards this one is backed by no entity: the report is
+// produced on demand by the `tankpriser.prediction_accuracy` action, which the
+// integration only registers once the matching option is switched on. So the
+// card is inert — a short "not switched on" notice — for anyone who has not
+// asked for it, and it puts nothing in the state machine for everyone else.
+//
+// It is still a card on a dashboard, so anyone who can see that dashboard can
+// see it. Put it on a view of your own, or give the card a `visibility:`
+// condition, if that matters.
+class TankpriserAccuracyCard extends HTMLElement {
+  setConfig(config) {
+    this._config = {
+      // Blank grades every car.
+      car: config && config.car ? String(config.car) : "",
+      title:
+        config && config.title !== undefined && config.title !== null
+          ? String(config.title)
+          : "Prediction accuracy",
+      // Every graded tank, or just the headline. The table is the interesting
+      // part when something looks wrong, and noise when it does not.
+      show_tanks: config && config.show_tanks === false ? false : true,
+    };
+    this._report = null;
+    this._error = "";
+    this._loading = false;
+    this._built = false;
+  }
+
+  set hass(hass) {
+    const first = !this._hass;
+    this._hass = hass;
+    if (first) this._load();
+    this._render();
+  }
+
+  getCardSize() {
+    return this._config.show_tanks ? 6 : 3;
+  }
+
+  // The report is a snapshot of history, and history only changes when a car
+  // is refuelled — so it is fetched once when the card appears and on demand
+  // after that, rather than on every state update.
+  _load() {
+    if (!this._hass || this._loading) return;
+    this._loading = true;
+    this._error = "";
+    this._render();
+
+    const data = this._config.car ? { car: this._config.car } : {};
+    this._hass
+      .callService("tankpriser", "prediction_accuracy", data, undefined, false, true)
+      .then((result) => {
+        const response = (result && result.response) || result || {};
+        this._report = response.cars || [];
+        this._loading = false;
+        this._render();
+      })
+      .catch((err) => {
+        this._loading = false;
+        // The usual cause by far: the option is off, so the action does not
+        // exist. Say that rather than showing a raw "Service not found".
+        const text = String((err && err.message) || err || "");
+        this._error = /not found|unknown service|not registered/i.test(text)
+          ? "notavailable"
+          : text;
+        this._render();
+      });
+  }
+
+  _render() {
+    if (!this._built) {
+      this.innerHTML = `
+        <ha-card>
+          <style>
+            .fa-wrap { padding: 12px 16px 16px; }
+            .fa-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+            .fa-title { font-size:16px; font-weight:600; }
+            .fa-refresh { cursor:pointer; opacity:.6; font-size:12px; }
+            .fa-refresh:hover { opacity:1; }
+            .fa-car { margin-top:12px; }
+            .fa-name { font-weight:600; margin-bottom:2px; }
+            .fa-verdict { font-size:13px; margin:2px 0 8px; }
+            .fa-good { color: var(--success-color, #0a7d3c); }
+            .fa-warn { color: var(--warning-color, #b26a00); }
+            .fa-stats { display:flex; flex-wrap:wrap; gap:14px; font-size:12px; opacity:.85; }
+            .fa-stat b { display:block; font-size:15px; font-weight:600; opacity:1; }
+            .fa-tanks { width:100%; border-collapse:collapse; margin-top:10px; font-size:12px; }
+            .fa-tanks th { text-align:right; font-weight:500; opacity:.6; padding:2px 4px; }
+            .fa-tanks th:first-child { text-align:left; }
+            .fa-tanks td { text-align:right; padding:2px 4px; border-top:1px solid var(--divider-color,#e0e0e0); }
+            .fa-tanks td:first-child { text-align:left; }
+            .fa-err-pos { color: var(--warning-color,#b26a00); }
+            .fa-err-neg { color: var(--info-color,#0288d1); }
+            .fa-note { font-size:12px; opacity:.7; margin-top:10px; }
+            .fa-low::after { content:"▾"; margin-left:3px; opacity:.7; }
+          </style>
+          <div class="fa-wrap"></div>
+        </ha-card>`;
+      this._wrap = this.querySelector(".fa-wrap");
+      this._built = true;
+    }
+    this._wrap.innerHTML = this._body();
+    const refresh = this._wrap.querySelector(".fa-refresh");
+    if (refresh) refresh.onclick = () => this._load();
+  }
+
+  _body() {
+    const head = `
+      <div class="fa-head">
+        <span class="fa-title">${this._escape(this._config.title)}</span>
+        <span class="fa-refresh">${this._loading ? "…" : "refresh"}</span>
+      </div>`;
+
+    if (this._error === "notavailable") {
+      return `${head}<div class="fa-note">Not switched on. Enable
+        <b>Grade the fuel prediction against reality</b> under the integration's
+        Configure → Area &amp; fuel types.</div>`;
+    }
+    if (this._error) {
+      return `${head}<div class="fa-note">Could not grade: ${this._escape(this._error)}</div>`;
+    }
+    if (this._loading && !this._report) return `${head}<div class="fa-note">Grading…</div>`;
+    if (!this._report) return head;
+    if (!this._report.length) {
+      return `${head}<div class="fa-note">No cars are set up for prediction.</div>`;
+    }
+    return head + this._report.map((car) => this._car(car)).join("");
+  }
+
+  _car(car) {
+    if (!car.tanks_scored) {
+      return `<div class="fa-car"><div class="fa-name">${this._escape(car.car)}</div>
+        <div class="fa-note">${this._escape(car.verdict)}. A tank can only be
+        graded against the tanks before it, so the first refuel scores
+        nothing.</div></div>`;
+    }
+    // The lean is the headline: off by 20 % in both directions is irregular
+    // driving, off by 20 % the same way every time is a model that is wrong.
+    const leaning = Math.abs(car.bias_pct) > 10;
+    return `
+      <div class="fa-car">
+        <div class="fa-name">${this._escape(car.car)}</div>
+        <div class="fa-verdict ${leaning ? "fa-warn" : "fa-good"}">${this._escape(car.verdict)}</div>
+        <div class="fa-stats">
+          <span class="fa-stat">lean<b>${this._signed(car.bias_pct)}</b></span>
+          <span class="fa-stat">typical error<b>${this._pct(car.mean_abs_error_pct)}</b></span>
+          <span class="fa-stat">worst<b>${this._signed(car.worst_error_pct)}</b></span>
+          <span class="fa-stat">within 10 %<b>${car.within_10_pct}/${car.tanks_scored}</b></span>
+          ${car.trend_pct === null || car.trend_pct === undefined ? "" :
+            `<span class="fa-stat">trend<b>${this._signed(car.trend_pct)}</b></span>`}
+        </div>
+        ${this._correction(car)}
+        ${this._config.show_tanks ? this._table(car) : ""}
+        <div class="fa-note">Positive means optimistic — the fuel did not last
+        as long as predicted.${car.low_finishes
+          ? ` ${car.low_finishes} tank${car.low_finishes === 1 ? "" : "s"} ended
+             below 10 %, so being optimistic actually costs you something.`
+          : ""}</div>
+      </div>`;
+  }
+
+  // What the learned correction is doing, and whether it earned its place.
+  // Shown as before/after on the same history rather than as a factor alone: a
+  // multiplier means nothing to a reader, while "would have scored +21 %,
+  // scores +9 % corrected" is the whole argument in one line.
+  _correction(car) {
+    const applied = car.calibration_in_use;
+    const corrected = car.corrected;
+    if (applied === undefined || applied === null) return "";
+    if (Math.abs(applied - 1) < 0.005) {
+      return `<div class="fa-note">No correction is being applied — the typical
+        tank is not leaning, or there are not yet five graded tanks to learn
+        from. A holiday's worth of unusual tanks does not count as a lean.</div>`;
+    }
+    const faster = applied > 1;
+    const pct = Math.round(Math.abs(applied - 1) * 1000) / 10;
+    const before = corrected ? this._signed(car.bias_pct) : null;
+    const after = corrected ? this._signed(corrected.bias_pct) : null;
+    return `<div class="fa-note">Correction: predictions are
+      ${faster ? "shortened" : "lengthened"} by ${this._num(pct)} % — this car
+      burns ${faster ? "faster" : "slower"} than the raw model believed.${before && after
+        ? ` On this history the raw model leaned ${before}; with the correction
+            it had earned at each point, ${after}.`
+        : ""}</div>`;
+  }
+
+  _table(car) {
+    const rows = car.tanks
+      .slice()
+      .reverse()
+      .map((t) => {
+        const cls = t.error_pct > 0 ? "fa-err-pos" : "fa-err-neg";
+        return `<tr>
+          <td class="${t.finished_low ? "fa-low" : ""}">${this._date(t.ended)}</td>
+          <td>${this._num(t.consumed_litres)} L</td>
+          <td>${this._num(t.predicted_days)}</td>
+          <td>${this._num(t.actual_days)}</td>
+          <td class="${cls}">${this._signed(t.error_pct)}</td>
+        </tr>`;
+      })
+      .join("");
+    return `<table class="fa-tanks">
+      <tr><th>tank ended</th><th>burnt</th><th>predicted</th><th>actual</th><th>error</th></tr>
+      ${rows}</table>`;
+  }
+
+  // -- formatting ----------------------------------------------------------
+  _pct(value) {
+    return value === null || value === undefined ? "–" : `${this._num(value)} %`;
+  }
+
+  _signed(value) {
+    if (value === null || value === undefined) return "–";
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${this._num(value)} %`;
+  }
+
+  _num(value) {
+    return String(Math.round(Number(value) * 10) / 10).replace(".", ",");
+  }
+
+  _date(seconds) {
+    if (!seconds) return "–";
+    const d = new Date(Number(seconds) * 1000);
+    return isNaN(d.getTime()) ? "–" : d.toLocaleDateString();
+  }
+
+  _escape(text) {
+    return String(text === null || text === undefined ? "" : text).replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+}
+_define("tankpriser-accuracy-card", TankpriserAccuracyCard);
+
 window.customCards = window.customCards || [];
 // Same reason as _define: a duplicate load must not list the cards twice in the
 // "add card" picker.
@@ -2359,6 +2659,12 @@ _listCard({
   type: "tankpriser-card",
   name: "Tankpriser Prices",
   description: "Map of local fuel stations with company icons + prices (nearby stations grouped, cluster shows the lowest price), plus an optional price table.",
+  preview: false,
+});
+_listCard({
+  type: "tankpriser-accuracy-card",
+  name: "Tankpriser Prediction Accuracy",
+  description: "Grades the refuel prediction against what the cars actually did. Needs the advanced accuracy option switched on.",
   preview: false,
 });
 _listCard({

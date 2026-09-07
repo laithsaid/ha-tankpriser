@@ -47,6 +47,7 @@ const, sources = _load()
 Station = sources.Station
 chain_key = sources.chain_key
 apply_discounts = sources.apply_discounts
+without_hidden = sources.without_hidden
 
 
 def station(company: str, price: float = 16.99, **prices) -> Station:
@@ -139,6 +140,27 @@ def test_a_chain_with_no_prices_is_left_alone() -> None:
     empty = Station(name="X", company="OK", postnummer="8600", updated="", prices={})
     out = apply_discounts([empty], {"ok": 20})
     assert out[0].prices == {} and out[0].discount_ore == 0
+
+
+def test_hidden_stations_are_dropped_everywhere() -> None:
+    """A station you hid must not come back on the map or in the voice answer.
+
+    The area sensor filtered these out on its own for a long time; the shared
+    pool behind the map and `tankpriser.nearby` did not, so a forecourt you had
+    said you would never use could still be the one Siri sent you to.
+    """
+    stations = [station("OK"), station("Shell")]
+    stations[0].name = "OK Nordre Ringvej 110"
+    stations[1].name = "Shell Vejlevej 1"
+
+    kept = without_hidden(stations, {"ok nordre ringvej 110"})
+    assert [s.name for s in kept] == ["Shell Vejlevej 1"]
+
+    assert without_hidden(stations, set()) is stations, "no list, no work"
+    # The options dialog offers the names it discovered, so a pick from it
+    # matches exactly; case and stray spaces must not defeat that.
+    assert without_hidden(stations, {"  shell vejlevej 1  ".strip()}) == [stations[0]]
+    assert len(without_hidden(stations, {"OK"})) == 2, "a partial name is not a match"
 
 
 if __name__ == "__main__":

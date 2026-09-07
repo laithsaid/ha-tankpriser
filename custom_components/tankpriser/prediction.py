@@ -40,6 +40,10 @@ from .const import (
     EARLY_MIN_DAYS,
     EWMA_ALPHA,
     LEVEL_UNIT_PERCENT,
+    LIVE_MAX_GAP_S,
+    LIVE_MIN_DROP_FRACTION,
+    LIVE_MIN_SPAN_S,
+    LIVE_WINDOW_S,
     MAX_SEGMENTS,
     MIN_SEGMENT_DAYS,
     MIN_SEGMENTS_FOR_PREDICTION,
@@ -193,6 +197,12 @@ class Prediction:
     # "current tank" (the number leans on the tank in progress) or "one tank"
     # (a single completed tank, nothing open yet) — either way it will move.
     basis: str = "tanks"
+    # The correction that was applied to the daily rate, learned from how this
+    # car's earlier predictions actually turned out (see accuracy.py). 1.0 means
+    # none — either because nothing was learned yet, or because the model was
+    # not leaning. Above 1.0 means "this car burns faster than the raw model
+    # thinks", so the projection was shortened.
+    calibration: float = 1.0
 
     @property
     def is_early(self) -> bool:
@@ -207,7 +217,86 @@ class Prediction:
             "confidence": self.confidence,
             "method": self.method,
             "basis": self.basis,
+            "calibration": self.calibration,
         }
+
+
+@dataclass(frozen=True)
+class LiveBurn:
+    """What the car is burning *right now*, measured rather than predicted.
+
+    Only exists while the car is running. It answers a different question from
+    :class:`Prediction` — "when does this tank run out if the drive continues"
+    rather than "when will I next need to fill up" — and it answers it from the
+    last couple of hours alone, so no habit, no learning and no correction come
+    into it. There is nothing to correct: this is the thing itself.
+    """
+
+    litres_per_hour: float
+    hours_until_empty: float | None
+    # What the reading was taken from, so a doubtful number can be judged.
+    litres_consumed: float
+    over_hours: float
+    # Present only when the car reports an odometer.
+    litres_per_100km: float | None = None
+    km_per_hour: float | None = None
+
+
+def live_burn(model: "ConsumptionModel", now: float) -> LiveBurn | None:
+    """The current burn rate, or None when the car is not running.
+
+    Readings are only stored when the level actually moves, so a parked car
+    simply stops producing them — silence is the signal, and no ignition or
+    speed entity is needed. What is required is a recent reading, a window that
+    spans real time, and a drop big enough to be a journey rather than a coarse
+    sender wobbling on a slope.
+
+    Anything before the current tank started is excluded: a refuel inside the
+    window would otherwise read as the car un-burning several litres.
+    """
+    samples = model.samples
+    if not samples:
+        return None
+    latest = samples[-1]
+    if now - latest.ts > LIVE_MAX_GAP_S:
+        return None  # nothing reported recently: the car is not running
+
+    floor = latest.ts - LIVE_WINDOW_S
+    start_of_tank = model.segment_start
+    if start_of_tank is not None:
+        floor = max(floor, start_of_tank.ts)
+    window = [s for s in samples if s.ts >= floor]
+    if len(window) < 2:
+        return None
+
+    first = window[0]
+    span_s = latest.ts - first.ts
+    consumed = first.litres - latest.litres
+    if span_s < LIVE_MIN_SPAN_S:
+        return None
+    if consumed < LIVE_MIN_DROP_FRACTION * model.capacity_l:
+        # Either standing still, or the sender has not moved enough to divide by.
+        return None
+
+    hours = span_s / 3600.0
+    rate = consumed / hours
+    hours_left = round(latest.litres / rate, 2) if rate > 0 else None
+
+    per_100 = speed = None
+    if first.odo is not None and latest.odo is not None:
+        distance = latest.odo - first.odo
+        if distance > 0:
+            per_100 = round(100.0 * consumed / distance, 2)
+            speed = round(distance / hours, 1)
+
+    return LiveBurn(
+        litres_per_hour=round(rate, 2),
+        hours_until_empty=hours_left,
+        litres_consumed=round(consumed, 2),
+        over_hours=round(hours, 2),
+        litres_per_100km=per_100,
+        km_per_hour=speed,
+    )
 
 
 @dataclass
@@ -301,6 +390,11 @@ class ConsumptionModel:
 
         if len(self.samples) > MAX_RAW_SAMPLES:
             del self.samples[: len(self.samples) - MAX_RAW_SAMPLES]
+
+    @property
+    def segment_start(self):
+        """The reading the current tank started from, if one is open."""
+        return self._segment_start
 
     @property
     def current_litres(self) -> float | None:
@@ -444,7 +538,9 @@ def _open_observation(model: ConsumptionModel) -> _Observation | None:
 
 
 def predict(
-    model: ConsumptionModel, current_litres: float | None
+    model: ConsumptionModel,
+    current_litres: float | None,
+    calibration: float = 1.0,
 ) -> Prediction | None:
     """Estimate days until empty, or ``None`` when there is nothing to go on.
 
@@ -464,6 +560,16 @@ def predict(
     Days-until-empty always uses a time-based (L/day) rate — it is the only
     thing that can project a calendar date. When every observation also carries
     an odometer distance we additionally report efficiency as L/100 km.
+
+    ``calibration`` multiplies that daily rate. It is measured, not guessed:
+    `accuracy.py` grades how this car's past predictions actually turned out,
+    and a model that has been leaning the same way every tank is nudged back.
+
+    It reaches the daily rate and therefore the projection, and — where there is
+    no odometer — the reported L/day, which *is* that rate and would otherwise
+    contradict the days it produced. It never reaches **L/100 km**: that is a
+    property of the car and the road, whereas a persistent error in days
+    usually means the driving changed, and nothing here can tell those apart.
     """
     completed = [
         _Observation(s.consumed_litres, s.duration_days, s.distance_km)
@@ -476,6 +582,10 @@ def predict(
         return None  # genuinely nothing to go on yet
 
     daily_rate = _blend_daily_rate(completed, open_tank)
+    # Guarded rather than trusted: a caller passing 0 would make the projection
+    # infinite, and a negative one would make it run backwards.
+    calibration = float(calibration) if calibration and calibration > 0 else 1.0
+    daily_rate *= calibration
 
     # Efficiency is a property of the car rather than of this week's driving, so
     # completed tanks are the better source; the open tank is only consulted when
@@ -523,4 +633,5 @@ def predict(
         confidence=confidence,
         method=method,
         basis=basis,
+        calibration=round(calibration, 3),
     )

@@ -21,13 +21,16 @@ BASE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "custom_components", "tankpriser"
 )
 
-# Pull `_MAPS_URL` out of services.py without importing it.
-tree = ast.parse(open(os.path.join(BASE, "services.py"), encoding="utf-8").read())
+# Pull `MAPS_URLS` out of const.py without importing it. It moved there from
+# services.py when the fill-up notification started building the same links:
+# two copies of a navigation URL is exactly the kind of duplicate that drifts
+# until one of them sends you to a route preview instead of turn-by-turn.
+tree = ast.parse(open(os.path.join(BASE, "const.py"), encoding="utf-8").read())
 MAPS = next(
     ast.literal_eval(node.value)
     for node in tree.body
-    if isinstance(node, ast.Assign)
-    and getattr(node.targets[0], "id", "") == "_MAPS_URL"
+    if isinstance(node, ast.AnnAssign)
+    and getattr(node.target, "id", "") == "MAPS_URLS"
 )
 
 checks = 0

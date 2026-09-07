@@ -4,12 +4,22 @@
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.2%2B-41BDF5.svg)](https://www.home-assistant.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Danish fuel prices — **Blyfri 95/98, Diesel, HVO100 and more** — on your Home
-Assistant dashboard, on a map, in your car and in Siri. Prices come straight
-from the **official per-station price APIs** that Danish fuel chains are
-required to publish (OK, Q8, F24, Shell and OIL! today), with no scraping, no
-account and no API key. Geographic filtering uses the free
+Fuel prices — **Blyfri 95/98, Diesel, HVO100, Super E5/E10 and more** — on
+your Home Assistant dashboard, on a map, in your car and in Siri.
+
+**Denmark** comes straight from the **official per-station price APIs** that
+Danish fuel chains are required to publish (OK, Q8, F24, Shell and OIL! today),
+with no scraping, no account and no API key. Geographic filtering uses the free
 [DAWA](https://dawadocs.dataforsyningen.dk/) address API.
+
+**Germany** comes from [Tankerkönig](https://creativecommons.tankerkoenig.de/),
+the free consumer feed of the Bundeskartellamt's MTS-K — every public forecourt
+in the country, updated within five minutes of a price change by law. It needs
+a free personal API key, and it works differently enough in a few places to be
+worth reading [its own section](#14-germany) before setting it up.
+
+One setup covers one country. Fill up on both sides of the border? Add
+Tankpriser twice — once for each.
 
 Two different scopes, worth knowing up front:
 
@@ -57,14 +67,18 @@ What each feature *is*. How to switch it on is in
 | 3 | [Loyalty discounts](#3-loyalty-discounts) | Every price becomes *what you actually pay* |
 | 4 | [Price-change notifications](#4-price-change-notifications) | Four rules, to any `notify.*` service |
 | 5 | [The price card](#5-the-price-card) | Bundled Lovelace card, no YAML or resource setup |
-| 6 | [The map](#6-the-map) | Every station with chain icon and price — all of Denmark by default, the viewport is the filter |
+| 6 | [The map](#6-the-map) | Every station with chain icon and price — all of Denmark by default, the viewport is the filter (Germany plots its 25 km circle) |
 | 7 | [Live position and follow-me](#7-live-position-and-follow-me) | A blue dot that keeps up with you while driving |
 | 8 | [Navigate here](#8-navigate-here) | Hand a forecourt to the phone's own navigator |
 | 9 | [Exact forecourt positions](#9-exact-forecourt-positions) | Street addresses geocoded, estimates marked as estimates |
 | 10 | [Cars on the map](#10-cars-on-the-map) | Your cars plotted, ringed by fuel level, hideable per device |
 | 11 | [In the car: CarPlay, Siri, Android Auto](#11-in-the-car-carplay-siri-and-android-auto) | A "cheapest nearby" sensor built for voice and car screens |
-| 12 | [Fuel-consumption prediction](#12-fuel-consumption-prediction) | When each car next needs refuelling, learned from its fuel level |
-| 13 | [Chains that need an API key](#13-chains-that-need-an-api-key) | A guided page for chains that are not open (none today) |
+| 12 | [Fuel-consumption prediction](#12-fuel-consumption-prediction) | Hours of fuel left while driving (measured), days until the next fill-up while parked (learned) |
+| 12b | ["Fill up now" alerts](#12b-fill-up-now-alerts) | One push when a car is low *and* passing the cheapest station near it |
+| 12c | [Self-correcting predictions](#12c-self-correcting-predictions) | Each refuel grades the last prediction, and a repeated lean is corrected |
+| 13 | [Sources that need an API key](#13-sources-that-need-an-api-key) | A guided page for sources that are not open — Germany's is one |
+| 14 | [Germany](#14-germany) | ~15,000 German stations, a corridor search while driving, prices to three decimals |
+| 15 | [Testing without driving](#15-testing-the-driving-features-without-driving) | Drive a virtual car across Germany to exercise all of it from your desk |
 
 ### 1. Local price sensors
 
@@ -87,9 +101,11 @@ missing one.
 ### 2. Hidden stations
 
 Some forecourts you will never use — the one behind a motorway junction you
-cannot reach, or a chain you refuse on principle. Hidden stations disappear from
-the list, the map and the cheapest-of calculation, so the number on your
-dashboard is a price you would actually drive to.
+cannot reach, or a chain you refuse on principle. Hidden stations disappear
+everywhere: the list, the map, the cheapest-of calculation, the answer Siri
+gives you and the fill-up alert. So the number on your dashboard is a price you
+would actually drive to, and nothing sends you somewhere you have already said
+no to.
 
 ### 3. Loyalty discounts
 
@@ -264,14 +280,36 @@ handful of iPhone settings — see
 
 ### 12. Fuel-consumption prediction
 
-Tankpriser predicts **when each of your cars will next need refuelling**,
-learned entirely from a fuel-level entity Home Assistant already has. It is
-**free** — a donation is genuinely appreciated, but nothing is ever withheld.
+Tankpriser answers **two different fuel questions**, from a fuel-level entity
+Home Assistant already has. It is **free** — a donation is genuinely
+appreciated, but nothing is ever withheld.
+
+| | The question | The answer |
+| --- | --- | --- |
+| **Driving** | Does this tank get me there? | **"2 t 24 min of fuel — empty about 18:40"**, measured from the level dropping in front of you |
+| **Parked** | When do I next need to fill up? | **"~9 days"**, from what this car's use actually looks like |
+
+They are not two versions of one number, they are answers to different
+questions, and they are worked out in completely different ways. While the car
+is running the tank is a **measurement**: the level is visibly falling, so the
+rate is arithmetic on the last couple of hours — no history, no learning, and no
+correction, because there is nothing to predict. A car on its very first drive
+answers this correctly.
+
+Parked, there is no rate to read, so the answer has to come from **habit** — how
+much this car gets used — and that is where the learning, and the
+[self-correction](#12c-self-correcting-predictions), belong.
+
+The sensor's state stays the *parked* answer in days, so a graph of it means
+something and the [fill-up alert](#12b-fill-up-now-alerts) has something stable
+to read; the driving figures arrive as attributes and take over the card while
+the engine is running.
 
 Each car gets a **`sensor.<car>_days_until_refuel`** with attributes for
-consumption, confidence, the predicted empty date, current level, and the
-cheapest nearby station for its fuel. It answers in three stages, so you are not
-waiting weeks for the first number:
+consumption, confidence, the predicted empty date, current level, the live
+driving figures, and the cheapest nearby station for its fuel. The *parked*
+answer arrives in three stages, so you are not waiting weeks for a first number
+— the driving answer needs none of this and is available immediately:
 
 | `status`     | State                        | When |
 | ------------ | ---------------------------- | ---- |
@@ -289,15 +327,121 @@ does not take it over.
 
 With an **odometer** the prediction is in **L/100 km**; without one it falls
 back to a time-based rate. A second bundled card, **"Tankpriser Prediction"**,
-shows it as a tank gauge with the details.
+shows it as a tank gauge with the details. The mechanism — how a refuel is
+detected, why small top-ups are ignored, what confidence means — is written out
+in [12a. How the prediction learns](#12a-how-the-prediction-learns).
 
-### 13. Chains that need an API key
+### 12b. "Fill up now" alerts
 
-Most Danish chains publish openly and need no setup. If a chain is added that
-only answers with a personal key, it appears under **Chains & API keys** with a
+The one alert that needs three things to line up at once: a car that is **low**,
+a station that is **near it**, and that station being **the cheapest** for that
+car's fuel. Any one of the three on its own is not worth interrupting anyone
+for; together they are the moment a detour is free.
+
+> **Tank Passat**
+> 18 %, about 3 days left. OK Silkeborg, 0,3 km away, 16,79 kr./L. 50 øre below
+> the dearest nearby.
+
+Tapping it opens turn-by-turn navigation to that forecourt.
+
+It is built to be quiet. You are told **once per low tank** — not once per
+update — and the next alert waits until the car has actually been filled. A car
+left low on the drive for a week produces one notification, not three hundred.
+
+Needs at least one [car added for prediction](#12-fuel-consumption-prediction),
+because that is where the fuel level and the car's position come from. Switch it
+on under [4. Turning on price notifications](#4-turning-on-price-notifications),
+which is also where its notify target is set.
+
+Switching it on makes every refresh place every station in the country, so the
+alert still works when the car has driven well outside your area — the same pool
+the "cheapest nearby" sensors use. That costs a little geocoding on the first
+refresh after you enable it, and nothing afterwards.
+
+### 12c. Self-correcting predictions
+
+Every refuel is a marked exam paper. The moment a tank closes, Tankpriser can
+look back at what it had predicted for that tank and see how it did — and if it
+has been wrong **in the same direction** several tanks running, it corrects
+itself.
+
+That last part is the distinction that matters. A prediction that is 20 % out in
+*both* directions is just irregular driving, and there is nothing to fix. One
+that is 20 % out *the same way every time* is a model that is wrong, and can be
+nudged back. Only the second is acted on.
+
+The correction is deliberately timid: it needs **five graded tanks** before it
+does anything, it applies **half** of the measured lean rather than all of it,
+and it will never move a prediction by more than **25 %**. Half rather than all
+because some of any measured lean is noise — and because half of a real one is
+removed each time, so it converges over successive tanks instead of hunting
+back and forth. It is on by default and can be switched off in
+[12d](#12d-tuning-and-checking-the-prediction).
+
+**A holiday does not count as a habit.** Drive to France for a fortnight and you
+will burn three tanks at three times your usual rate. That is not evidence the
+prediction is wrong about your car — it is evidence you went to France. So the
+correction takes the **typical** tank rather than the average one: a minority of
+freak tanks is ignored outright, however extreme, and the factor only moves when
+the unusual driving stops being unusual. Which is exactly when it *has* become
+your new normal and correcting is the right answer.
+
+That leaves the fast reaction where it already lived. The prediction itself
+folds in the tank you are on right now, weighted by how long it has been
+running, so a trip to France shows up in the estimate **within days** — see
+[12a](#12a-how-the-prediction-learns). The correction is the slow half on
+purpose: one handles a change of behaviour, the other handles a model that is
+persistently wrong, and letting either do the other's job makes both worse.
+
+You can also see the marking. A card grades every tank you have ever recorded
+and says, in a sentence, whether the prediction is matching reality:
+
+> **Passat** — consistently optimistic by about 21 %.
+> lean **+21,1 %** · typical error **22,4 %** · within 10 % **1/5**
+> Correction: predictions are shortened by 7 % — this car burns faster than the
+> raw model believed. On this history the raw model leaned +21,1 %; with the
+> correction it had earned at each point, +9,2 %.
+
+That last line is the point: it shows the correction earning its place on your
+own data, rather than asking you to take it on trust.
+
+### 13. Sources that need an API key
+
+Every Danish chain publishes openly and needs no setup. A source that only
+answers with a personal key appears under **Chains & API keys** with a
 step-by-step guide to requesting one; the key is validated immediately, stored
-in the config entry, sent only to that chain and redacted from diagnostics.
-**Today no supported chain needs a key, so this menu entry is hidden.**
+in the config entry, sent only to that source and redacted from diagnostics.
+**Germany's Tankerkönig is one of these** — see [14. Germany](#14-germany). For
+a Danish setup the menu entry stays hidden, because nothing Danish needs a key.
+
+### 14. Germany
+
+Germany's ~15,000 stations, from the same integration and the same card. Three
+fuels — **Super E10, Super E5 and Diesel** — priced to three decimals, in euro,
+because every German forecourt sign carries the 9/10 of a cent and a price
+rounded to two would disagree with the pump.
+
+Two things genuinely work differently, both because of the source:
+
+- **There is no national list.** Tankerkönig answers only about a circle, and
+  caps that circle at 25 km. So a German setup searches a circle around a point
+  you nominate, rather than filtering a nationwide download. The map shows that
+  circle rather than the whole country.
+- **Asking out loud searches ahead of you.** Parked, that is one 25 km circle.
+  Moving, it is a *corridor* of up to three circles laid along your heading,
+  reaching up to 135 km down the road, with the stations behind you dropped —
+  at 130 km/h half a circle around you is road you have already driven, and a
+  station you passed costs a U-turn no price difference repays. Nothing about
+  this is a setting: it is worked out from how fast you are actually going.
+
+### 15. Testing the driving features without driving
+
+The corridor, the direction filtering and the spoken answer only behave
+differently when something is *moving*, and nobody wants to drive to Munich to
+find out whether they work. `tankpriser.simulate_drive` moves a virtual car
+along a route — writing positions, speed and heading exactly as the companion
+app does — so all of it runs for real from your desk. See
+[15. Simulating a drive](#15-simulating-a-drive).
 
 ### Also included
 
@@ -314,8 +458,13 @@ in the config entry, sent only to that chain and redacted from diagnostics.
 - Your **Home location** set under *Settings → System → General* — it is the
   centre of the sensors' search area. Without it the sensors stay empty (the
   national map still works, since it does not use the radius).
-- Internet access from Home Assistant (the chains' APIs and DAWA). No account,
-  no API key, no `configuration.yaml` entry.
+- Internet access from Home Assistant (the sources' APIs, and DAWA for
+  Denmark). No `configuration.yaml` entry, ever.
+- **For Denmark:** no account and no API key.
+- **For Germany:** a free [Tankerkönig](https://creativecommons.tankerkoenig.de/)
+  API key, which you request yourself — see [14. Germany](#14-germany). Expect
+  to wait: a person there activates each key by hand, and a key that has not
+  been activated yet is rejected exactly like a wrong one.
 - Optional, for [prediction](#12-fuel-consumption-prediction): an entity that
   reports a car's fuel level.
 
@@ -341,14 +490,28 @@ to your Lovelace resources.
 
    ![Add Integration Tankpriser](docs/images/add-integration.png)
 
-2. Optionally give it a **name** (it becomes the device name and the notification
-   title), and pick the **fuel types** to track. Blyfri 95 and Diesel are
+2. Pick the **country**. It is preselected from Home Assistant's own country
+   setting. This is the one thing that cannot be changed afterwards — it decides
+   the sources, the fuels and the currency, so changing it would mean different
+   sensors under the same names. Add a second Tankpriser instead.
+
+3. **Germany only:** paste your **Tankerkönig API key**. It is checked on the
+   spot. If it is refused, it is almost always because it has not been activated
+   yet — see [14. Germany](#14-germany).
+
+4. Optionally give it a **name** (it becomes the device name and the notification
+   title), and pick the **fuel types** to track. Petrol and Diesel are
    preselected.
 
    ![Set name and fuel types](docs/images/setup-fuel-types.png)
 
-3. Submit. That is the whole setup — the area comes from your Home location and
-   the radius defaults to 10 km. Sensors appear within a few seconds.
+5. **Germany only:** confirm the **point to search from**. It defaults to your
+   Home location, which is right if you live there — and wrong if you are a Dane
+   watching the forecourts around Flensburg, so move it if so.
+
+6. Submit. For Denmark that is the whole setup: the area comes from your Home
+   location and the radius defaults to 10 km. Sensors appear within a few
+   seconds.
 
 Everything else is under **Configure** on the integration card, or on the card
 in your dashboard. Read on.
@@ -362,7 +525,7 @@ Where the settings live:
 
 | Where | What you can change there |
 | --- | --- |
-| **Settings → Devices & Services → Tankpriser → Configure** | Radius, fuel types, hidden stations, update interval, nearby device, discounts, notifications, chain API keys |
+| **Settings → Devices & Services → Tankpriser → Configure** | Radius, fuel types, hidden stations, update interval, nearby device, discounts, notifications, refuel prediction, chain API keys |
 | **… → Tankpriser → Add car** | A car for consumption prediction (as many as you like) |
 | **Your dashboard → Add card** | The price card and the prediction card, with visual editors |
 
@@ -419,7 +582,11 @@ The change applies on the next refresh, everywhere at once.
 | **Send notifications on price changes** | The master switch. |
 | **Notify service** | A dropdown of your `notify.*` services, e.g. `notify.mobile_app_pixel`. Only `notify.*` is ever called. |
 | **When to notify** | One of the four rules in [feature 4](#4-price-change-notifications). |
-| **Price threshold** | Only used by the "below threshold" rule, in kr./L, e.g. `16.50`. |
+| **Price threshold** | Only used by the "below threshold" rule, in the country's own unit — kr./L in Denmark (`16.50`), €/L in Germany (`1.70`). Compared against the full price, so `1.699` trips a `1.70` rule. |
+| **Also alert when a car is low and passing somewhere cheap** | The ["fill up now" alert](#12b-fill-up-now-alerts). Off by default, and it needs at least one car added for prediction. Uses the same notify service as the rows above. |
+| **Alert below this much of a tank** | Default 25 %. A 40 L city car and a 90 L estate disagree about what is worth interrupting for, so this is a slider rather than a rule. |
+| **…and a station is within** | Default 5 km. Beyond a few kilometres this stops being a nudge about the forecourt you are passing and becomes an errand. |
+| **Open navigation in** | Which app the notification opens when you tap it — Google Maps, Apple Maps or OpenStreetMap. |
 
 <!-- 📸 SCREENSHOT S07 options-notifications.png — the "Price notifications" form with a rule selected -->
 <!-- 📸 SCREENSHOT S08 notification-phone.png — the resulting notification on a phone (optional but nice) -->
@@ -902,14 +1069,235 @@ separate columns? That still works; add the card once per car.
 
 <!-- 📸 SCREENSHOT S20 prediction-card.png — the prediction card with the tank gauge, ideally in "ready" state -->
 
-### 13. Entering a chain API key
+#### 12a. How the prediction learns
 
-*([what this feature does](#13-chains-that-need-an-api-key))*
+Worth reading once, because it explains every number the card shows you and
+every case where it politely refuses to give one.
 
-**Configure → Chains & API keys** — the menu entry only appears when a supported
-chain actually needs one, which today none does. When it does, pick the chain,
-follow the guide shown in the dialog, paste the key (it is checked immediately)
-and save. Clearing the field removes the key and stops using that chain.
+**It learns from refuel to refuel.** Everything between one fill-up and the next
+is a *tank*: how many litres went in, how long they lasted, and — if you gave it
+an odometer — how far they took you. A tank is the natural unit because it is
+self-correcting: it already averages your busy days with your quiet ones, and it
+needs no assumption about how you drive.
+
+**A refuel is a jump upwards.** When the level rises by at least **15 % of the
+tank** in one go, the previous tank is closed and a new one begins. That
+threshold is why a **small top-up is ignored**: five litres to get home reads as
+noise, not as the start of a new tank, and treating it as one would throw away a
+perfectly good half-finished measurement.
+
+**The estimate leans on your recent driving.** Completed tanks are averaged with
+an exponential weighting — the newest counts about twice as much as the one
+before it — so a change of job or a holiday shows up within a tank or two rather
+than being diluted by a year of history. On top of that, the tank *you are on
+right now* is folded in continuously, weighted by how much time it covers, so a
+new pattern reaches the number in days. That weighting is the whole trick for
+irregular driving: one busy Saturday nudges the estimate; a busy fortnight moves
+it.
+
+**`days_until_empty` is then just division** — litres in the tank divided by
+litres a day. With an odometer it also reports **L/100 km**, which is the figure
+you can sanity-check against the car's own trip computer.
+
+**Confidence** (0–1, in the attributes) is two things multiplied: how many tanks
+it has learned from, approaching its maximum at **six**, and how *consistent*
+those tanks were. Wildly varying tanks keep confidence low no matter how many
+there are, which is the honest answer — a car driven unpredictably genuinely is
+harder to predict. A single partial tank is capped at **0.3** however good it
+looks.
+
+**Why it sometimes says nothing.** Before two completed tanks it will not claim
+`ready`, and before **3 days *and* 5 % of a tank** it will not give a number at
+all. Both refusals are deliberate: a car parked for three days would otherwise
+report "empty in nine years", and a single long trip would be projected as a
+daily habit. `tankpriser.seed_demo_history` fills in synthetic tanks if you want
+to see the card populated immediately — it **overwrites** real history, so use it
+on a car you are only experimenting with.
+
+**If you change the tank size**, run `tankpriser.reset_history` for that car:
+every stored tank was measured as a fraction of the old capacity.
+
+#### 12a-ii. And while the car is running
+
+None of the above applies to the driving answer, which is measured rather than
+learned. It appears on its own, with no setup, whenever three things are true:
+
+- the car has **reported recently** — within 20 minutes. Readings are only
+  stored when the level actually changes, so a parked car goes quiet and that
+  silence is the signal. No ignition or speed entity is needed;
+- the readings span at least **10 minutes**, so the rate is not dividing by
+  almost nothing;
+- and at least **1,5 % of the tank** has gone, because a fuel sender is coarse
+  and a parked car on a slope wanders. Below that it is noise, not a journey.
+
+It measures over the **last two hours** — long enough to average out a slosh,
+short enough to still describe *this* drive rather than this morning's. Anything
+before your last fill-up is excluded, or a refuel inside the window would read
+as the car un-burning forty litres.
+
+With an odometer it also reports **L/100 km and km/h for the current drive**,
+which is the figure you can check against the car's own trip computer.
+
+### 12d. Tuning and checking the prediction
+
+*([what this feature does](#12c-self-correcting-predictions))*
+
+**Configure → Refuel prediction.** Both settings need at least one
+[car](#12-adding-a-car-for-prediction); neither affects fuel prices.
+
+| Field | Notes |
+| --- | --- |
+| **Learn from past predictions and correct future ones** | **On by default.** After each refuel the prediction is compared with what the tank actually did; a lean shared by the *typical* tank, over five or more of them, is corrected by half its size, capped at 25 %. A holiday's worth of unusual tanks is ignored. Turn it off to see the raw model. |
+| **Show me how accurate the prediction has been (advanced)** | Off by default. Adds the `tankpriser.prediction_accuracy` action and makes the accuracy card work. Until this is on the action does not exist at all — it is not in the action picker and not in the API. |
+
+**Reading the marking.** With the second option on, add the card:
+
+```yaml
+type: custom:tankpriser-accuracy-card
+# car: Passat        # optional; blank grades every car
+# show_tanks: false  # optional; hides the per-tank table
+```
+
+Or call `tankpriser.prediction_accuracy` from **Developer tools → Actions** for
+the same thing as data.
+
+The card creates no entity, so it exists only where you put it. It is still a
+card, though — anyone who can see that dashboard can see it. Put it on a view of
+your own, or give it a `visibility:` condition, if other people use your Home
+Assistant.
+
+**How a tank is graded, and the trap it avoids.** The sensor answers "days until
+empty", but nobody drives to empty — you fill up at a quarter tank, or wherever
+you like. So comparing "we said 11 days" against "you refuelled after 8" would
+be measuring your refuelling *habit*, and would report a perfect model as wildly
+optimistic for ever. What is graded instead is the **rate**:
+
+> At the start of a tank, using only the tanks *before* it, the model believed
+> some litres per day. That tank then really burned 46 L over 9,4 days. So: how
+> long would the model have said those 46 L would last? It would have said 11,2.
+> That is **+19 %** — optimistic.
+
+Each tank is marked by a model that had not yet seen it, which is the only
+honest way to grade a model on its own history. **Positive means optimistic** —
+the fuel did not last as long as predicted, which is the direction that leaves
+you walking.
+
+Because your completed tanks are already stored, this works **backwards over the
+history you already have**. You get a verdict the first time you look, not after
+months of collecting.
+
+| What you see | What it means |
+| --- | --- |
+| **lean** | The average *signed* error — the headline. Near zero means no consistent bias, whatever the individual tanks did. |
+| **typical error** | The average size of the error, ignoring direction. High with a low lean = irregular driving, not a broken model. |
+| **worst** | The single furthest-off tank. |
+| **within 10 %** | How many tanks landed close enough to plan a week around. |
+| **trend** | Recent errors minus earlier ones. Negative means it is getting better as it learns. |
+| **▾ on a date** | That tank ended below 10 % — you cut it fine, so being optimistic actually costs you something. |
+
+A car with one refuel shows nothing, and says so: a tank can only be graded
+against the tanks before it.
+
+**When the correction does nothing, and why that is right.** On even driving the
+factor sits at 1.0 — there is no lean to remove, and the report says so in
+words. It also stays at 1.0 through a holiday, and through the two or three
+tanks it takes the prediction to absorb a *permanent* change of habit such as a
+new job: that lag is the estimate catching up, it resolves on its own, and a
+correction fitted to it would still be leaning long after the model had
+recovered. What the correction is for is a bias that never resolves — a car
+whose use keeps drifting the same way, where the estimate is permanently
+averaging a past that no longer applies.
+
+It is also updated only when a tank closes, because that is when new evidence
+exists. Grading more often — nightly, hourly — would re-derive the same number
+from the same tanks; there is nothing to learn from between two refuels.
+
+### 13. Entering a source API key
+
+*([what this feature does](#13-sources-that-need-an-api-key))*
+
+**Configure → Chains & API keys** — the menu entry only appears when a source
+for *this entry's country* needs a key. A Danish setup never shows it. Pick the
+source, follow the guide in the dialog, paste the key (it is checked
+immediately) and save. Clearing the field removes the key and stops using that
+source.
+
+### 14. Germany
+
+*([what this feature does](#14-germany))*
+
+**Getting the key.** Register at
+[creativecommons.tankerkoenig.de](https://creativecommons.tankerkoenig.de/#register)
+with your name and e-mail, and confirm that you are not an oil company, a
+station operator or an IT supplier to either — those are barred from this data
+by the licence, not by us. The key arrives by e-mail but **does not work yet**:
+a person at Tankerkönig activates it by hand, which can take days. Until then
+every request is answered with *"Key existiert nicht oder ist deaktiviert"*,
+and Home Assistant will report it as a rejected key, because from the outside
+the two are identical.
+
+**The point you search from.** *Configure → Area & fuel types → Search from this
+point.* It has to stand still, and that is deliberate: the background sensors,
+the price history and the notifications all compare one refresh with the next,
+and an area that followed your phone would swap the entire station list every
+time you drove anywhere — firing "price changed" for a hundred stations while
+no price moved. Asking out loud is unaffected: that always searches from where
+you actually are.
+
+**The radius** offers up to 25 km and defaults to it, because that is
+Tankerkönig's hard ceiling and one request buys the same answer whatever size
+you ask for. There is nothing to save by asking for less.
+
+**What one German refresh costs:** exactly one request, every poll. The default
+30-minute interval is 48 requests a day, comfortably inside what the source asks
+for. Asking out loud costs one to four more, once, at the moment you ask.
+
+**Prices are shown to three decimals** and compared at full precision, so a
+`1,699` still trips a "below 1,70" rule that a rounded `1,70` would not. The
+spoken sentence rounds to two — nobody reads out the 9/10 of a cent.
+
+**Loyalty discounts do not apply.** They are configured in øre off a Danish pump
+price, and are ignored for German stations rather than quietly subtracted from a
+euro price.
+
+### 15. Simulating a drive
+
+*([what this feature does](#15-testing-the-driving-features-without-driving)).*
+
+First, point your area at the simulated car: *Configure → Area & fuel types →
+Rank stations near this device* → `device_tracker.tankpriser_sim`. Without this
+the drive happens and nothing watches it; the log says so when you start one.
+
+Then, in **Developer tools → Actions**:
+
+```yaml
+action: tankpriser.simulate_drive
+data:
+  route: de_north_south     # Flensburg to Munich, ~830 km
+  speed_kmh: 130
+  interval: 60              # real seconds between steps
+  announce: true            # ask, and log what would be said
+```
+
+Watch it in *Settings → System → Logs* (set `custom_components.tankpriser` to
+info), where every step prints the position, the sentence, how many circles were
+searched and how far:
+
+```
+Tankpriser simulation @ 220 km (52.9014, 9.8321): Billigste er Raiffeisen
+Osterminnerweg, 2,19 euro, 23,6 kilometer væk. [408 found, 3 circles, 135 km
+searched, moving]
+```
+
+Routes shipped: `de_north_south`, `de_west_east`, `dk_de_border`,
+`dk_north_south`. Or give your own `waypoints: [[lat, lon], …]` — straight lines
+are driven between them, so add one wherever the road actually turns.
+
+`announce: true` is what makes the test worth running, and it is also what costs
+requests: each step asks for a real answer, which in Germany is one to four
+requests against your key. A 60-second interval is about four a minute at worst.
+Set `announce: false` to move the car and spend nothing. `tankpriser.stop_simulation`
+stops it and parks the car where it got to.
 
 ---
 
@@ -920,7 +1308,9 @@ integration something else, that name is used instead.
 
 ### `sensor.tankpriser_<fuel>` — one per tracked fuel
 
-**State:** the cheapest price in your area, in kr./L.
+**State:** the cheapest price in your area, in the country's unit — kr./L in
+Denmark, €/L in Germany. The state carries the full figure; `country` and
+`price_decimals` in the attributes say how to write it.
 
 | Attribute | Meaning |
 | --- | --- |
@@ -957,6 +1347,12 @@ integration something else, that name is used instead.
 | `current_level_l`, `current_level_percent`, `tank_capacity_l` | Where the tank is now |
 | `avg_consumption`, `consumption_unit`, `method`, `basis` | What it learned and how |
 | `learned_tanks`, `confidence` | How much it has to go on (0–1) |
+| `calibration` | The [self-correction](#12c-self-correcting-predictions) in force. `1.0` = none. Above 1 means this car burns faster than the raw model believed, so the projection was shortened. |
+| `mode` | `driving` or `parked` — whether the live figures below are present |
+| `hours_until_empty`, `live_empty_at` | While driving: how long this tank lasts at the rate it is going, and roughly when it runs out. Measured, not predicted, so no correction applies |
+| `live_consumption`, `live_consumption_unit` | The current burn, in L/h |
+| `live_l_per_100km`, `live_speed_kmh` | The current drive's efficiency and average speed, when an odometer is configured |
+| `live_measured_over_hours` | How much driving that reading was taken from, so a doubtful figure can be judged |
 | `predicted_empty` | ISO timestamp |
 | `cheapest_station`, `cheapest_price` | For this car's fuel, in your area |
 | `latitude`, `longitude`, `car_picture` | Present when the source entity supplies them — this is what puts the car on the map |
@@ -968,14 +1364,21 @@ integration something else, that name is used instead.
 
 | Service | What it does |
 | --- | --- |
-| `tankpriser.nearby` | The cheapest stations around a position **you supply**, returned directly to the caller — a spoken sentence, the ranked stations, and one navigation URL per station. No entity, no device tracker, nothing that can be stale in between. Fields: `latitude`, `longitude` (both required), `fuel`, `radius_km`, `maps`. Returns `spoken_cheapest`, `spoken`, `stations` and `urls`. This is what the Siri shortcut in [11b](#11b-the-shortcut--eight-actions) calls, through the companion app's *Perform action*; Apple's *Get contents of URL* with a long-lived token reaches it without the app at all. Also for automations that announce prices unprompted. |
+| `tankpriser.nearby` | The cheapest stations around a position **you supply**, returned directly to the caller — a spoken sentence, the ranked stations, and one navigation URL per station. No entity, no device tracker, nothing that can be stale in between. Fields: `latitude`, `longitude` (both required), `fuel`, `radius_km`, `maps`. Returns `spoken_cheapest`, `spoken`, `stations` and `urls`, plus what was
+actually searched: `searched_km`, `circles`, `moving`, `speed_kmh`, `course_deg`
+and `motion_source`. `radius_km` is the *parked* radius and is ignored where the
+source imposes its own ceiling or where you are moving — the shape of the search
+is worked out, not asked for. This is what the Siri shortcut in [11b](#11b-the-shortcut--eight-actions) calls, through the companion app's *Perform action*; Apple's *Get contents of URL* with a long-lived token reaches it without the app at all. Also for automations that announce prices unprompted. |
 | `tankpriser.seed_demo_history` | Injects synthetic tanks into a car so the prediction shows a number immediately. For testing and demos — **it overwrites learned history**. Fields: `car` (blank = all), `tanks`, `litres_per_day`, `days_per_tank` |
 | `tankpriser.reset_history` | Clears a car's learned history, returning it to `learning`. Use after changing the tank size, or to undo a demo seed. Field: `car` (blank = all) |
+| `tankpriser.simulate_drive` | Drives a virtual car along a route, writing positions, speed and heading onto a tracker entity so the corridor search and the spoken answer can be tested without driving. Fields: `route` **or** `waypoints`, `speed_kmh`, `interval`, `tracker`, `announce`, `loop`, `fuel`. See [15. Simulating a drive](#15-simulating-a-drive) |
+| `tankpriser.stop_simulation` | Stops the running simulation and parks the car where it got to, with its speed set to zero so nothing goes on believing it is moving |
 | `tankpriser.test_notification` | Rehearses a price drop and sends the notification it would produce, titled `… (test)`. Checks the rule, the threshold and the notify service in one call, instead of waiting for the chains to move. If nothing can be sent it tells you which of those is the reason. Field: `drop_ore` (how much cheaper to pretend, default 10 øre/L) |
 
 | Event | Payload |
 | --- | --- |
 | `tankpriser_price_updated` | `entry_id`, `area`, `radius`, `station_count` — fired after every successful refresh |
+| `tankpriser_simulation_step` | `entity_id`, `latitude`, `longitude`, `course`, `speed_kmh`, `travelled_km`, `total_km` — fired at every step of a simulated drive, so an automation can watch one without reading the log |
 
 **Diagnostics:** the integration's ⋮ → *Download diagnostics* gives the entry
 config, the resolved area and the current station data. API keys, the
@@ -988,6 +1391,10 @@ report as-is.
 | --- | --- |
 | Sensors have no stations | **Home location not set** (*Settings → System → General*), or your radius is small and rural. The log says `No HA Home location set` in that case. The map is unaffected in `national` coverage — it does not use the radius. |
 | The map shows stations far outside my radius | That is `coverage: national`, the default: the viewport is the filter, not your radius. Set `coverage: area` to pin it. |
+| Germany: "the source rejected that key" | Almost always a key that has not been activated yet — that is done by hand at Tankerkönig and can take days. The refusal is identical to a wrong key, so check the activation mail has actually arrived before assuming you mistyped it. |
+| Germany: no stations at all, and the key is fine | The point you search from is somewhere with no forecourts inside 25 km — or in another country. *Configure → Area & fuel types → Search from this point*. |
+| Germany: the map only shows a small area | That is the whole map there is. Tankerkönig answers only about a circle of at most 25 km, so there is no nationwide list to plot and none can be built. |
+| A simulated drive changes nothing | The area is not following the simulated car. *Configure → Area & fuel types → Rank stations near this device* → `device_tracker.tankpriser_sim`. The log warns about this when the drive starts. |
 | A chain you expect is missing | Only OK, Q8, F24, Shell and OIL! publish open APIs today. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
 | Every Tankpriser card is a small red error box on one device, and fine on the others | That device is not loading the card script. Fully close and reopen the HA app there (on iPhone/iPad: *Settings → Companion app → Debugging → Reset frontend cache*), or hard-refresh the browser. If it comes back, check *Settings → Dashboards → ⋮ → Resources* lists `/tankpriser/tankpriser-card.js` — if it does not, the integration logs a warning saying so at startup, and adding it by hand as a **JavaScript Module** is the fix. If the device is an **iPad running the companion app** and none of that helps, see [Known issues](#the-cards-do-not-load-in-the-ipad-companion-app). |
 | The card says "Configuration error" | Same cause as the row above: a browser holding an old `index.html`. |
@@ -999,6 +1406,7 @@ report as-is.
 | Card distances measured from the wrong place | With no live position the card measures from Home — the header says `from home`. It switches to `from you` only once the map's position dot has a fix, which needs HTTPS and permission. |
 | Prediction stuck on `learning` | It needs ≥ 3 days *and* ≥ 5 % of the tank consumed. A parked car never leaves this state. `tankpriser.seed_demo_history` shows what the card looks like meanwhile. |
 | Prediction looks wrong after changing tank size | Run `tankpriser.reset_history` for that car. |
+| The fill-up alert never fires | It needs all three at once: a car below the level you set, a station within the distance you set, and a notify service. It is also deliberately quiet — once per low tank, and not again until the car has been filled. The log at debug level says which of those stopped it. |
 | Notifications never arrive | Run `tankpriser.test_notification` — it rehearses a 10 øre drop and either delivers one or names the reason it cannot. Reloading the integration is *not* a test: that clears the comparison baseline, so the first refresh after a reload is deliberately silent. A notify service belonging to a phone or tablet you have since removed is the common cause. |
 
 More depth — logs, installing a build by hand, running the test suite — is in
@@ -1049,9 +1457,20 @@ served from an integration static path rather than from `/hacsfiles/`.
   the integration, so a shorter poll interval does not multiply requests. The
   User-Agent identifies this integration honestly, with a link, rather than
   impersonating a browser.
+- **German prices** come from
+  [Tankerkönig](https://creativecommons.tankerkoenig.de/), the free consumer
+  feed of the Bundeskartellamt's Markttransparenzstelle für Kraftstoffe
+  (MTS-K), licensed **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+  — attribution required**, which is what this paragraph is. Each user's own
+  Home Assistant fetches with that user's own key; nothing is proxied through
+  us and no copy of the dataset is redistributed, which the licence forbids
+  under penalty. Oil companies, station operators and their IT suppliers are
+  barred from using this data — if that is you, do not use the German half of
+  this integration.
 - **Geography** comes from [DAWA](https://dawadocs.dataforsyningen.dk/) — free,
   keyless, run by the Danish state — for postnummer/radius resolution and for
-  geocoding station addresses. Geocodes are cached for 180 days.
+  geocoding station addresses. Geocodes are cached for 180 days. Germany needs
+  neither: every German station arrives with exact coordinates already.
 - **Nothing about you is sent anywhere.** No account, no telemetry, no
   third-party analytics. Your position never leaves the browser: the blue dot is
   drawn locally.

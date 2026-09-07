@@ -12,10 +12,19 @@ from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CARD_BASE_URL, CARD_URL, DOMAIN, SUBENTRY_CAR
+from .const import (
+    CARD_BASE_URL,
+    CARD_URL,
+    CONF_ACCURACY_ENABLED,
+    CONF_COUNTRY,
+    DEFAULT_COUNTRY,
+    DOMAIN,
+    SUBENTRY_CAR,
+)
 from .consumption import ConsumptionTracker
 from .coordinator import TankpriserCoordinator
-from .services import async_register_services
+from .services import async_register_accuracy, async_register_services
+from .simulate import stop_simulation
 from .websocket import async_register as async_register_ws
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,10 +74,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate old entries. v1 (postnummer-based) still works as-is; the
-    coordinator falls back to the stored postnummer when present."""
-    if entry.version < 2:
-        hass.config_entries.async_update_entry(entry, version=2)
+    """Migrate old entries.
+
+    v1 (postnummer-based) still works as-is; the coordinator falls back to the
+    stored postnummer when present. v3 gives every entry a country: there was
+    only one integration-wide instance before, and it was Danish. Its unique id
+    moves with it — from the bare domain to a per-country id — so that adding
+    Germany later does not collide with it, and so re-adding Denmark still
+    aborts as "already configured" rather than creating a second Danish entry.
+    """
+    if entry.version < 3:
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, CONF_COUNTRY: DEFAULT_COUNTRY},
+            unique_id=f"{DOMAIN}_{DEFAULT_COUNTRY}",
+            version=3,
+        )
     return True
 
 
@@ -88,6 +109,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     await _async_setup_cars(hass, entry, coordinator)
+
+    # Only exists while somebody has asked for it. Checked per entry rather
+    # than once at component setup, because the option lives on the entry and
+    # this runs again on the reload that a settings change triggers.
+    async_register_accuracy(
+        hass,
+        any(
+            other.options.get(CONF_ACCURACY_ENABLED, False)
+            for other in hass.config_entries.async_entries(DOMAIN)
+        ),
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
@@ -112,6 +144,10 @@ async def _async_setup_cars(
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    # A simulated drive is a background task writing states on a timer, and it
+    # is not owned by any entry — left running across a reload it would go on
+    # driving a car belonging to an integration that is no longer there.
+    stop_simulation(hass)
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)

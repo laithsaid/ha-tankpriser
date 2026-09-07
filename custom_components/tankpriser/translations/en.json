@@ -3,15 +3,37 @@
     "step": {
       "user": {
         "title": "Set up Tankpriser",
-        "description": "Prices come from Danish fuel chains' official price APIs (OK, Q8, F24, Shell, OIL!). Your area is your Home location — just choose which fuel types to track. The radius (default 10 km) can be changed later under Options.",
+        "description": "Which country do you buy fuel in? One setup covers one country — if you also fill up across a border, add that country afterwards as a second Tankpriser entry.",
+        "data": {
+          "country": "Country"
+        }
+      },
+      "area": {
+        "title": "Area & fuel types",
+        "description": "Choose which fuels to track. Your area is Home Assistant's Home location and the radius can be changed later under Options.",
         "data": {
           "area_name": "Name (optional)",
-          "fuel_types": "Fuel types"
+          "fuel_types": "Fuel types",
+          "anchor": "Search from this point"
+        },
+        "data_description": {
+          "anchor": "German prices can only be looked up around a point, and this one has to stand still: the sensors, the history and the price notifications all compare the same stations from one update to the next. Asking out loud still searches from wherever you actually are."
+        }
+      },
+      "credentials": {
+        "title": "API key",
+        "description": "This country's prices come from a source that only answers with a personal API key. It is free, and it is yours — Home Assistant sends it straight to the source and nowhere else.\n\n{guides}",
+        "data": {
+          "tankerkoenig": "Tankerkönig API key"
         }
       }
     },
     "error": {
-      "no_fuel_types": "Select at least one fuel type."
+      "no_fuel_types": "Select at least one fuel type.",
+      "key_required": "This source needs a key before it can be set up.",
+      "invalid_auth": "The source rejected that key. A brand-new key is usually not activated yet — that is done by hand and can take days. Check you copied all of it, then try again when the activation mail arrives.",
+      "cannot_connect": "Could not reach the source. Check your internet connection and try again.",
+      "no_stations": "The key was accepted but no stations came back. Please open an issue if this persists."
     },
     "abort": {
       "already_configured": "Tankpriser is already set up."
@@ -83,7 +105,8 @@
           "settings": "Area & fuel types",
           "notifications": "Price notifications",
           "chains": "Chains & API keys",
-          "discounts": "Loyalty discounts"
+          "discounts": "Loyalty discounts",
+          "prediction": "Refuel prediction"
         }
       },
       "settings": {
@@ -95,8 +118,10 @@
           "excluded_stations": "Hide these stations",
           "scan_interval": "Update interval (minutes)",
           "nearby_tracker": "Rank stations near this device (phone or car)",
-          "nearby_radius_km": "How far to look for nearby stations"
-        }
+          "nearby_radius_km": "How far to look for nearby stations",
+          "anchor": "Search from this point"
+        },
+        "data_description": {}
       },
       "notifications": {
         "title": "Price notifications",
@@ -105,12 +130,19 @@
           "notify_enabled": "Send notifications on price changes",
           "notify_service": "Notify service (e.g. notify.mobile_app_phone)",
           "notify_rule": "When to notify",
-          "notify_threshold": "Price threshold (for \"below threshold\")"
+          "notify_threshold": "Price threshold (for \"below threshold\")",
+          "fillup_enabled": "Also alert when a car is low and passing somewhere cheap",
+          "fillup_level_pct": "Alert below this much of a tank",
+          "fillup_near_km": "…and a station is within",
+          "fillup_maps": "Open navigation in"
+        },
+        "data_description": {
+          "fillup_enabled": "Needs at least one car added for prediction. You are told once per low tank, not once per update — the next alert waits until the car has been filled."
         }
       },
       "chains": {
         "title": "Chains & API keys",
-        "description": "Most Danish chains publish their prices openly and need no setup — OK, Q8, F24, Shell and OIL! work out of the box. The chains below only answer with a personal API key that you must request yourself. Pick one to see how.",
+        "description": "Most sources publish their prices openly and need no setup — the Danish chains OK, Q8, F24, Shell and OIL! work out of the box. The sources below only answer with a personal API key that you must request yourself. Pick one to see how.",
         "data": {
           "provider": "Chain"
         }
@@ -138,6 +170,18 @@
           "unox": "Uno-X",
           "ok": "OK"
         }
+      },
+      "prediction": {
+        "title": "Refuel prediction",
+        "description": "How the per-car refuel prediction behaves. Both settings need at least one car added, and neither affects fuel prices.",
+        "data": {
+          "calibration_enabled": "Learn from past predictions and correct future ones",
+          "accuracy_enabled": "Show me how accurate the prediction has been (advanced)"
+        },
+        "data_description": {
+          "calibration_enabled": "After each refuel the prediction is compared with what the tank actually did. If the typical tank has been leaning the same way, over five or more of them, later predictions are nudged back — by half the measured lean, never more than 25 %. A holiday's worth of unusual tanks is ignored rather than treated as a change of habit. On by default; turn it off to see the raw model.",
+          "accuracy_enabled": "Adds the tankpriser.prediction_accuracy action and lets you use the Prediction Accuracy card, which grades every tank and says whether the model is consistently off or merely noisy. Off by default — it is a tool for judging the prediction rather than a part of it."
+        }
       }
     },
     "error": {
@@ -162,6 +206,19 @@
       "options": {
         "percent": "Percent of tank (%)",
         "litres": "Litres"
+      }
+    },
+    "country": {
+      "options": {
+        "DK": "Denmark — OK, Q8, F24, Shell and OIL!, no key needed",
+        "DE": "Germany — Tankerkönig (MTS-K), needs a free API key"
+      }
+    },
+    "maps": {
+      "options": {
+        "google": "Google Maps",
+        "apple": "Apple Maps",
+        "osm": "OpenStreetMap"
       }
     }
   }

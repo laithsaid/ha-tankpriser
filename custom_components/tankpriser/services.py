@@ -20,10 +20,17 @@ Both of those act on all configured cars, optionally filtered by name.
   delivery can be checked without waiting for the chains to move. A reload
   cannot stand in for this: it clears the comparison baseline, so the first
   refresh after one is deliberately silent.
+
+And two for testing the driving features without driving:
+
+* ``simulate_drive`` / ``stop_simulation`` — move a virtual tracker along a
+  route so the corridor search, the direction filtering and the spoken answer
+  can be watched from a desk. See ``simulate.py``.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import replace
 
@@ -38,9 +45,17 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_FUEL_TYPES,
+    MAPS_URLS,
+    CONF_NEARBY_TRACKER,
+    DEFAULT_SIMULATION_INTERVAL_S,
+    DEFAULT_SIMULATION_SPEED_KMH,
+    MIN_SIMULATION_INTERVAL_S,
+    SIMULATION_ENTITY,
+    SIMULATION_ROUTES,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_RULE,
     CONF_NOTIFY_SERVICE,
@@ -48,22 +63,52 @@ from .const import (
     DEFAULT_NEARBY_RADIUS_KM,
     DOMAIN,
     FUEL_TYPES,
+    fuel_label,
+    price_unit,
+    spoken_currency,
     NEARBY_MAX_STATIONS,
     SPOKEN_STATIONS,
 )
 from .coordinator import (
     TankpriserData,
-    async_national_stations,
+    async_station_pool,
     credentials_of,
     discounts_of,
+    entry_coordinator,
+    pool_target,
 )
-from .nearby import rank_nearby, spoken_cheapest, spoken_sentence
+from .nearby import (
+    destination,
+    infer_motion,
+    rank_nearby,
+    search_plan,
+    searched_km,
+    should_extend,
+    spoken_cheapest,
+    spoken_sentence,
+)
+from .accuracy import as_dict, backtest
 from .notifications import evaluate_and_notify
+from .simulate import DriveSimulation, stop_simulation
+from .sources import area_for, country_needs_area, max_radius_km
+
+_LOGGER = logging.getLogger(__name__)
 
 SERVICE_NEARBY = "nearby"
 SERVICE_SEED_DEMO = "seed_demo_history"
 SERVICE_RESET = "reset_history"
 SERVICE_TEST_NOTIFICATION = "test_notification"
+SERVICE_ACCURACY = "prediction_accuracy"
+SERVICE_SIMULATE = "simulate_drive"
+SERVICE_STOP_SIMULATION = "stop_simulation"
+
+ATTR_ROUTE = "route"
+ATTR_WAYPOINTS = "waypoints"
+ATTR_SPEED_KMH = "speed_kmh"
+ATTR_INTERVAL = "interval"
+ATTR_TRACKER = "tracker"
+ATTR_ANNOUNCE = "announce"
+ATTR_LOOP = "loop"
 
 ATTR_DROP_ORE = "drop_ore"
 
@@ -80,18 +125,9 @@ ATTR_MAPS = "maps"
 
 # Navigation links are built here rather than left to the caller: a Shortcut can
 # read a string out of a response, but assembling one per station from a nested
-# list is a page of actions on a phone.
-# `dir_action=navigate` starts turn-by-turn straight away; without it Google
-# Maps opens a route *preview* and — if it cannot resolve your position itself —
-# asks you to pick a starting point, which is a dialog nobody wants at 110 km/h.
-_MAPS_URL = {
-    "google": (
-        "https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
-        "&travelmode=driving&dir_action=navigate"
-    ),
-    "apple": "http://maps.apple.com/?daddr={lat},{lon}&dirflg=d",
-    "osm": "https://www.openstreetmap.org/directions?to={lat}%2C{lon}",
-}
+# list is a page of actions on a phone. The templates themselves live in
+# const.MAPS_URLS, shared with the fill-up notification.
+_MAPS_URL = MAPS_URLS
 
 _NEARBY_SCHEMA = vol.Schema(
     {
@@ -102,6 +138,29 @@ _NEARBY_SCHEMA = vol.Schema(
             vol.Coerce(float), vol.Range(min=1, max=100)
         ),
         vol.Optional(ATTR_MAPS, default="google"): vol.In(list(_MAPS_URL)),
+    }
+)
+
+_SIMULATE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ROUTE): vol.In(list(SIMULATION_ROUTES)),
+        # [[lat, lon], [lat, lon], ...] — straight lines between them, so put
+        # one wherever the road you have in mind actually turns.
+        vol.Optional(ATTR_WAYPOINTS): vol.All(
+            cv.ensure_list,
+            vol.Length(min=2),
+            [vol.All(cv.ensure_list, vol.Length(min=2, max=2), [vol.Coerce(float)])],
+        ),
+        vol.Optional(ATTR_SPEED_KMH, default=DEFAULT_SIMULATION_SPEED_KMH): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=250)
+        ),
+        vol.Optional(ATTR_INTERVAL, default=DEFAULT_SIMULATION_INTERVAL_S): vol.All(
+            vol.Coerce(float), vol.Range(min=MIN_SIMULATION_INTERVAL_S, max=3600)
+        ),
+        vol.Optional(ATTR_TRACKER): cv.entity_id,
+        vol.Optional(ATTR_ANNOUNCE, default=True): cv.boolean,
+        vol.Optional(ATTR_LOOP, default=False): cv.boolean,
+        vol.Optional(ATTR_FUEL): vol.In(list(FUEL_TYPES)),
     }
 )
 
@@ -164,12 +223,175 @@ def _default_fuel(hass: HomeAssistant) -> str | None:
     return None
 
 
+def _warn_if_tracker_is_not_the_one_watched(
+    hass: HomeAssistant, entity_id: str
+) -> None:
+    """Say so when the simulated car is not the car anything is watching.
+
+    Driving a tracker nothing is configured to follow produces a perfectly
+    quiet, perfectly wrong test: the positions are written, and every sensor
+    ignores them. That is a confusing half-hour to debug, and one log line
+    prevents it.
+    """
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        watched = str(entry.options.get(CONF_NEARBY_TRACKER, "") or "")
+        if watched and watched != entity_id:
+            _LOGGER.warning(
+                "Tankpriser is driving %s, but %s is set to follow %s. The "
+                "nearby sensors and the motion inference will not see this "
+                "drive. Point either one at the other.",
+                entity_id,
+                entry.title,
+                watched,
+            )
+        elif not watched:
+            _LOGGER.warning(
+                "Tankpriser is driving %s, but %s has no tracker configured, "
+                "so nothing will infer motion from it. Set it under "
+                "Configure -> Area & fuel types.",
+                entity_id,
+                entry.title,
+            )
+
+
+def _circle_km(country: str, requested_km: float) -> float:
+    """The radius of one circle in the search.
+
+    Where the source only answers about a circle it also caps how big that
+    circle may be, and one request buys the same answer whatever size is asked
+    for — so there is nothing to gain by asking for less than the maximum.
+    """
+    cap_km = max_radius_km(country)
+    return float(cap_km) if cap_km else float(requested_km)
+
+
+def _motion(hass: HomeAssistant, coordinator, latitude: float, longitude: float):
+    """How the caller is moving, from the nominated tracker plus this position.
+
+    No tracker, or one with nothing usable on it, means no heading — and a
+    search around the caller rather than ahead of them, which is the right
+    answer when we cannot tell.
+    """
+    entity_id = getattr(coordinator, "nearby_tracker", "") if coordinator else ""
+    state = hass.states.get(entity_id) if entity_id else None
+    if state is None:
+        return infer_motion(latitude, longitude)
+
+    attrs = state.attributes
+    fix = {
+        "latitude": attrs.get("latitude"),
+        "longitude": attrs.get("longitude"),
+        "speed": attrs.get("speed"),
+        "course": attrs.get("course"),
+    }
+    # `last_updated` moves on any state write; the position we are comparing
+    # against is as old as the last one that actually changed something.
+    elapsed = (dt_util.utcnow() - state.last_updated).total_seconds()
+    return infer_motion(latitude, longitude, fix, elapsed)
+
+
+def _step_out(latitude, longitude, motion, circle_km: float, index: int):
+    """One more circle centre, further along the heading than the last.
+
+    Spaced exactly as `search_plan` spaces them, so the extra circle continues
+    the corridor instead of overlapping the one before it.
+    """
+    offset = circle_km * 0.8 + index * circle_km * 1.8
+    return destination(latitude, longitude, motion.course_deg or 0.0, offset)
+
+
+async def _pool_for(
+    hass: HomeAssistant, country: str, centres: list, circle_km: float
+) -> list:
+    """The stations to choose from, fetched for every circle in the plan.
+
+    A country that publishes nationally ignores the circles entirely — one
+    fetch already holds every station, and the circles only shape the ranking.
+    """
+    credentials = credentials_of(hass)
+    discounts = discounts_of(hass)
+    if not country_needs_area(country):
+        return await async_station_pool(hass, credentials, discounts, country)
+
+    merged: dict[str, object] = {}
+    for lat, lon in centres:
+        area = area_for(country, lat, lon, int(circle_km * 1000))
+        for station in await async_station_pool(
+            hass, credentials, discounts, country, area
+        ):
+            # Circles overlap on purpose, so the same forecourt arrives more
+            # than once; the source's own id makes that exact.
+            merged.setdefault(station.key, station)
+    return list(merged.values())
+
+
+def _rank(stations, latitude, longitude, reach_km, fuel, motion):
+    """Rank the pool from here, dropping what is behind you when moving."""
+    return rank_nearby(
+        stations,
+        latitude,
+        longitude,
+        reach_km * 1000.0,
+        fuel,
+        course_deg=motion.course_deg if motion.moving else None,
+    )
+
+
 def _cars(hass: HomeAssistant, name: str | None) -> Iterator:
     """Yield the car trackers across all entries, optionally filtered by name."""
     for value in hass.data.get(DOMAIN, {}).values():
         for tracker in getattr(value, "cars", {}).values():
             if not name or tracker.name == name:
                 yield tracker
+
+
+@callback
+def async_register_accuracy(hass: HomeAssistant, enabled: bool) -> None:
+    """Add or remove the prediction-accuracy service to match the setting.
+
+    Registered on demand rather than always, so that on an installation which
+    has not asked for it the service does not exist at all — not in the action
+    picker, not in the API. Switching the option off removes it again on the
+    reload that follows.
+    """
+    present = hass.services.has_service(DOMAIN, SERVICE_ACCURACY)
+    if not enabled:
+        if present:
+            hass.services.async_remove(DOMAIN, SERVICE_ACCURACY)
+        return
+    if present:
+        return
+
+    async def _accuracy(call: ServiceCall) -> ServiceResponse:
+        wanted = call.data.get(ATTR_CAR)
+        # Both gradings, so the correction can be judged rather than trusted:
+        # what the raw model scored, and what the same history would have
+        # scored with the correction it had earned by then.
+        reports = []
+        for tracker in _cars(hass, wanted):
+            raw = backtest(tracker.capacity_l, tracker.model.segments, tracker.name)
+            corrected = backtest(
+                tracker.capacity_l, tracker.model.segments, tracker.name, calibrate=True
+            )
+            report = as_dict(raw)
+            report["corrected"] = as_dict(corrected)
+            report["calibration_in_use"] = tracker.calibration
+            reports.append(report)
+        if not reports:
+            raise ServiceValidationError(
+                f"No car called {wanted!r} is set up for prediction."
+                if wanted
+                else "No cars are set up for prediction, so there is nothing to grade."
+            )
+        return {"cars": reports}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ACCURACY,
+        _accuracy,
+        schema=vol.Schema({vol.Optional(ATTR_CAR): cv.string}),
+        supports_response=SupportsResponse.ONLY,
+    )
 
 
 @callback
@@ -188,30 +410,65 @@ def async_register_services(hass: HomeAssistant) -> None:
         latitude = call.data[ATTR_LATITUDE]
         longitude = call.data[ATTR_LONGITUDE]
 
-        stations = await async_national_stations(
-            hass, credentials_of(hass), discounts_of(hass)
-        )
-        ranked = rank_nearby(
-            stations,
-            latitude,
-            longitude,
-            call.data[ATTR_RADIUS_KM] * 1000.0,
-            fuel,
-        )
+        country, _ = pool_target(hass)
+        coordinator = entry_coordinator(hass)
+        # The shape of the search is inferred, never asked for: at 110 km/h
+        # nobody says a radius, and the right answer is not a bigger circle but
+        # a corridor along the road ahead.
+        motion = _motion(hass, coordinator, latitude, longitude)
+        circle_km = _circle_km(country, call.data[ATTR_RADIUS_KM])
+        centres = search_plan(latitude, longitude, motion, circle_km)
+        reach_km = searched_km(latitude, longitude, centres, circle_km)
+
+        stations = await _pool_for(hass, country, centres, circle_km)
+        ranked = _rank(stations, latitude, longitude, reach_km, fuel, motion)
+
+        # The cheapest sitting out at the rim suggests the good prices carry on
+        # past it, and one more circle is the only way to find out. Affordable:
+        # the source answers a burst of these in a few seconds.
+        if motion.moving and should_extend(ranked, reach_km):
+            centres = centres + [
+                _step_out(latitude, longitude, motion, circle_km, len(centres))
+            ]
+            reach_km = searched_km(latitude, longitude, centres, circle_km)
+            stations = await _pool_for(hass, country, centres, circle_km)
+            ranked = _rank(stations, latitude, longitude, reach_km, fuel, motion)
         language = str(getattr(hass.config, "language", "") or "")
         danish = language.lower().startswith("da")
         listed = ranked[:NEARBY_MAX_STATIONS]
         template = _MAPS_URL[call.data[ATTR_MAPS]]
         return {
             "fuel": fuel,
-            "fuel_type": FUEL_TYPES[fuel][0],
-            "unit": FUEL_TYPES[fuel][1],
+            "country": country,
+            "fuel_type": fuel_label(fuel, country),
+            "unit": price_unit(country),
+            # What was actually searched, so an answer of "nothing" can be
+            # told apart from "nothing was looked at", and so a Shortcut can
+            # say the range out loud without knowing how it was chosen.
+            "searched_km": reach_km,
+            "circles": len(centres),
+            "moving": motion.moving,
+            "speed_kmh": round(motion.speed_kmh, 1),
+            "course_deg": (
+                round(motion.course_deg) if motion.course_deg is not None else None
+            ),
+            "motion_source": motion.source,
             # In range, not listed below: a count that silently equalled the cap
             # reads as "there are only 8 stations near you", which is never true.
             "count": len(ranked),
             # One station, said plainly — what the documented shortcut speaks.
-            "spoken_cheapest": spoken_cheapest(ranked, danish=danish),
-            "spoken": spoken_sentence(ranked, danish=danish),
+            "spoken_cheapest": spoken_cheapest(
+                ranked,
+                danish=danish,
+                currency=spoken_currency(country),
+                searched_km=reach_km,
+            ),
+            "spoken": spoken_sentence(
+                ranked,
+                danish=danish,
+                currency=spoken_currency(country),
+                searched_km=reach_km,
+            ),
             "spoken_count": min(len(ranked), SPOKEN_STATIONS),
             "stations": listed,
             # Index-aligned with `stations`, so "the third one she named" is
@@ -225,6 +482,42 @@ def async_register_services(hass: HomeAssistant) -> None:
                 for s in listed
             ],
         }
+
+    async def _simulate(call: ServiceCall) -> None:
+        route = call.data.get(ATTR_ROUTE)
+        waypoints = call.data.get(ATTR_WAYPOINTS)
+        if route and waypoints:
+            raise ServiceValidationError(
+                "Give either a named route or your own waypoints, not both."
+            )
+        points = (
+            [(float(lat), float(lon)) for lat, lon in waypoints]
+            if waypoints
+            else SIMULATION_ROUTES.get(route or "")
+        )
+        if not points or len(points) < 2:
+            raise ServiceValidationError(
+                "Give a route name or at least two waypoints to drive between. "
+                f"Known routes: {', '.join(sorted(SIMULATION_ROUTES))}."
+            )
+
+        entity_id = call.data.get(ATTR_TRACKER) or SIMULATION_ENTITY
+        simulation = DriveSimulation(
+            hass,
+            entity_id,
+            points,
+            call.data[ATTR_SPEED_KMH],
+            call.data[ATTR_INTERVAL],
+            call.data[ATTR_ANNOUNCE],
+            call.data[ATTR_LOOP],
+            call.data.get(ATTR_FUEL),
+        )
+        simulation.start()
+        _warn_if_tracker_is_not_the_one_watched(hass, entity_id)
+
+    async def _stop_simulation(call: ServiceCall) -> None:
+        if not stop_simulation(hass):
+            _LOGGER.info("Tankpriser: no simulation was running")
 
     async def _seed(call: ServiceCall) -> None:
         for tracker in _cars(hass, call.data.get(ATTR_CAR)):
@@ -285,6 +578,12 @@ def async_register_services(hass: HomeAssistant) -> None:
         _nearby,
         schema=_NEARBY_SCHEMA,
         supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SIMULATE, _simulate, schema=_SIMULATE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_STOP_SIMULATION, _stop_simulation, schema=vol.Schema({})
     )
     hass.services.async_register(DOMAIN, SERVICE_SEED_DEMO, _seed, schema=_SEED_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_RESET, _reset, schema=_RESET_SCHEMA)

@@ -1,10 +1,17 @@
 """Fuel-price providers.
 
-Each provider is a free, no-auth Danish per-station price API (mandated since
-2026). We fetch each one nationwide, normalize it into a common ``Station``
-record, and cache the result briefly so that many configured areas share a
-single fetch per provider. Geographic filtering happens later in the
-coordinator using the station's postnummer.
+A provider is one country's per-station price API, normalized into a common
+``Station`` record and cached briefly so that many readers share one fetch.
+
+Providers come in two shapes, because the sources do:
+
+* ``SCOPE_NATIONAL`` — the whole country in one response (every Danish chain,
+  which the 2026 price-transparency law made free and keyless). We fetch it
+  once and the coordinator filters it by postnummer afterwards.
+* ``SCOPE_AREA`` — the API only answers about a circle you name, so the area
+  is an *input* to the fetch (Germany's Tankerkoenig, capped at 25 km). There
+  is no nationwide response to filter, and each distinct circle is its own
+  cache entry and its own request against the provider's rate limit.
 """
 
 from __future__ import annotations
@@ -22,6 +29,11 @@ import aiohttp
 
 from .const import (
     CHAINS,
+    COUNTRY_DE,
+    COUNTRY_DK,
+    DEFAULT_FUEL_TYPES,
+    DEFAULT_RADIUS,
+    FUEL_TYPES,
     MAX_DISCOUNT_ORE,
     MAX_STALE_AGE,
     OIL_FUELTYPES,
@@ -29,8 +41,12 @@ from .const import (
     OK_URL,
     PROVIDER_CACHE_TTL,
     Q8_URL,
+    RADIUS_OPTIONS,
     REQUEST_HEADERS,
     SHELL_URL,
+    TANKERKOENIG_MAX_RADIUS_KM,
+    TANKERKOENIG_URL,
+    radius_to_metres,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,10 +78,23 @@ class Station:
     list_prices: dict[str, float] = field(default_factory=dict)
     # Discount actually applied, in øre/L (0 = none).
     discount_ore: int = 0
+    # The provider's own id for this station, when it publishes one. Preferred
+    # for identity: two forecourts of the same brand can share a postal code,
+    # and in Germany they routinely do.
+    station_id: str = ""
+    # Whether the station is serving right now. None = the provider does not
+    # say, which is every Danish chain — absent, not closed.
+    is_open: bool | None = None
+    # Which country's rules this station is priced under: it decides the
+    # currency, the decimals shown and whether a loyalty discount in øre could
+    # possibly apply. Set by the parser, never guessed downstream.
+    country: str = COUNTRY_DK
 
     @property
     def key(self) -> str:
         """Stable identity for change detection / de-duplication."""
+        if self.station_id:
+            return f"{self.country}|{self.station_id}".lower()
         return f"{self.company}|{self.name}|{self.postnummer}".lower()
 
 
@@ -126,6 +155,12 @@ def apply_discounts(
             # price no pump ever charged, so refuse rather than trust callers.
             out.append(station)
             continue
+        if station.country != COUNTRY_DK:
+            # Discounts are configured in øre off a Danish pump price. A German
+            # Shell would otherwise match the "shell" pattern and have 20 øre
+            # subtracted from a euro price — a number no pump ever charged.
+            out.append(station)
+            continue
         key = chain_key(station.company)
         ore = int(discounts.get(key) or 0) if key else 0
         ore = max(0, min(ore, MAX_DISCOUNT_ORE))
@@ -138,8 +173,11 @@ def apply_discounts(
                 station,
                 # A discount can never make fuel free; round to the øre so the
                 # numbers stay printable.
+                # Three decimals, not two: Danish prices carry two, so this is
+                # a no-op for them, but rounding is a lossy step and hard-coding
+                # a country's precision here is how a 1,719 becomes a 1,72.
                 prices={
-                    fuel: round(max(0.01, price - krone), 2)
+                    fuel: round(max(0.01, price - krone), 3)
                     for fuel, price in station.prices.items()
                 },
                 list_prices=dict(station.prices),
@@ -147,6 +185,18 @@ def apply_discounts(
             )
         )
     return out
+
+
+def without_hidden(stations: list[Station], hidden: set[str]) -> list[Station]:
+    """Drop the stations whose names the user hid.
+
+    Matched the way the options dialog stores them — the whole name, case- and
+    space-insensitively — because that dialog offers the names it discovered,
+    so an exact match is what a user picking from it will get.
+    """
+    if not hidden:
+        return stations
+    return [s for s in stations if s.name.strip().lower() not in hidden]
 
 
 def _to_float(value) -> float | None:
@@ -336,15 +386,26 @@ async def _fetch_json(
     session: aiohttp.ClientSession,
     url: str,
     extra_headers: Mapping[str, str] | None = None,
+    params: Mapping[str, str] | None = None,
 ) -> object:
+    """GET one JSON document.
+
+    Query parameters are passed separately rather than formatted into `url`, so
+    a credential among them is escaped correctly and stays out of any string we
+    build ourselves. It still reaches aiohttp's exception text — see `redact`.
+    """
     headers = {**REQUEST_HEADERS, **(extra_headers or {})}
-    async with session.get(url, headers=headers, timeout=_TIMEOUT) as resp:
+    async with session.get(
+        url, headers=headers, params=dict(params or {}), timeout=_TIMEOUT
+    ) as resp:
         resp.raise_for_status()
         return await resp.json(content_type=None)
 
 
 async def fetch_oil(
-    session: aiohttp.ClientSession, credential: str | None = None
+    session: aiohttp.ClientSession,
+    credential: str | None = None,
+    area: "Area | None" = None,
 ) -> list[Station]:
     """Fetch OIL!: one request per sold fuel type, merged by station_id."""
     merged: dict[str, Station] = {}
@@ -377,31 +438,202 @@ async def fetch_oil(
     return list(merged.values())
 
 
+# -- Tankerkoenig (Germany) -------------------------------------------------
+# The free consumer feed of the Bundeskartellamt's MTS-K, to which every German
+# station must report a price change within five minutes. Three fuels, exact
+# coordinates on every record, and a hard 25 km cap on each query — hence
+# SCOPE_AREA. Licensed CC BY 4.0; the attribution lives in the README.
+_TK_PRODUCT_MAP: dict[str, str] = {
+    "e10": "blyfri95",       # Super E10 — the same 95/E10 sold in Denmark
+    "e5": "blyfri95plus",    # Super E5
+    "diesel": "diesel",
+}
+
+
+def _postcode_de(value) -> str:
+    """Normalize a German postal code to five digits.
+
+    Tankerkoenig sends ``postCode`` as a *number*, so every code east of about
+    Dresden loses its leading zero on the wire: 01067 arrives as 1067.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return f"{int(text):05d}" if text.isdigit() else text
+
+
+def parse_tankerkoenig(payload: dict) -> list[Station]:
+    """Parse a Tankerkoenig ``list.php`` response into stations."""
+    stations: list[Station] = []
+    for rec in (payload or {}).get("stations", []) or []:
+        prices: dict[str, float] = {}
+        for field_name, key in _TK_PRODUCT_MAP.items():
+            price = _to_float(rec.get(field_name))
+            # A fuel the station does not sell comes back as `false` or null,
+            # and a reporting gap as 0.0 — neither is a price you could pay.
+            if price is None or price <= 0:
+                continue
+            prices[key] = price
+        if not prices:
+            continue
+
+        brand = str(rec.get("brand") or "").strip()
+        # Independents report an empty brand; their `name` is all they have.
+        label = brand or str(rec.get("name") or "").strip() or "Tankstelle"
+        street = str(rec.get("street") or "").strip()
+        house = str(rec.get("houseNumber") or "").strip()
+        location = " ".join(part for part in (street, house) if part).strip()
+
+        stations.append(
+            Station(
+                name=f"{label} {location}".strip() or label,
+                company=label,
+                postnummer=_postcode_de(rec.get("postCode")),
+                city=str(rec.get("place") or "").strip(),
+                address=location,
+                latitude=_to_float(rec.get("lat")),
+                longitude=_to_float(rec.get("lng")),
+                # list.php carries no timestamp. Reporting is mandatory within
+                # five minutes of a change, so "now" is nearer the truth than
+                # any date we could invent here.
+                updated="",
+                prices=prices,
+                station_id=str(rec.get("id") or ""),
+                is_open=rec.get("isOpen") if isinstance(rec.get("isOpen"), bool) else None,
+                country=COUNTRY_DE,
+            )
+        )
+    return stations
+
+
 # -- provider registry ------------------------------------------------------
-# Adding a chain is meant to be a *data* change: append one Provider below and
+# Adding a source is meant to be a *data* change: append one Provider below and
 # write its parser. Everything else — the options dialog, the how-to text, the
 # credential storage, validation and diagnostics redaction — is driven from
 # these fields, so no UI or translation edits are needed.
 
 AUTH_NONE: Final = "none"
+# The credential travels in a header. Preferred: headers stay out of URLs, and
+# URLs reach logs, proxies and error strings.
 AUTH_KEY: Final = "key"
+# The credential travels in the query string, because the API accepts it
+# nowhere else (Tankerkoenig). Everything logged on this path must go through
+# `redact` first — see `_fetch_provider`.
+AUTH_QUERY: Final = "query"
+
+# How much of a country one fetch covers.
+SCOPE_NATIONAL: Final = "national"   # one response holds every station
+SCOPE_AREA: Final = "area"           # the API only answers about a circle
+
+
+class ProviderAuthError(Exception):
+    """The provider refused the credential.
+
+    Separate from a transport failure so the options dialog can say "that key
+    is wrong" instead of "cannot connect" — which matters most for a key that
+    is merely *not activated yet*, the state every new Tankerkoenig key starts
+    in and the one a user is most likely to be staring at.
+    """
+
+
+@dataclass(frozen=True)
+class Area:
+    """The circle an area-scoped provider is asked about."""
+
+    latitude: float
+    longitude: float
+    radius_m: int
+
+    @property
+    def radius_km(self) -> float:
+        return self.radius_m / 1000.0
+
+    @property
+    def cache_key(self) -> str:
+        """Cache identity: the circle rounded onto a ~1 km grid.
+
+        Rounded, because the positions we search from are live GPS fixes and an
+        exact key would miss on every one of them — against a budget of about
+        one request a minute, a cache that never hits is no cache at all. The
+        cost is that the answer may be centred up to ~1 km from where you
+        asked, which can only matter for a station sitting exactly on the rim
+        of the radius.
+        """
+        return f"{self.latitude:.2f}/{self.longitude:.2f}/{self.radius_m}"
+
+
+@dataclass(frozen=True)
+class Auth:
+    """How one provider wants its credential presented."""
+
+    mode: str = AUTH_NONE
+    # Header shape, for AUTH_KEY. Per-provider because every API differs:
+    # Azure APIM wants Ocp-Apim-Subscription-Key, most others want a Bearer.
+    header: str = "Authorization"
+    template: str = "Bearer {key}"
+    # Query parameter name, for AUTH_QUERY.
+    param: str = "apikey"
+
+    @property
+    def required(self) -> bool:
+        return self.mode != AUTH_NONE
+
+    def headers(self, credential: str | None) -> dict[str, str]:
+        """Auth headers for a request (empty unless this source uses them)."""
+        if not credential or self.mode != AUTH_KEY:
+            return {}
+        return {self.header: self.template.format(key=credential)}
+
+    def params(self, credential: str | None) -> dict[str, str]:
+        """Auth query parameters (empty unless this source uses them)."""
+        if not credential or self.mode != AUTH_QUERY:
+            return {}
+        return {self.param: credential}
+
+
+AUTH_OPEN: Final = Auth()
+# Tankerkoenig takes the key only as `?apikey=` — no header form exists.
+AUTH_TANKERKOENIG: Final = Auth(AUTH_QUERY, param="apikey")
+
+
+def redact(text: object, credential: str | None) -> str:
+    """Return ``text`` with the credential blanked out.
+
+    Anything derived from an AUTH_QUERY request can carry the key: aiohttp puts
+    the full URL into its exception strings, so ``str(err)`` alone would leak a
+    user's key into the Home Assistant log the first time the network hiccups.
+    """
+    out = str(text)
+    if credential and len(credential) >= 8:
+        out = out.replace(credential, "***")
+    return out
 
 
 @dataclass(frozen=True)
 class Provider:
-    """One fuel chain's price API."""
+    """One country's fuel-price API."""
 
     key: str
     name: str
-    # async (session, credential | None) -> list[Station]
+    # async (session, credential | None, area | None) -> list[Station]
     fetch: Callable[
-        [aiohttp.ClientSession, str | None], Awaitable[list[Station]]
+        [aiohttp.ClientSession, str | None, "Area | None"],
+        Awaitable[list[Station]],
     ]
-    auth: str = AUTH_NONE
-    # How the credential is sent. Both are per-chain because every API differs:
-    # Azure APIM wants Ocp-Apim-Subscription-Key, most others want a Bearer.
-    auth_header: str = "Authorization"
-    auth_template: str = "Bearer {key}"
+    country: str = COUNTRY_DK
+    scope: str = SCOPE_NATIONAL
+    auth: Auth = AUTH_OPEN
+    # The normalized fuel keys this source can ever return — its product map,
+    # not a hand-kept list. The options dialog offers the union of these for a
+    # country, so it can never offer a fuel that no price will arrive for.
+    fuels: frozenset = frozenset()
+    # Largest radius the API will answer (km); 0 means it has no such limit.
+    # The options dialog uses it to stop offering radii the source cannot serve.
+    max_radius_km: int = 0
+    # A circle known to contain stations, used to test a credential when the
+    # user's own location is in another country — the dialog is asking "is this
+    # key valid", not "is there fuel near you".
+    probe: "Area | None" = None
     # Shown in the options dialog. `guide` is markdown; keep it to numbered
     # steps that tell the user exactly where to click.
     signup_url: str = ""
@@ -412,49 +644,227 @@ class Provider:
 
     @property
     def needs_credential(self) -> bool:
-        """Whether this chain refuses to answer without a key."""
-        return self.auth != AUTH_NONE
+        """Whether this source refuses to answer without a key."""
+        return self.auth.required
 
-    def headers(self, credential: str | None) -> dict[str, str]:
-        """Auth headers for a request (never put the key in the URL — the
-        provider fetch path logs URLs at debug level)."""
-        if not credential or not self.needs_credential:
-            return {}
-        return {self.auth_header: self.auth_template.format(key=credential)}
+    @property
+    def needs_area(self) -> bool:
+        """Whether a fetch is meaningless without a circle to ask about."""
+        return self.scope == SCOPE_AREA
 
 
-def _one_shot(url: str, parser):
+def _one_shot(url: str, parser, auth: Auth = AUTH_OPEN):
     """Fetcher: one GET returning a payload the parser turns into Stations."""
     async def _fetch(
-        session: aiohttp.ClientSession, credential: str | None = None
+        session: aiohttp.ClientSession,
+        credential: str | None = None,
+        area: "Area | None" = None,
     ) -> list[Station]:
-        return parser(await _fetch_json(session, url))
+        return parser(
+            await _fetch_json(
+                session,
+                url,
+                extra_headers=auth.headers(credential),
+                params=auth.params(credential),
+            )
+        )
     return _fetch
+
+
+async def fetch_tankerkoenig(
+    session: aiohttp.ClientSession,
+    credential: str | None = None,
+    area: "Area | None" = None,
+) -> list[Station]:
+    """Fetch every station in one circle from Tankerkoenig.
+
+    One request per circle, and the circle is capped at 25 km by the API — see
+    ``TANKERKOENIG_MAX_RADIUS_KM``. Failures arrive as HTTP 200 with
+    ``ok: false``, so the status code alone would report every one of them as a
+    success and the parser would simply find no stations.
+    """
+    if area is None:
+        raise ValueError("Tankerkoenig can only be asked about an area")
+    radius_km = min(area.radius_km, TANKERKOENIG_MAX_RADIUS_KM)
+    payload = await _fetch_json(
+        session,
+        TANKERKOENIG_URL,
+        params={
+            "lat": f"{area.latitude:.6f}",
+            "lng": f"{area.longitude:.6f}",
+            "rad": f"{radius_km:g}",
+            "sort": "dist",
+            "type": "all",
+            **AUTH_TANKERKOENIG.params(credential),
+        },
+    )
+    if not isinstance(payload, dict):
+        raise ValueError("Tankerkoenig returned an unexpected payload")
+    if not payload.get("ok"):
+        message = str(payload.get("message") or "unknown error")
+        # "Key existiert nicht oder ist deaktiviert" is what a brand-new key
+        # says until a human at Tankerkoenig activates it, so this branch is
+        # the normal first experience rather than an edge case.
+        if "key" in message.lower():
+            raise ProviderAuthError(message)
+        raise ValueError(f"Tankerkoenig: {message}")
+    return parse_tankerkoenig(payload)
 
 
 PROVIDERS: dict[str, Provider] = {
     p.key: p
     for p in (
-        Provider("ok", "OK", _one_shot(OK_URL, parse_ok)),
-        Provider("q8", "Q8 / F24", _one_shot(Q8_URL, parse_q8)),
-        Provider("shell", "Shell", _one_shot(SHELL_URL, parse_shell)),
-        Provider("oil", "OIL!", fetch_oil),
-        # Chains that require a personal credential go here once we have one to
-        # test against — e.g. Go'on (apply at goon.nu), Circle K/INGO
-        # (fueldkapi@circlekeurope.com) and Uno-X (bearer token). Each needs
-        # only: auth=AUTH_KEY, the header shape, signup_url and guide text.
+        Provider(
+            "ok",
+            "OK",
+            _one_shot(OK_URL, parse_ok),
+            fuels=frozenset(_OK_PRODUCT_MAP.values()),
+        ),
+        Provider(
+            "q8",
+            "Q8 / F24",
+            _one_shot(Q8_URL, parse_q8),
+            fuels=frozenset(_Q8_PRODUCT_MAP.values()),
+        ),
+        Provider(
+            "shell",
+            "Shell",
+            _one_shot(SHELL_URL, parse_shell),
+            fuels=frozenset(_SHELL_PRODUCT_MAP.values()),
+        ),
+        Provider("oil", "OIL!", fetch_oil, fuels=frozenset(OIL_FUELTYPES.values())),
+        # Denmark: chains that require a personal credential go here once we
+        # have one to test against — e.g. Go'on (apply at goon.nu), Circle
+        # K/INGO (fueldkapi@circlekeurope.com) and Uno-X (bearer token). Each
+        # needs only auth=Auth(AUTH_KEY, ...), signup_url and guide text.
+        Provider(
+            "tankerkoenig",
+            "Tankerkönig (MTS-K)",
+            fetch_tankerkoenig,
+            country=COUNTRY_DE,
+            scope=SCOPE_AREA,
+            auth=AUTH_TANKERKOENIG,
+            fuels=frozenset(_TK_PRODUCT_MAP.values()),
+            max_radius_km=TANKERKOENIG_MAX_RADIUS_KM,
+            # Berlin Mitte: somewhere a valid key is guaranteed to find fuel.
+            probe=Area(52.5200, 13.4050, 5_000),
+            signup_url="https://creativecommons.tankerkoenig.de/#register",
+            guide=(
+                "1. Open the signup page and enter your name and e-mail.\n"
+                "2. Confirm that you are not an oil company, a station "
+                "operator or an IT supplier to either — they are barred from "
+                "this data.\n"
+                "3. The key arrives by e-mail but does **not** work yet: "
+                "someone at Tankerkönig activates it by hand, which can take "
+                "days.\n"
+                "4. Paste it here once the activation mail arrives. If it is "
+                "refused, it is almost always still waiting for that."
+            ),
+        ),
     )
 }
 
 
 def providers_needing_credential() -> list[Provider]:
-    """Chains the user must supply a key for, in display order."""
+    """Sources the user must supply a key for, in display order."""
     return [p for p in PROVIDERS.values() if p.needs_credential]
 
 
-# key -> (fetched_at_monotonic, stations, credential_fingerprint)
+def providers_for(country: str) -> list[Provider]:
+    """Every provider serving one country, in display order."""
+    return [p for p in PROVIDERS.values() if p.country == country]
+
+
+def country_needs_area(country: str) -> bool:
+    """Whether this country can only be asked about a circle.
+
+    True for Germany and false for Denmark, but stated as a question about the
+    *sources* rather than a list of countries, so adding Austria (also
+    area-scoped) needs no second place to remember.
+    """
+    providers = providers_for(country)
+    return bool(providers) and all(p.needs_area for p in providers)
+
+
+def max_radius_km(country: str) -> int:
+    """The tightest radius ceiling among a country's sources (0 = none)."""
+    caps = [p.max_radius_km for p in providers_for(country) if p.max_radius_km]
+    return min(caps) if caps else 0
+
+
+def fuel_types_for(country: str) -> list[str]:
+    """The fuels a country's sources can actually price, in display order.
+
+    Derived from the sources rather than listed per country, so a country can
+    never offer a fuel in its dialog that no price will ever arrive for — the
+    sensor for it would simply sit unavailable forever.
+    """
+    available: set[str] = set()
+    for provider in providers_for(country):
+        available |= provider.fuels
+    return [key for key in FUEL_TYPES if key in available]
+
+
+def default_fuel_types(country: str) -> list[str]:
+    """Sensible pre-ticked fuels: petrol and diesel, where they are sold."""
+    available = fuel_types_for(country)
+    chosen = [key for key in DEFAULT_FUEL_TYPES if key in available]
+    return chosen or available[:1]
+
+
+def radius_options(country: str) -> list[str]:
+    """Radii this country's sources can serve, trimmed to their ceiling.
+
+    Offering 50 km where the source caps at 25 would quietly answer a smaller
+    circle than the one the user chose.
+    """
+    cap_km = max_radius_km(country)
+    if not cap_km:
+        return list(RADIUS_OPTIONS)
+    return [r for r in RADIUS_OPTIONS if radius_to_metres(r) <= cap_km * 1000]
+
+
+def default_radius(country: str) -> str:
+    """The radius to start with.
+
+    Where the source charges one request per circle whatever its size, that is
+    the largest circle it will serve — a smaller one saves nothing and finds
+    less. Elsewhere it is the familiar 10 km.
+    """
+    options = radius_options(country)
+    if country_needs_area(country) and options:
+        return options[-1]
+    return DEFAULT_RADIUS if DEFAULT_RADIUS in options else options[-1]
+
+
+def area_for(country: str, latitude: float, longitude: float, radius_m: int) -> Area:
+    """The circle to actually ask about: what was wanted, capped at what the
+    sources will serve.
+
+    Capped here rather than only inside the fetch, so that the radius we cache
+    under and the radius we could quote back to the user are the one the source
+    really answered. Asking for 50 km and being handed 25 twice would otherwise
+    look like two different questions.
+    """
+    cap_km = max_radius_km(country)
+    if cap_km:
+        radius_m = min(radius_m, cap_km * 1000)
+    return Area(latitude, longitude, radius_m)
+
+
+# "provider@area" -> (fetched_at_monotonic, stations, credential_fingerprint).
+# National providers use an empty area part, so there is exactly one entry for
+# them; an area provider gets one entry per circle asked about.
 _CACHE: dict[str, tuple[float, list[Station], str]] = {}
+# One lock per provider, not per circle: it also serializes two different
+# circles of the same source, which is what keeps a rate-limited API from
+# seeing a burst it never agreed to.
 _LOCKS: dict[str, asyncio.Lock] = {key: asyncio.Lock() for key in PROVIDERS}
+
+
+def _cache_key(provider: Provider, area: "Area | None") -> str:
+    """Cache slot for one provider's answer about one circle."""
+    return f"{provider.key}@{area.cache_key if area else ''}"
 
 
 def _fingerprint(credential: str | None) -> str:
@@ -468,27 +878,30 @@ def _fingerprint(credential: str | None) -> str:
 def invalidate_cache(key: str | None = None) -> None:
     """Drop cached responses (all, or one provider) — e.g. after a key change,
     so a corrected credential takes effect immediately instead of after the
-    10-minute TTL."""
+    10-minute TTL. For an area provider this drops every circle it holds."""
     if key is None:
         _CACHE.clear()
-    else:
-        _CACHE.pop(key, None)
+        return
+    for cached in [k for k in _CACHE if k.split("@", 1)[0] == key]:
+        _CACHE.pop(cached, None)
 
 
 async def _fetch_provider(
     session: aiohttp.ClientSession,
     provider: Provider,
     credential: str | None = None,
+    area: "Area | None" = None,
 ) -> list[Station]:
     """Fetch one provider, honouring the shared TTL cache."""
+    cache_key = _cache_key(provider, area)
     async with _LOCKS[provider.key]:
-        cached = _CACHE.get(provider.key)
+        cached = _CACHE.get(cache_key)
         fresh = cached and (time.monotonic() - cached[0]) < PROVIDER_CACHE_TTL
         if fresh and cached[2] == _fingerprint(credential):
             return cached[1]
         try:
-            stations = await provider.fetch(session, credential)
-            _CACHE[provider.key] = (
+            stations = await provider.fetch(session, credential, area)
+            _CACHE[cache_key] = (
                 time.monotonic(),
                 stations,
                 _fingerprint(credential),
@@ -500,10 +913,19 @@ async def _fetch_provider(
         # TimeoutError must be listed explicitly: aiohttp raises the builtin
         # (an OSError), which is neither a ClientError nor a ValueError, so
         # without it one slow chain would abort the whole refresh instead of
-        # degrading to the other chains.
-        except (aiohttp.ClientError, ValueError, TimeoutError) as err:
+        # degrading to the other chains. ProviderAuthError is caught for the
+        # same reason — a key that expired costs its own source, not all of
+        # them — and every message goes through `redact` first, because an
+        # AUTH_QUERY failure carries the key inside the URL it reports.
+        except (
+            aiohttp.ClientError,
+            ValueError,
+            TimeoutError,
+            ProviderAuthError,
+        ) as err:
+            reason = redact(err, credential)
             if cached is None:
-                _LOGGER.warning("Provider %s failed: %s", provider.key, err)
+                _LOGGER.warning("Provider %s failed: %s", provider.key, reason)
                 return []
             age = time.monotonic() - cached[0]
             if age > MAX_STALE_AGE:
@@ -514,15 +936,15 @@ async def _fetch_provider(
                     "dropping it: %s",
                     provider.key,
                     age / 60,
-                    err,
+                    reason,
                 )
-                _CACHE.pop(provider.key, None)
+                _CACHE.pop(cache_key, None)
                 return []
             _LOGGER.warning(
                 "Provider %s failed, using cached data from %.0f min ago: %s",
                 provider.key,
                 age / 60,
-                err,
+                reason,
             )
             return cached[1]
 
@@ -530,20 +952,31 @@ async def _fetch_provider(
 async def fetch_all(
     session: aiohttp.ClientSession,
     credentials: Mapping[str, str] | None = None,
+    country: str = COUNTRY_DK,
+    area: "Area | None" = None,
 ) -> list[Station]:
-    """Fetch every usable provider concurrently and combine the stations.
+    """Fetch every usable provider for one country and combine the stations.
 
-    Chains that need a credential are skipped silently when none is configured,
-    so an unconfigured chain simply contributes nothing.
+    Sources that need a credential are skipped silently when none is
+    configured, so an unconfigured source simply contributes nothing. So are
+    area-scoped sources when no area is given: there is no "everything" for
+    them to return, and inventing a circle would spend one of a small number of
+    permitted requests on a place nobody asked about.
     """
     creds = credentials or {}
     active = [
         p
-        for p in PROVIDERS.values()
-        if not p.needs_credential or creds.get(p.key)
+        for p in providers_for(country)
+        if (not p.needs_credential or creds.get(p.key))
+        and (not p.needs_area or area is not None)
     ]
     results = await asyncio.gather(
-        *(_fetch_provider(session, p, creds.get(p.key)) for p in active)
+        *(
+            _fetch_provider(
+                session, p, creds.get(p.key), area if p.needs_area else None
+            )
+            for p in active
+        )
     )
     combined: list[Station] = []
     for stations in results:
@@ -552,15 +985,19 @@ async def fetch_all(
 
 
 async def validate_credential(
-    session: aiohttp.ClientSession, key: str, credential: str
+    session: aiohttp.ClientSession,
+    key: str,
+    credential: str,
+    area: "Area | None" = None,
 ) -> int:
     """Try a credential and return the station count it yields.
 
-    Raises the underlying aiohttp/ValueError so the config flow can tell
-    "rejected" (401/403) apart from "unreachable". Bypasses the cache: the
-    point is to test *this* key right now.
+    Raises the underlying aiohttp/ValueError/ProviderAuthError so the config
+    flow can tell "rejected" from "unreachable". Bypasses the cache: the point
+    is to test *this* key right now.
     """
     provider = PROVIDERS[key]
     invalidate_cache(key)
-    stations = await provider.fetch(session, credential)
+    probe = (area or provider.probe) if provider.needs_area else None
+    stations = await provider.fetch(session, credential, probe)
     return len(stations)

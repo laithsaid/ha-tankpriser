@@ -829,9 +829,44 @@ Tracked here and in the project notes so nothing is lost while testing:
       time of day), and the card assumes a single unit — `_areaStations()` picks
       a headline price with `Math.min()` across fuels, so 3,49 kr./kWh would
       beat 16,79 kr./L and mislabel a station as cheapest.
-- [ ] **OIL! station icon** — confirm the OIL! favicon renders well on the map;
-      if not, source a better official OIL! icon (applies to any chain whose
-      favicon looks poor).
-- [ ] **Filter stations off the map** — extend the existing "Hide these
-      stations" option so hidden stations are also removed from the map,
-      including the national (websocket) view, not just the price list.
+- [x] **OIL! station icon** — done 2026-09-07. The icons are bundled in
+      `www/vendor/icons/`, not fetched from a favicon service. OIL! is the
+      official purple/green mark at 120x120; Circle K 144x144; Q8, F24 and
+      Go'on 32x32. They render at 16x16 (14x14 in clusters), so every one is
+      2x or better. `ok.dk.ico` and `uno-x.dk.ico` share a byte size but are
+      different files — checked.
+- [x] **Filter stations off the map** — done 2026-09-07, and it was broader
+      than described: the shared pool behind the map *and* `tankpriser.nearby`
+      both ignored the list, so a hidden station could be the one the voice
+      answer sent you to. `sources.without_hidden` is now the single
+      definition, applied in `coordinator._priced` and `async_station_pool`
+      alike, and `exclusions_of()` is part of the websocket payload cache key.
+
+## Grading the prediction
+
+User-facing setup lives in the README —
+[12c. Self-correcting predictions](../README.md#12c-self-correcting-predictions)
+and [12d. Tuning and checking the prediction](../README.md#12d-tuning-and-checking-the-prediction).
+Do not restate it here; it drifts.
+
+Notes that only matter when working on the code:
+
+- `accuracy.py` is pure. `backtest(capacity, segments, car, calibrate=False)`
+  grades the raw model; `calibrate=True` grades it as it actually predicts,
+  deriving the factor walk-forward from the tanks before each one. Deriving one
+  factor from every tank and scoring those same tanks with it is marking your
+  own homework — do not "simplify" it that way.
+- The daily rate is recovered as `start_litres / days_until_empty`, because
+  `Prediction` reports `avg_consumption` in L/100 km whenever an odometer
+  exists and never exposes the raw L/day. Reading `avg_consumption` instead
+  would silently grade the wrong quantity.
+- `calibration_from` multiplies each score's residual error by the factor that
+  was in force when it was made. Without that it converges to half the lean and
+  stalls there.
+- `ConsumptionTracker.calibration` caches on `(tank count, last tank's end)`:
+  the answer cannot change until a tank closes, and recomputing it walks the
+  whole history.
+- `tests/test_accuracy.py` has two tests that are guards on the design rather
+  than on the code: a cautious topper-up must score the same as someone who
+  runs it to the light, and the correction must not damage a model that is
+  already right.

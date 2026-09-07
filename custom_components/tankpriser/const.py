@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
@@ -25,6 +27,107 @@ def _manifest_version() -> str:
 
 VERSION: Final = _manifest_version()
 
+# --- Countries -------------------------------------------------------------
+# One config entry covers one country: the sources, the fuels sold, the
+# currency and the decimals a price is quoted to are all country-wide facts,
+# and mixing two of them into one list produces prices that cannot be compared.
+#
+# ADDING A COUNTRY is meant to be two data entries and a parser: one `Country`
+# below, one `Provider` in sources.py, and the function that turns that
+# source's JSON into `Station`s. Everything else is derived — which fuels the
+# dialog offers comes from the provider's product map, which radii it offers
+# comes from the provider's own ceiling, and every price shown or spoken takes
+# its unit and its decimals from the `Country` record here. Nothing else in the
+# integration should learn a country's name.
+COUNTRY_DK: Final = "DK"
+COUNTRY_DE: Final = "DE"
+DEFAULT_COUNTRY: Final = COUNTRY_DK
+
+
+@dataclass(frozen=True)
+class Country:
+    """How one country quotes a fuel price."""
+
+    code: str
+    name: str
+    # What a sensor is measured in, and what the card prints after a number.
+    unit: str
+    # The word said out loud. One per currency rather than one per language:
+    # "euro" is understood in a Danish sentence, and a table of currency words
+    # per spoken language is a lot of translation for no extra clarity.
+    spoken_currency: str
+    # Digits after the decimal separator when a price is *shown*. Germany signs
+    # its forecourts to three, so 1,72 on screen would disagree with the pump;
+    # Denmark uses two. Comparisons always use the full float — rounding first
+    # can tie 1,715 with 1,719, and 1,699 must still trip a 1,70 rule.
+    decimals: int
+    # The small change a saving is quoted in. Danish fuel cards are advertised
+    # in øre off the pump price, and the same instinct reads a German gap as
+    # cents, so "12 øre cheaper" and "12 cents cheaper" are the natural phrase
+    # in each place.
+    minor_unit: str = "øre"
+    # What this country calls fuels we already model, where it differs. E10 is
+    # the same 95-octane petrol as "Blyfri 95", so it keeps the key and changes
+    # only its name.
+    labels: Mapping[str, str] = field(default_factory=dict)
+
+
+COUNTRIES: Final[dict[str, Country]] = {
+    country.code: country
+    for country in (
+        Country(COUNTRY_DK, "Denmark", "kr./L", "kroner", 2, "øre"),
+        Country(
+            COUNTRY_DE,
+            "Germany",
+            "€/L",
+            "euro",
+            3,
+            "cent",
+            {
+                "blyfri95": "Super E10",
+                "blyfri95plus": "Super E5",
+                "diesel": "Diesel",
+            },
+        ),
+    )
+}
+
+
+def country_of(code: str) -> Country:
+    """The country record, falling back to the default rather than raising:
+    a stored code we no longer recognise must not break an existing entry."""
+    return COUNTRIES.get(code) or COUNTRIES[DEFAULT_COUNTRY]
+
+
+def price_unit(country: str) -> str:
+    """What a price in this country is measured in."""
+    return country_of(country).unit
+
+
+def price_decimals(country: str) -> int:
+    """How many decimals to *show* a price to in this country."""
+    return country_of(country).decimals
+
+
+def spoken_currency(country: str) -> str:
+    """The currency word to say out loud in this country."""
+    return country_of(country).spoken_currency
+
+
+def minor_unit(country: str) -> str:
+    """What a small price difference is counted in here (øre, cent)."""
+    return country_of(country).minor_unit
+
+
+def format_price(value: float, country: str, decimals: int | None = None) -> str:
+    """A price written the way this country writes it.
+
+    Every country we cover uses the decimal comma, so that is not yet a
+    per-country field — the first country that does not gets one.
+    """
+    places = price_decimals(country) if decimals is None else decimals
+    return f"{value:.{places}f}".replace(".", ",")
+
 # --- Data sources ----------------------------------------------------------
 # Since 2026-01-01 Danish law requires every fuel chain to publish an open
 # per-station price API. We aggregate the free, no-auth ones directly instead
@@ -42,6 +145,14 @@ OK_URL: Final = "https://mobility-prices.ok.dk/api/v1/fuel-prices"
 # only the fuel types OIL! actually sells and merge them by station_id.
 OIL_URL: Final = "https://apim-fuel-prices-prod.azure-api.net/Oil-FuelPrices/prices"
 OIL_FUELTYPES: Final = {"95E10": "blyfri95", "DieselB7": "diesel"}
+
+# Germany: Tankerkoenig, the free consumer feed of the Bundeskartellamt's
+# MTS-K. Needs a personal key (see the Provider entry in sources.py) and
+# answers only about a circle — there is no nationwide response to filter, and
+# no way to build one: the radius is capped and tiling the country would be
+# exactly the abuse the cap exists to prevent.
+TANKERKOENIG_URL: Final = "https://creativecommons.tankerkoenig.de/json/list.php"
+TANKERKOENIG_MAX_RADIUS_KM: Final = 25
 
 # Sent with every provider request. We identify honestly rather than
 # impersonating a browser: these are open JSON APIs published under the price
@@ -74,6 +185,16 @@ MAX_STALE_AGE: Final = 6 * 3600.0
 DAWA_BASE_URL: Final = "https://api.dataforsyningen.dk"
 
 # --- Configuration keys ----------------------------------------------------
+# Which country this entry covers. Set once at setup and never edited: it
+# decides the sources, the fuels and the currency, so changing it would mean a
+# different set of entities under the same ids.
+CONF_COUNTRY: Final = "country"
+# Where an area-scoped country searches from: {"latitude": .., "longitude": ..}.
+# Absent means Home. It exists because the background sensors, the notification
+# baseline and the history all have to compare the *same* stations from one
+# refresh to the next, so that point must stand still — and because the point
+# worth watching may not be where Home is (a Dane watching Flensburg).
+CONF_ANCHOR: Final = "anchor"
 CONF_POSTNUMMER: Final = "postnummer"
 CONF_RADIUS: Final = "radius"
 CONF_FUEL_TYPES: Final = "fuel_types"
@@ -103,15 +224,54 @@ CONF_CREDENTIALS: Final = "credentials"
 # Which chain the credential dialog is currently editing (flow-local).
 CONF_PROVIDER: Final = "provider"
 
+# Navigation links. `dir_action=navigate` starts turn-by-turn straight away;
+# without it Google Maps opens a route *preview* and — if it cannot resolve
+# your position itself — asks you to pick a starting point, which is a dialog
+# nobody wants at 110 km/h. Shared by the `nearby` service and the fill-up
+# notification so both send you to the same place the same way.
+MAPS_URLS: Final = {
+    "google": (
+        "https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
+        "&travelmode=driving&dir_action=navigate"
+    ),
+    "apple": "http://maps.apple.com/?daddr={lat},{lon}&dirflg=d",
+    "osm": "https://www.openstreetmap.org/directions?to={lat}%2C{lon}",
+}
+DEFAULT_MAPS: Final = "google"
+
 # Notification options
 CONF_NOTIFY_ENABLED: Final = "notify_enabled"
 CONF_NOTIFY_SERVICE: Final = "notify_service"
 CONF_NOTIFY_RULE: Final = "notify_rule"
 CONF_NOTIFY_THRESHOLD: Final = "notify_threshold"
 
+# --- "Fill up now" notification -------------------------------------------
+# The one alert that needs a car, a position and a price list at once: see
+# fillup.py. Off by default — it interrupts, so it should be asked for.
+CONF_FILLUP_ENABLED: Final = "fillup_enabled"
+CONF_FILLUP_LEVEL: Final = "fillup_level_pct"
+CONF_FILLUP_NEAR_KM: Final = "fillup_near_km"
+CONF_FILLUP_MAPS: Final = "fillup_maps"
+
+# --- Prediction accuracy (advanced) ---------------------------------------
+# Grades the consumption prediction against what the cars actually did — see
+# accuracy.py. Off by default, and its service is not even registered until it
+# is switched on: it is a tool for judging the model, not a feature of it, and
+# an accuracy figure shown to someone who did not ask for one reads as an
+# apology rather than as information.
+CONF_ACCURACY_ENABLED: Final = "accuracy_enabled"
+# Whether to feed that grading back into the prediction as a correction. On by
+# default: a model that has been leaning the same way every tank is measurably
+# wrong, and the correction is damped and capped so it cannot run away. Unlike
+# the grading above this is not advanced — it changes the number people read,
+# so it is an ordinary setting with an ordinary explanation.
+CONF_CALIBRATION_ENABLED: Final = "calibration_enabled"
+
 # --- Radius ----------------------------------------------------------------
-# We now do our own geographic filtering, so any radius works. We keep the
-# familiar "N km" labels; RADIUS_KM parses the number out for DAWA.
+# We do our own geographic filtering, so any radius works where the source
+# publishes the whole country. Where it does not, the source imposes a ceiling
+# and `sources.radius_options` trims this ladder to it — see there, which is
+# also where the default comes from.
 RADIUS_OPTIONS: Final = ["5 km", "10 km", "15 km", "25 km", "50 km"]
 DEFAULT_RADIUS: Final = "10 km"
 
@@ -154,21 +314,28 @@ NOTIFY_RULES: Final = [RULE_ANY, RULE_CHEAPEST, RULE_THRESHOLD, RULE_DECREASE]
 DEFAULT_NOTIFY_RULE: Final = RULE_CHEAPEST
 
 # --- Fuel types ------------------------------------------------------------
-# Normalized internal key -> (display name, unit). Providers use their own
-# product names; sources.py maps each provider product onto one of these keys.
-# Only motor fuels are modelled (AdBlue and EV charging are intentionally
-# skipped). blyfri95 and diesel are the common denominators present at nearly
-# every station and are the sensible defaults.
+# Normalized internal key -> default display name. Providers use their own
+# product names; sources.py maps each provider product onto one of these keys,
+# and a country may rename one (see `Country.labels`). The unit is *not* here:
+# it belongs to the country, not to the fuel. Only motor fuels are modelled
+# (AdBlue and EV charging are intentionally skipped). blyfri95 and diesel are
+# the common denominators present at nearly every station, so they are the
+# sensible defaults everywhere.
 FUEL_TYPES: Final = {
-    "blyfri95": ("Blyfri 95 (E10)", "kr./L"),
-    "blyfri98": ("Blyfri 98", "kr./L"),
-    "blyfri95plus": ("Blyfri 95 Extra (E5)", "kr./L"),
-    "oktan100": ("Oktan 100", "kr./L"),
-    "diesel": ("Diesel (B7)", "kr./L"),
-    "dieselplus": ("Diesel Extra", "kr./L"),
-    "hvo100": ("HVO100", "kr./L"),
+    "blyfri95": "Blyfri 95 (E10)",
+    "blyfri98": "Blyfri 98",
+    "blyfri95plus": "Blyfri 95 Extra (E5)",
+    "oktan100": "Oktan 100",
+    "diesel": "Diesel (B7)",
+    "dieselplus": "Diesel Extra",
+    "hvo100": "HVO100",
 }
 DEFAULT_FUEL_TYPES: Final = ["blyfri95", "diesel"]
+
+
+def fuel_label(key: str, country: str = DEFAULT_COUNTRY) -> str:
+    """What to call a fuel in a given country."""
+    return country_of(country).labels.get(key) or FUEL_TYPES.get(key, key)
 
 # --- Consumption prediction (per-car subentries) ---------------------------
 # Each car is a config *subentry* under the single Tankpriser entry, so a user
@@ -223,6 +390,26 @@ CONFIDENCE_TARGET_SEGMENTS: Final = 6
 # guards against divide-by-tiny-duration blow-ups from bursty sensor updates.
 MIN_SEGMENT_DAYS: Final = 0.05
 
+# --- Burning it right now --------------------------------------------------
+# While the car is actually running, the tank is a measurement rather than a
+# guess: the level is visibly dropping, so "at this rate it is empty at 18:40"
+# is arithmetic on what is happening, needing no history and no correction.
+# These four constants decide when there is enough of a drop to trust.
+#
+# How far back to measure the current burn. Long enough to average out a slosh
+# and a coarse sensor, short enough to still describe *this* drive.
+LIVE_WINDOW_S: Final = 2 * 3600.0
+# If nothing has been reported for longer than this the car is not running —
+# readings are only stored when the level actually moves, so silence is the
+# signal. Twenty minutes covers a fuel gauge that only reports in coarse steps.
+LIVE_MAX_GAP_S: Final = 1200.0
+# The window has to span at least this long, or a rate divides by almost zero.
+LIVE_MIN_SPAN_S: Final = 600.0
+# ...and show at least this much of the tank gone. Fuel senders are coarse and
+# a parked car on a slope can wander a little; below this it is noise, not a
+# journey.
+LIVE_MIN_DROP_FRACTION: Final = 0.015
+
 # .storage bounds, so the learned history cannot grow without limit.
 STORAGE_VERSION: Final = 1
 STORAGE_KEY_PREFIX: Final = "tankpriser_consumption"
@@ -259,3 +446,60 @@ CARD_URL: Final = f"{CARD_BASE_URL}/tankpriser-card.js"
 
 # Event fired after every successful refresh (for user automations).
 EVENT_PRICE_UPDATED: Final = "tankpriser_price_updated"
+
+# --- Drive simulation ------------------------------------------------------
+# See simulate.py. A test fixture, not a feature of the integration: it moves a
+# virtual tracker so the driving logic can be exercised without driving.
+EVENT_SIMULATION_STEP: Final = "tankpriser_simulation_step"
+SIMULATION_DATA_KEY: Final = "tankpriser_simulation"
+SIMULATION_ENTITY: Final = "device_tracker.tankpriser_sim"
+# Real seconds between steps. The floor is not politeness: with `announce` on,
+# every step asks the source for a handful of circles, and a source that is
+# queried by area is rate-limited per key — yours, not ours.
+DEFAULT_SIMULATION_INTERVAL_S: Final = 60.0
+MIN_SIMULATION_INTERVAL_S: Final = 15.0
+DEFAULT_SIMULATION_SPEED_KMH: Final = 110.0
+
+# Routes worth driving, as waypoints. Straight lines between them, so add one
+# wherever a road genuinely bends. Named so a test is one service call rather
+# than a page of coordinates; extend per country as countries are added.
+SIMULATION_ROUTES: Final[dict[str, list[tuple[float, float]]]] = {
+    # The full length of Germany on the A7/A5: Danish border to Munich, ~830 km
+    # through every price region the country has.
+    "de_north_south": [
+        (54.7820, 9.4360),   # Flensburg, at the border
+        (53.5511, 9.9937),   # Hamburg
+        (52.3759, 9.7320),   # Hannover
+        (51.3127, 9.4797),   # Kassel
+        (50.1109, 8.6821),   # Frankfurt
+        (49.4521, 11.0767),  # Nuremberg
+        (48.1351, 11.5820),  # Munich
+    ],
+    # Across the industrial west into Saxony, ~640 km.
+    "de_west_east": [
+        (50.7753, 6.0839),   # Aachen
+        (50.9375, 6.9603),   # Cologne
+        (51.5136, 7.4653),   # Dortmund
+        (51.3127, 9.4797),   # Kassel
+        (51.3397, 12.3731),  # Leipzig
+        (51.0504, 13.7373),  # Dresden
+    ],
+    # The one a Dane actually drives: down Jutland and over the border to the
+    # cheap forecourts around Flensburg, ~200 km.
+    "dk_de_border": [
+        (55.4038, 10.4024),  # Odense
+        (55.4904, 9.4722),   # Kolding
+        (55.0714, 9.4394),   # Sønderborg road, south Jutland
+        (54.7820, 9.4360),   # Flensburg
+        (54.5000, 9.5500),   # Schleswig
+    ],
+    # Denmark end to end, for the national side, ~470 km.
+    "dk_north_south": [
+        (57.7210, 10.5830),  # Skagen
+        (57.0488, 9.9217),   # Aalborg
+        (56.1629, 10.2039),  # Aarhus
+        (55.4904, 9.4722),   # Kolding
+        (55.4038, 10.4024),  # Odense
+        (55.6761, 12.5683),  # Copenhagen
+    ],
+}

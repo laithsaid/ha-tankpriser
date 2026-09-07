@@ -3,23 +3,45 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_COUNTRY,
+    CONF_FILLUP_ENABLED,
+    CONF_FILLUP_LEVEL,
+    CONF_FILLUP_MAPS,
+    CONF_FILLUP_NEAR_KM,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_RULE,
     CONF_NOTIFY_SERVICE,
     CONF_NOTIFY_THRESHOLD,
+    DEFAULT_COUNTRY,
     DEFAULT_NOTIFY_RULE,
-    FUEL_TYPES,
     RULE_ANY,
     RULE_CHEAPEST,
     RULE_DECREASE,
+    DEFAULT_MAPS,
+    MAPS_URLS,
     RULE_THRESHOLD,
+    format_price,
+    fuel_label,
+    minor_unit,
+    price_unit,
 )
+from .fillup import (
+    DEFAULT_LOW_PCT,
+    DEFAULT_NEAR_KM,
+    CarSnapshot,
+    FillupMemory,
+    Settings,
+    evaluate,
+    message,
+)
+from .nearby import rank_nearby
 
 if TYPE_CHECKING:
     from .coordinator import TankpriserData
@@ -71,11 +93,16 @@ async def evaluate_and_notify(
         )
         return False
     fuel_types = options.get("fuel_types") or entry.data.get("fuel_types", [])
+    # Both the fuel's name and the way its price is written are the country's
+    # to decide, so the message is built for the country this entry covers.
+    country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))
 
     messages: list[str] = []
     for fuel_key in fuel_types:
-        display = FUEL_TYPES.get(fuel_key, (fuel_key, ""))[0]
-        msg = _evaluate_fuel(previous, current, fuel_key, display, rule, threshold)
+        display = fuel_label(fuel_key, country)
+        msg = _evaluate_fuel(
+            previous, current, fuel_key, display, rule, threshold, country
+        )
         if msg:
             messages.append(msg)
 
@@ -124,6 +151,116 @@ async def evaluate_and_notify(
     return True
 
 
+async def evaluate_and_notify_fillup(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator, data
+) -> None:
+    """Tell each car it is low, when there is somewhere good to stop.
+
+    Runs off the same refresh as the price notifications, because the ingredients
+    arrive together: the coordinator has just repriced every station, and the
+    car trackers hold a live level and position. Silence is the normal outcome,
+    and `fillup.evaluate` is where that is decided.
+    """
+    options = entry.options
+    settings = Settings(
+        enabled=bool(options.get(CONF_FILLUP_ENABLED, False)),
+        low_pct=float(options.get(CONF_FILLUP_LEVEL, DEFAULT_LOW_PCT)),
+        near_km=float(options.get(CONF_FILLUP_NEAR_KM, DEFAULT_NEAR_KM)),
+    )
+    if not settings.enabled or not coordinator.cars:
+        return
+
+    service = options.get(CONF_NOTIFY_SERVICE)
+    if not service:
+        _LOGGER.warning(
+            "Tankpriser fill-up alerts are on for %s but no notify service is "
+            "set, so nothing can be delivered.",
+            entry.title,
+        )
+        return
+
+    # The same pool the "cheapest nearby" sensors rank against: a car drives out
+    # of the configured area, and offering it stations back home is the bug that
+    # pool exists to avoid.
+    pool = data.nationwide or data.stations
+    country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))
+    danish = str(getattr(hass.config, "language", "") or "").lower().startswith("da")
+    now = time.time()
+
+    for car_id, tracker in coordinator.cars.items():
+        fuel_key = getattr(tracker, "fuel_key", None)
+        if not fuel_key:
+            continue
+        latitude, longitude = tracker.location
+        prediction = tracker.predict()
+        car = CarSnapshot(
+            car_id=car_id,
+            name=tracker.name,
+            fuel_key=fuel_key,
+            level_pct=tracker.current_pct,
+            litres=tracker.current_litres,
+            days_until_empty=(
+                prediction.days_until_empty if prediction is not None else None
+            ),
+            latitude=latitude,
+            longitude=longitude,
+        )
+        ranked = (
+            rank_nearby(pool, latitude, longitude, settings.near_km * 1000.0, fuel_key)
+            if car.is_placed
+            else []
+        )
+        memory = coordinator.fillup_memory.setdefault(car_id, FillupMemory())
+        suggestion = evaluate(car, ranked, settings, memory, now)
+        if suggestion is None:
+            continue
+        await _send_fillup(hass, entry, service, suggestion, country, danish)
+
+
+async def _send_fillup(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    service: str,
+    suggestion,
+    country: str,
+    danish: bool,
+) -> None:
+    """Deliver one fill-up alert, with a tap-to-navigate link."""
+    domain, _, object_id = service.partition(".")
+    if domain != "notify":
+        _LOGGER.warning(
+            "Refusing to call %s: Tankpriser only notifies via notify.*", service
+        )
+        return
+
+    station = suggestion.station
+    title, body = message(
+        suggestion,
+        price_unit(country),
+        format_price(station["price"], country),
+        danish,
+        minor_unit(country),
+    )
+    payload: dict = {"title": title, "message": body}
+    template = MAPS_URLS.get(
+        entry.options.get(CONF_FILLUP_MAPS, DEFAULT_MAPS), MAPS_URLS[DEFAULT_MAPS]
+    )
+    # Tapping the notification opens turn-by-turn. An `actions` button would
+    # read better, but it only works if the user also builds an automation to
+    # answer it — a URL needs nothing and works on both platforms.
+    payload["data"] = {
+        "url": template.format(lat=station["latitude"], lon=station["longitude"])
+    }
+    try:
+        await hass.services.async_call(
+            domain, object_id, payload, blocking=True
+        )
+    except Exception:  # noqa: BLE001 - a failed alert must not break the refresh
+        _LOGGER.exception("Failed to send the fill-up alert via %s", service)
+        return
+    _LOGGER.debug("Fill-up alert for %s: %s", suggestion.car_name, body)
+
+
 def _cheapest_price(data: "TankpriserData", fuel_key: str) -> float | None:
     station = data.cheapest(fuel_key)
     return station.prices[fuel_key] if station else None
@@ -136,6 +273,7 @@ def _evaluate_fuel(
     display: str,
     rule: str,
     threshold: float | None,
+    country: str = DEFAULT_COUNTRY,
 ) -> str | None:
     """Return a notification line for one fuel type if the rule fires."""
     old_cheapest = _cheapest_price(previous, fuel_key)
@@ -144,7 +282,10 @@ def _evaluate_fuel(
     if new_cheapest is None:
         return None
 
-    fmt = lambda v: f"{v:.2f}".replace(".", ",")  # noqa: E731 - local formatter
+    # Shown to the country's own precision: two decimals in Denmark, three
+    # in Germany, where every forecourt sign carries the 9/10 cent and a
+    # message saying "1,72" would disagree with the pump it is about.
+    fmt = lambda v: format_price(v, country)  # noqa: E731 - local formatter
 
     if rule == RULE_THRESHOLD:
         if threshold is None:

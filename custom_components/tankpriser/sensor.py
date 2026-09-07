@@ -23,6 +23,9 @@ from .const import (
     DONATE_URL,
     DOMAIN,
     FUEL_TYPES,
+    fuel_label,
+    price_decimals,
+    price_unit,
     NEARBY_MAX_STATIONS,
 )
 from .consumption import ConsumptionTracker, zone_coords
@@ -83,9 +86,13 @@ class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._fuel_key = fuel_key
-        display, unit = FUEL_TYPES[fuel_key]
-        self._attr_name = display
-        self._attr_native_unit_of_measurement = unit
+        country = coordinator.country
+        self._attr_name = fuel_label(fuel_key, country)
+        self._attr_native_unit_of_measurement = price_unit(country)
+        # Germany signs its forecourts to three decimals; Denmark to two.
+        # Rounding for display only — the state keeps the full figure, so
+        # comparisons and thresholds are never decided on a rounded price.
+        self._attr_suggested_display_precision = price_decimals(country)
         self._attr_unique_id = f"{entry.entry_id}_{fuel_key}"
         self._attr_icon = _icon_for(fuel_key)
         self._attr_device_info = DeviceInfo(
@@ -115,8 +122,13 @@ class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
         prices = [s.prices[self._fuel_key] for s in stations]
         cheapest = stations[0] if stations else None
         return {
-            "fuel_type": FUEL_TYPES[self._fuel_key][0],
+            "fuel_type": fuel_label(self._fuel_key, self.coordinator.country),
             "fuel_key": self._fuel_key,
+            # The card writes prices itself (it draws them into map pins), so
+            # it has to be told how many decimals this country uses rather than
+            # assuming the two Denmark taught it.
+            "country": self.coordinator.country,
+            "price_decimals": price_decimals(self.coordinator.country),
             "area": self.coordinator.area_label,
             "radius": self.coordinator.radius,
             "station_count": len(stations),
@@ -211,7 +223,9 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
             ),
             "current_level_percent": tracker.current_pct,
             "tank_capacity_l": tracker.capacity_l,
-            "fuel_type": FUEL_TYPES.get(fuel_key, (None,))[0] if fuel_key else None,
+            "fuel_type": (
+                fuel_label(fuel_key, self.coordinator.country) if fuel_key else None
+            ),
             "donate_url": DONATE_URL,
             # Marks this as a Tankpriser car sensor so the card can plot it.
             "is_car": True,
@@ -233,6 +247,29 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
         if picture:
             attrs["car_picture"] = picture
 
+        # While the car is actually running the tank is a measurement rather
+        # than a guess, so it gets its own answer: "at this rate, empty at
+        # 18:40". It needs no history and carries no correction, and it is
+        # deliberately kept out of the state — that stays the habit-based
+        # "days until you next fill up", which is what a graph of this sensor
+        # is for and what the fill-up alert reads. A state that flipped between
+        # nine days and two hours every time the engine started would be
+        # useless as either.
+        burn = tracker.live_burn()
+        attrs["mode"] = "driving" if burn is not None else "parked"
+        if burn is not None:
+            attrs["live_consumption"] = burn.litres_per_hour
+            attrs["live_consumption_unit"] = "L/h"
+            attrs["hours_until_empty"] = burn.hours_until_empty
+            attrs["live_measured_over_hours"] = burn.over_hours
+            if burn.litres_per_100km is not None:
+                attrs["live_l_per_100km"] = burn.litres_per_100km
+                attrs["live_speed_kmh"] = burn.km_per_hour
+            if burn.hours_until_empty is not None:
+                attrs["live_empty_at"] = (
+                    dt_util.now() + timedelta(hours=burn.hours_until_empty)
+                ).isoformat()
+
         if prediction is None:
             # Nothing to go on at all: no completed tank, and the tank in
             # progress has not yet burnt enough to imply a rate.
@@ -249,6 +286,11 @@ class CarPredictionSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity
         attrs["learned_tanks"] = prediction.segments
         attrs["confidence"] = prediction.confidence
         attrs["method"] = prediction.method
+        # 1.0 means the raw model was left alone — either it has not been
+        # leaning, or there are not yet three graded tanks to learn from. Above
+        # 1.0 means this car burns faster than the raw model believed, so the
+        # projection was shortened.
+        attrs["calibration"] = prediction.calibration
         if prediction.days_until_empty is not None:
             attrs["predicted_empty"] = (
                 dt_util.now() + timedelta(days=prediction.days_until_empty)
@@ -292,9 +334,10 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         super().__init__(coordinator)
         self._entry = entry
         self._fuel_key = fuel_key
-        display, unit = FUEL_TYPES[fuel_key]
-        self._attr_name = f"{display} cheapest nearby"
-        self._attr_native_unit_of_measurement = unit
+        country = coordinator.country
+        self._attr_name = f"{fuel_label(fuel_key, country)} cheapest nearby"
+        self._attr_native_unit_of_measurement = price_unit(country)
+        self._attr_suggested_display_precision = price_decimals(country)
         self._attr_unique_id = f"{entry.entry_id}_{fuel_key}_nearby"
         # The ranking for the state currently being written; None means "recompute".
         self._ranked_cache: list[dict] | None = None
@@ -410,8 +453,13 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         best = ranked[0] if ranked else None
         origin = self._origin()
         attrs: dict = {
-            "fuel_type": FUEL_TYPES[self._fuel_key][0],
+            "fuel_type": fuel_label(self._fuel_key, self.coordinator.country),
             "fuel_key": self._fuel_key,
+            # The card writes prices itself (it draws them into map pins), so
+            # it has to be told how many decimals this country uses rather than
+            # assuming the two Denmark taught it.
+            "country": self.coordinator.country,
+            "price_decimals": price_decimals(self.coordinator.country),
             "tracked_entity": self.coordinator.nearby_tracker,
             "radius_km": self.coordinator.nearby_radius_km,
             # Where this ranking was measured from, and when that position
