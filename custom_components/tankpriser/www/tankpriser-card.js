@@ -365,7 +365,7 @@ async function _loadFirst(sources) {
   throw lastErr || new Error("no sources");
 }
 
-// Only the JS is loaded globally (window.L). The CSS must live INSIDE the card
+// Only the JS is loaded as a script tag. The CSS must live INSIDE the card
 // because HA renders custom cards in a shadow DOM that document-level styles
 // cannot reach (see the <link>s injected in _build).
 //
@@ -374,12 +374,26 @@ async function _loadFirst(sources) {
 // the page — which on the mobile companion app can be days, since its WebView
 // survives pull-to-refresh.
 let _leafletPromise = null;
+// Our own handle on Leaflet. Everything in this file uses it rather than the
+// global, because the global does not stay ours — see _releaseGlobal below.
+let _leaflet = null;
+// True only when this card is what put Leaflet on the page.
+let _leafletIsOurs = false;
+
 function loadLeaflet() {
-  if (window.L) return Promise.resolve(window.L);
+  if (_leaflet) return Promise.resolve(_leaflet);
+  if (window.L) {
+    // Somebody else — Home Assistant's own map — got here first. Use theirs
+    // and leave the global alone.
+    _leaflet = window.L;
+    return Promise.resolve(_leaflet);
+  }
   if (_leafletPromise) return _leafletPromise;
   _leafletPromise = (async () => {
     await _loadFirst(LEAFLET_JS);
-    return window.L;
+    _leaflet = window.L;
+    _leafletIsOurs = true;
+    return _leaflet;
   })().catch((e) => {
     _leafletPromise = null;
     throw e;
@@ -387,13 +401,32 @@ function loadLeaflet() {
   return _leafletPromise;
 }
 
+// Leaflet's UMD build claims `window.L`, and Home Assistant's own map picks
+// that global up rather than loading its own. Handed a build it did not ship
+// with, HA's location picker throws from inside its circle rendering
+// ("Cannot read properties of undefined (reading 'x')") and the dialog's map
+// dies — which is how this was found: opening the options dialog after the
+// card had rendered. So once our plugins have attached themselves to our copy,
+// give the global back. The card keeps working through `_leaflet`.
+function _releaseGlobal() {
+  if (!_leafletIsOurs || window.L !== _leaflet) return;
+  if (typeof _leaflet.noConflict === "function") _leaflet.noConflict();
+  else delete window.L;
+}
+
 let _clusterPromise = null;
 function loadCluster() {
   if (_clusterPromise) return _clusterPromise;
   _clusterPromise = (async () => {
     const L = await loadLeaflet();
-    if (L.markerClusterGroup) return L;
+    if (L.markerClusterGroup) {
+      _releaseGlobal();
+      return L;
+    }
+    // The plugin attaches itself to the global, so the global has to still be
+    // ours while it loads.
     await _loadFirst(CLUSTER_JS);
+    _releaseGlobal();
     return L;
   })().catch((e) => {
     _clusterPromise = null;
@@ -1265,7 +1298,7 @@ class TankpriserCard extends HTMLElement {
 
   // Redraw the car markers and the picker after the filter changed.
   _refreshCars() {
-    if (this._map && window.L) this._updateCars(window.L);
+    if (this._map && _leaflet) this._updateCars(_leaflet);
     else this._renderCarPicker();
   }
 
@@ -1703,7 +1736,7 @@ class TankpriserCard extends HTMLElement {
   }
 
   _drawMe(latlng, accuracy) {
-    const L = window.L;
+    const L = _leaflet;
     if (!this._map || !L || !this._config.show_my_location) return;
     if (!this._meMarker) {
       // An accuracy halo plus a dot, drawn above the station markers.

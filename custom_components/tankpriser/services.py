@@ -75,6 +75,7 @@ from .coordinator import (
     credentials_of,
     discounts_of,
     entry_coordinator,
+    entry_for_position,
     pool_target,
 )
 from .nearby import (
@@ -210,13 +211,24 @@ def _prices_before_a_drop(data: TankpriserData, ore: int) -> TankpriserData:
     )
 
 
-def _default_fuel(hass: HomeAssistant) -> str | None:
-    """The first fuel any entry is configured for.
+def _default_fuel(hass: HomeAssistant, entry=None) -> str | None:
+    """The first fuel an entry is configured for, or any entry's if none given.
 
     So a caller that only cares about petrol need not know the internal key.
+    Preferring the entry that answers the call matters where the countries
+    differ: a German entry set up for diesel alone should default to diesel,
+    not to whatever Denmark happens to list first.
     """
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        fuels = entry.options.get(CONF_FUEL_TYPES, entry.data.get(CONF_FUEL_TYPES, []))
+    entries = [entry] if entry is not None else []
+    entries += [
+        other
+        for other in hass.config_entries.async_entries(DOMAIN)
+        if other is not entry
+    ]
+    for candidate in entries:
+        fuels = candidate.options.get(
+            CONF_FUEL_TYPES, candidate.data.get(CONF_FUEL_TYPES, [])
+        )
         for key in fuels:
             if key in FUEL_TYPES:
                 return key
@@ -401,17 +413,21 @@ def async_register_services(hass: HomeAssistant) -> None:
         return
 
     async def _nearby(call: ServiceCall) -> ServiceResponse:
-        fuel = call.data.get(ATTR_FUEL) or _default_fuel(hass)
+        latitude = call.data[ATTR_LATITUDE]
+        longitude = call.data[ATTR_LONGITUDE]
+
+        # Where the caller is decides which country answers, so the position
+        # has to be read before anything is defaulted from an entry.
+        entry = entry_for_position(hass, latitude, longitude)
+        fuel = call.data.get(ATTR_FUEL) or _default_fuel(hass, entry)
         if fuel is None:
             raise HomeAssistantError(
                 "No fuel given, and no Tankpriser area is configured to take a "
                 "default from."
             )
-        latitude = call.data[ATTR_LATITUDE]
-        longitude = call.data[ATTR_LONGITUDE]
 
-        country, _ = pool_target(hass)
-        coordinator = entry_coordinator(hass)
+        country, _ = pool_target(hass, latitude, longitude)
+        coordinator = entry_coordinator(hass, latitude, longitude)
         # The shape of the search is inferred, never asked for: at 110 km/h
         # nobody says a radius, and the right answer is not a bigger circle but
         # a corridor along the road ahead.

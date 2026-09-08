@@ -74,12 +74,39 @@ class Country:
     # the same 95-octane petrol as "Blyfri 95", so it keeps the key and changes
     # only its name.
     labels: Mapping[str, str] = field(default_factory=dict)
+    # Roughly where the country is, as (lat_min, lon_min, lat_max, lon_max).
+    # It exists so a caller that knows where the phone is — the voice service,
+    # a simulated drive — asks the entry for the country it is actually *in*.
+    # Without it the first configured entry answered for everywhere, so asking
+    # for cheap fuel outside Hamburg searched the Danish stations and said
+    # there was nothing nearby.
+    #
+    # The boxes are generous and they overlap along a shared border, which is
+    # deliberate: a box tight enough to split Flensburg from Kruså would be
+    # wrong the moment a road bends. Where two match, the entry anchored
+    # nearer wins, which is the answer the person who configured both wants.
+    bbox: tuple[float, float, float, float] | None = None
+
+    def contains(self, latitude: float, longitude: float) -> bool:
+        """Whether a position falls inside this country's box."""
+        if self.bbox is None:
+            return False
+        lat_min, lon_min, lat_max, lon_max = self.bbox
+        return lat_min <= latitude <= lat_max and lon_min <= longitude <= lon_max
 
 
 COUNTRIES: Final[dict[str, Country]] = {
     country.code: country
     for country in (
-        Country(COUNTRY_DK, "Denmark", "kr./L", "kroner", 2, "øre"),
+        Country(
+            COUNTRY_DK,
+            "Denmark",
+            "kr./L",
+            "kroner",
+            2,
+            "øre",
+            bbox=(54.4, 7.7, 57.9, 15.3),
+        ),
         Country(
             COUNTRY_DE,
             "Germany",
@@ -92,6 +119,7 @@ COUNTRIES: Final[dict[str, Country]] = {
                 "blyfri95plus": "Super E5",
                 "diesel": "Diesel",
             },
+            bbox=(47.2, 5.8, 55.1, 15.1),
         ),
     )
 }

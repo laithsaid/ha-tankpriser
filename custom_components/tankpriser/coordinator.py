@@ -26,6 +26,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import geo, geocode
+from .nearby import country_for_position
 from .const import (
     BASELINE_SAVE_DELAY,
     CONF_ANCHOR,
@@ -58,6 +59,7 @@ from .sources import (
     apply_discounts,
     area_for,
     country_needs_area,
+    country_of,
     fetch_all,
     without_hidden,
 )
@@ -104,34 +106,94 @@ def exclusions_of(hass: HomeAssistant) -> set[str]:
     return hidden
 
 
-def pool_target(hass: HomeAssistant) -> tuple[str, Area | None]:
+def _entry_anchor(hass: HomeAssistant, entry: ConfigEntry) -> tuple[float, float] | None:
+    """An entry's anchor, read without needing it to be loaded."""
+    stored = entry.options.get(CONF_ANCHOR) or {}
+    latitude = stored.get("latitude")
+    longitude = stored.get("longitude")
+    if latitude is None or longitude is None:
+        latitude, longitude = hass.config.latitude, hass.config.longitude
+    if latitude is None or longitude is None:
+        return None
+    return float(latitude), float(longitude)
+
+
+def entry_for_position(
+    hass: HomeAssistant,
+    latitude: float | None = None,
+    longitude: float | None = None,
+) -> ConfigEntry | None:
+    """The entry that answers for a position, or the first one when unplaced.
+
+    A caller that knows where the phone is must be answered by the country the
+    phone is in. Before this existed the first configured entry answered for
+    everywhere: with Denmark set up first, asking for cheap fuel outside
+    Hamburg searched Danish stations and said there was nothing within 15 km.
+
+    Countries are matched by their box. Along a shared border the boxes
+    overlap on purpose, and the tie goes to whichever entry is anchored
+    nearer — for someone who configured both, the nearer anchor is the one
+    they meant.
+    """
+    entries = list(hass.config_entries.async_entries(DOMAIN))
+    if not entries:
+        return None
+    if latitude is None or longitude is None:
+        return entries[0]
+
+    # The rule itself is pure and lives in nearby.py, where it is tested
+    # without Home Assistant; this only shapes the entries for it.
+    return country_for_position(
+        [
+            (
+                entry,
+                country_of(str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY))),
+                _entry_anchor(hass, entry),
+            )
+            for entry in entries
+        ],
+        latitude,
+        longitude,
+    )
+
+
+def pool_target(
+    hass: HomeAssistant,
+    latitude: float | None = None,
+    longitude: float | None = None,
+) -> tuple[str, Area | None]:
     """Which country an integration-wide caller means, and which circle.
 
-    The map and the voice service are not tied to one entry; today there is at
-    most one per country, so the first entry answers for all of them. A country
-    whose sources only take a circle also needs one, and the entry's own
-    anchored area is the honest default — it is the pool its sensors already
-    describe.
+    The map and the voice service are not tied to one entry. Given a position
+    the entry for that position answers; without one the first entry does. A
+    country whose sources only take a circle also needs one, and the entry's
+    own anchored area is the honest default — it is the pool its sensors
+    already describe.
     """
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY)).lower()
-        coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-        if country_needs_area(country) and coordinator is not None:
-            return country, coordinator.search_area
-        return country, None
-    return DEFAULT_COUNTRY, None
+    entry = entry_for_position(hass, latitude, longitude)
+    if entry is None:
+        return DEFAULT_COUNTRY, None
+    country = str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY)).lower()
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if country_needs_area(country) and coordinator is not None:
+        return country, coordinator.search_area
+    return country, None
 
 
-def entry_coordinator(hass: HomeAssistant):
+def entry_coordinator(
+    hass: HomeAssistant,
+    latitude: float | None = None,
+    longitude: float | None = None,
+):
     """The coordinator an integration-wide caller should ask, or None.
 
-    Same rule as `pool_target`: at most one entry per country today, so the
-    first one answers. Kept next to it so the two never disagree about which
-    entry that is.
+    Same rule as `pool_target`, and kept next to it so the two never disagree
+    about which entry that is.
     """
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        return hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    return None
+    entry = entry_for_position(hass, latitude, longitude)
+    if entry is None:
+        return None
+    return hass.data.get(DOMAIN, {}).get(entry.entry_id)
 
 
 async def async_station_pool(

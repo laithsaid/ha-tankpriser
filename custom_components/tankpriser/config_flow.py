@@ -25,6 +25,7 @@ from .sources import (
     ProviderAuthError,
     country_needs_area,
     default_fuel_types,
+    country_of,
     default_radius,
     fuel_types_for,
     invalidate_cache,
@@ -351,8 +352,14 @@ class TankpriserConfigFlow(ConfigFlow, domain=DOMAIN):
             if not user_input.get(CONF_FUEL_TYPES):
                 errors[CONF_FUEL_TYPES] = "no_fuel_types"
             else:
+                # Falling back to the integration's own name produced
+                # `sensor.tankpriser_super_e10` for a German entry, which says
+                # nothing about where it is and collides with the next country
+                # added. The country reads better and stays unique per entry;
+                # the entry can be renamed afterwards either way.
                 area_name = (
-                    str(user_input.get(CONF_AREA_NAME, "")).strip() or "Tankpriser"
+                    str(user_input.get(CONF_AREA_NAME, "")).strip()
+                    or country_of(country).name
                 )
                 options: dict[str, Any] = {
                     CONF_RADIUS: default_radius(country),

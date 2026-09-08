@@ -434,6 +434,15 @@ Two things genuinely work differently, both because of the source:
   station you passed costs a U-turn no price difference repays. Nothing about
   this is a setting: it is worked out from how fast you are actually going.
 
+**With both countries set up, the country you are in answers.** Denmark and
+Germany are two entries, and `tankpriser.nearby` picks the one whose country
+your position falls in — so the same Siri shortcut says Danish kroner at home
+and euro on the Autobahn, with no second shortcut and nothing to switch. Near
+the border the two overlap, and the entry anchored nearer wins: with a German
+entry anchored on Flensburg, asking in Kruså gives you the German prices you
+crossed the border for. Background sensors are unaffected either way — each
+entry keeps watching its own area.
+
 ### 15. Testing the driving features without driving
 
 The corridor, the direction filtering and the spoken answer only behave
