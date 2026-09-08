@@ -180,6 +180,20 @@ function markerCount(el) {
   assert.strictEqual(calls.length, 0, "a stationary car never refetches");
   console.log("parked -> half an hour still, no request");
 
+  // --- the view frames the car and the prices around it --------------------
+  // Inherited from a national view the zoom can be street level, and then the
+  // stations this mode exists to show are all off the screen.
+  const bounds = card._map.getBounds();
+  assert.ok(
+    bounds.contains([53.2833, 9.5028]),
+    "the car is in view"
+  );
+  assert.ok(
+    bounds.contains([52.9142, 8.8206]),
+    "so is the cheapest station it was offered, 100 km down the road"
+  );
+  console.log("frame  -> car and its nearest stations both in view");
+
   // --- the car itself is on the map ---------------------------------------
   assert.ok(markerCount(card) > 0, "markers exist");
   assert.ok(

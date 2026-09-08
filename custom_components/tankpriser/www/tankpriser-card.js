@@ -1062,7 +1062,32 @@ class TankpriserCard extends HTMLElement {
         lines: s.price != null ? [{ label, price: s.price }] : [],
         discount: s.discount_ore || null,
         listPrice: s.list_price != null ? s.list_price : null,
+        distance: s.distance_km != null ? s.distance_km : null,
       }));
+  }
+
+  // Frame the car and the few stations nearest it. Centring alone is not
+  // enough: inherited from a national view the zoom can be street level, and
+  // then "the prices around you" are all off-screen — which is the one thing
+  // this mode exists to show. Only on a fresh pool, so it never fights the
+  // zoom you chose between refetches, and never after you have panned.
+  _fitFollow(L, stations) {
+    if (this._userMoved) return;
+    const here = this._followPosition();
+    if (!here) return;
+    const near = stations
+      .filter((st) => st.lat != null && st.lon != null)
+      .sort((a, b) => (a.distance ?? 1e9) - (b.distance ?? 1e9))
+      .slice(0, 5)
+      .map((st) => [st.lat, st.lon]);
+    if (!near.length) {
+      this._map.setView(here, Math.min(this._map.getZoom() || 10, 11), { animate: false });
+      return;
+    }
+    this._map.fitBounds(L.latLngBounds([here, ...near]).pad(0.15), {
+      maxZoom: 11,
+      animate: false,
+    });
   }
 
   _updateFollowMarker(L) {
@@ -1317,6 +1342,7 @@ class TankpriserCard extends HTMLElement {
       .map((s) => `${s.name}|${s.lat}|${s.lon}|${s.price}|${s.updated || ""}`)
       .join(";");
     if (sig === this._mapSig) return;
+    const firstOfThisPool = this._config.follow_tracker && this._followData;
     this._mapSig = sig;
 
     this._markerLayer.clearLayers();
@@ -1370,8 +1396,13 @@ class TankpriserCard extends HTMLElement {
       points.push([s.lat, s.lon]);
     }
 
-    // Set the initial view once; afterwards the user's zoom/pan is preserved.
-    if (!this._fitted) {
+    // Following a car, every new pool reframes: the car has moved on, and the
+    // stations it is being offered are new. This deliberately overrides the
+    // once-only fit below, which assumes a map that stays where it was put.
+    if (firstOfThisPool) {
+      this._fitFollow(L, stations);
+      this._fitted = true;
+    } else if (!this._fitted) {
       if (this._config.coverage === "national") {
         this._initialView(); // centre on the user's location, not all of DK
       } else if (points.length) {
