@@ -260,6 +260,22 @@ const TILES = {
   },
 };
 
+// How often the followed car may spend requests. Each refresh is a real
+// `tankpriser.nearby` call — up to four circles against the user's own API key
+// — so the map is deliberately lazier than the screen refresh rate:
+//
+// * never more than once a minute, whatever else is true,
+// * normally only once the car has moved far enough that the pool it was given
+//   no longer covers where it is,
+// * and if it has crawled less than that for five minutes, one refresh anyway,
+//   because prices change under a car that is barely moving too.
+//
+// A parked car spends nothing: the last two both need real movement.
+const FOLLOW_MIN_INTERVAL_MS = 60 * 1000;
+const FOLLOW_MAX_AGE_MS = 5 * 60 * 1000;
+const FOLLOW_MIN_MOVE_KM = 5;
+const FOLLOW_CRAWL_KM = 0.5;
+
 // Company → brand colour + short code + favicon domain. Matched loosely against
 // the station's `company` string. Colour/code are only shown as an icon
 // fallback and for tinting clusters.
@@ -507,6 +523,16 @@ class TankpriserCard extends HTMLElement {
       // Start with follow-me armed. Off by default: it takes control of the map
       // and keeps the GPS in high-accuracy mode, so you ask for it explicitly.
       follow_me: config.follow_me === true,
+      // Follow a moving tracker — the phone in the car, or the drive simulator.
+      // The map recentres on it and, crucially, the stations it plots are the
+      // ones fetched *around it* as it moves, rather than the fixed circle
+      // around your anchor. This is what makes the map useful in a country
+      // whose source has no national list: driving across Germany you can see
+      // where to fill up, because the prices around you are being refetched.
+      follow_tracker:
+        typeof config.follow_tracker === "string" && config.follow_tracker
+          ? config.follow_tracker
+          : null,
       // Plot your configured cars on the map, ringed by fuel level (green full →
       // red empty). Optional explicit list; otherwise every car is auto-detected.
       show_cars: config.show_cars !== false,
@@ -963,6 +989,105 @@ class TankpriserCard extends HTMLElement {
   //   { name, company, city, lat, lon, approx, price, lines:[{label,price}] }
   // where `price` is the headline (primary fuel) shown on the marker.
 
+  // --- following a moving car -----------------------------------------------
+
+  _followPosition() {
+    const st = this._hass && this._hass.states[this._config.follow_tracker];
+    if (!st) return null;
+    const lat = st.attributes.latitude;
+    const lon = st.attributes.longitude;
+    if (lat == null || lon == null) return null;
+    return [Number(lat), Number(lon)];
+  }
+
+  _refreshFollow() {
+    const here = this._followPosition();
+    if (!here || this._followPending) return;
+    const now = Date.now();
+    const since = now - (this._followAt || 0);
+    if (this._followData && since < FOLLOW_MIN_INTERVAL_MS) return;
+    if (this._followData) {
+      const moved = _distanceKm(this._followFrom, here);
+      const crawling = since > FOLLOW_MAX_AGE_MS && moved >= FOLLOW_CRAWL_KM;
+      if (moved < FOLLOW_MIN_MOVE_KM && !crawling) return;
+    }
+    this._followPending = true;
+    this._followAt = now;
+    // The service is the same one the voice answer uses, so the map and Siri
+    // cannot disagree about what is cheapest: one search, one ranking, and the
+    // corridor logic applies here too — moving, what you get is the road ahead.
+    Promise.resolve(
+      this._hass.callService(
+        "tankpriser",
+        "nearby",
+        { latitude: here[0], longitude: here[1] },
+        undefined,
+        false,
+        true
+      )
+    )
+      .then((res) => {
+        const answer = res && res.response ? res.response : res;
+        if (answer && Array.isArray(answer.stations)) {
+          this._followData = answer;
+          this._followFrom = here;
+        }
+      })
+      .catch(() => {
+        // A failed fetch must not freeze the map on stale prices for ever, but
+        // it must not spin either: the interval floor above applies to the
+        // retry as much as to a success.
+      })
+      .then(() => {
+        this._followPending = false;
+        this._update();
+      });
+  }
+
+  _followStations() {
+    const answer = this._followData;
+    if (!answer || !Array.isArray(answer.stations)) return [];
+    const label = answer.fuel_type || this._config.fuel || "";
+    return answer.stations
+      .filter((s) => s.latitude != null && s.longitude != null)
+      .map((s) => ({
+        name: s.name,
+        company: s.company,
+        city: s.city,
+        lat: s.latitude,
+        lon: s.longitude,
+        approx: !!s.coord_approx,
+        updated: s.updated || null,
+        price: s.price != null ? s.price : null,
+        lines: s.price != null ? [{ label, price: s.price }] : [],
+        discount: s.discount_ore || null,
+        listPrice: s.list_price != null ? s.list_price : null,
+      }));
+  }
+
+  _updateFollowMarker(L) {
+    const here = this._followPosition();
+    if (!here) return;
+    const st = this._hass.states[this._config.follow_tracker];
+    const picture = _safeUrl(st && st.attributes.entity_picture);
+    const inner = picture
+      ? `<img class="ff-car-img" src="${this._escape(picture)}" referrerpolicy="no-referrer" alt="">`
+      : "🚗";
+    const html = `<div class="ff-follow-wrap"><div class="ff-car-disc" style="border-color:#1f6feb">${inner}</div></div>`;
+    const icon = L.divIcon({ html, className: "ff-pin-wrap", iconSize: [26, 26], iconAnchor: [13, 13] });
+    if (!this._followMarker) {
+      this._followMarker = L.marker(here, { icon, zIndexOffset: 900 }).addTo(this._map);
+    } else {
+      this._followMarker.setLatLng(here);
+      this._followMarker.setIcon(icon);
+    }
+    // Keep the car on screen, but stop the moment the user drags: chasing a
+    // map somebody is reading is the most irritating thing a map can do.
+    if (!this._userMoved) {
+      this._map.setView(here, this._map.getZoom() || 10, { animate: false });
+    }
+  }
+
   _areaStations() {
     const byKey = new Map();
     let primaryFuel = null;
@@ -1118,11 +1243,21 @@ class TankpriserCard extends HTMLElement {
     }
 
     let stations;
-    if (this._config.coverage === "national") {
-      this._ensureNational();
-      stations = this._nationalStations();
-    } else {
-      stations = this._areaStations();
+    if (this._config.follow_tracker) {
+      // Fire-and-forget and throttled; when the answer lands it calls _update()
+      // again and this runs with data.
+      this._refreshFollow();
+      stations = this._followStations();
+    }
+    if (!stations || !stations.length) {
+      // Nothing fetched around the car yet — show the configured area rather
+      // than an empty map, and let the follow data replace it when it arrives.
+      if (this._config.coverage === "national") {
+        this._ensureNational();
+        stations = this._nationalStations();
+      } else {
+        stations = this._areaStations();
+      }
     }
 
     // Preload the distinct company icons so markers render with the icon on
@@ -1172,6 +1307,10 @@ class TankpriserCard extends HTMLElement {
     // every time — before the station-signature early-return below, or a car
     // that populates after prices settle would never get drawn.
     this._updateCars(L);
+
+    // Same reason as the cars: the followed car moves on its own schedule, and
+    // between two identical station sets it is the only thing that changed.
+    if (this._config.follow_tracker) this._updateFollowMarker(L);
 
     // Only rebuild markers when the data changed, so we never disturb zoom/pan.
     const sig = stations
@@ -1920,6 +2059,10 @@ const EDITOR_FIELDS = {
   cluster: { name: "cluster", selector: { boolean: {} } },
   show_my_location: { name: "show_my_location", selector: { boolean: {} } },
   follow_me: { name: "follow_me", selector: { boolean: {} } },
+  follow_tracker: {
+    name: "follow_tracker",
+    selector: { entity: { domain: ["device_tracker", "person"] } },
+  },
   show_cars: { name: "show_cars", selector: { boolean: {} } },
   car_picker: { name: "car_picker", selector: { boolean: {} } },
   navigation: {
@@ -1973,7 +2116,7 @@ function _editorFieldNames(config) {
   // implies a choice that changes nothing — and on a list-only card it is pure
   // noise next to the sensor, which already names its fuel.
   if (config.coverage !== "area") names.push("fuel");
-  names.push("map_theme", "map_height", "cluster", "show_my_location");
+  names.push("map_theme", "map_height", "cluster", "follow_tracker", "show_my_location");
   if (config.show_my_location !== false) names.push("follow_me");
   names.push("show_cars");
   if (config.show_cars !== false) names.push("car_picker");
@@ -2018,6 +2161,7 @@ const EDITOR_LABELS = {
   cluster: "Group nearby stations",
   show_my_location: "Show my position on the map",
   follow_me: "Start with follow-me on",
+  follow_tracker: "Follow this car and fetch prices around it",
   show_cars: "Show my cars (ringed by fuel level)",
   car_picker: "Let each device choose which cars to show",
   navigation: "Navigate link in station popups",

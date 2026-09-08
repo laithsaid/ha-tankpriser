@@ -434,6 +434,27 @@ Two things genuinely work differently, both because of the source:
   station you passed costs a U-turn no price difference repays. Nothing about
   this is a setting: it is worked out from how fast you are actually going.
 
+**The map can follow the car.** Set `follow_tracker:` on the card to your phone
+or car tracker and the map stops being a picture of home: it centres on the car
+and plots the stations fetched *around it*, refreshed as you drive — which is
+the only way to see where to fill up in a country with no national list. It
+uses the same `tankpriser.nearby` search as the spoken answer, so the map and
+Siri can never disagree about what is cheapest, and while you are moving it is
+the road ahead you are shown, not the road behind.
+
+```yaml
+type: custom:tankpriser-card
+entity: sensor.flensburg_super_e10
+show_map: true
+follow_tracker: device_tracker.min_telefon
+```
+
+Each refresh spends a real search against your API key, so the card is
+deliberately lazy about it: never more than once a minute, normally only once
+you have driven 5 km, and one extra refresh if you have been crawling for five
+minutes. **A parked car spends nothing.** Drag the map and it stops chasing
+you, as any map should.
+
 **With both countries set up, the country you are in answers.** Denmark and
 Germany are two entries, and `tankpriser.nearby` picks the one whose country
 your position falls in — so the same Siri shortcut says Danish kroner at home
@@ -644,6 +665,7 @@ entities:
 | `sort` | `price` | `price` = cheapest first; `distance` = nearest first |
 | `show_my_location` | `true` | Live GPS dot and the ◎ / ➤ buttons. `false` removes all three and never asks for your location |
 | `follow_me` | `false` | Start with follow-me armed |
+| `follow_tracker` | — | A tracker to follow: the map centres on it and plots the stations fetched around it as it moves. Costs one search per refresh, throttled to a minute / 5 km; a parked car costs nothing |
 | `show_cars` | `true` | Plot your configured cars on the map |
 | `cars` | auto-detect | Explicit list of `…_days_until_refuel` entities to plot |
 | `car_picker` | `true` | The 🚗 button: hide/show cars **on this device only** |
