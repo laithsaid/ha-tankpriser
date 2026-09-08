@@ -186,7 +186,7 @@ when the chain last changed them.
 
 Leaflet and all chain icons are served by Home Assistant itself, so the map
 works on a LAN with no internet. The one exception is the **background tiles**,
-which your browser fetches from OpenStreetMap (or CARTO in dark mode) — see
+which your browser fetches from OpenStreetMap in both themes — see
 [Privacy](#privacy-and-data-sources).
 
 ### 7. Live position and follow-me
@@ -1475,7 +1475,7 @@ served from an integration static path rather than from `/hacsfiles/`.
   third-party analytics. Your position never leaves the browser: the blue dot is
   drawn locally.
 - **The one external request your browser makes** is for map tiles, from
-  OpenStreetMap (or CARTO in dark mode). Those reveal your IP and roughly which
+  OpenStreetMap. Those reveal your IP and roughly which
   area you are looking at. `show_map: false` removes them; everything else,
   including the chain icons and Leaflet itself, is served by Home Assistant.
 

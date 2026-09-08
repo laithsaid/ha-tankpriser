@@ -236,8 +236,14 @@ const CLUSTER_CSS = [
   [`${VENDOR}/MarkerCluster.Default.css`, `${CDN_CLUSTER}/MarkerCluster.Default.css`],
 ];
 
-// Tile basemaps. "dark" uses CARTO's free dark basemap (no API key). Both
-// credit OpenStreetMap; CARTO additionally.
+// Tile basemaps, both OpenStreetMap's own and neither needing a key.
+//
+// Dark mode used to load CARTO's dark_all basemap. CARTO began requiring an
+// API key for it, and the failure is loud and useless: every tile renders as
+// the words "API KEY REQUIRED" with the map underneath it gone. Rather than
+// swap in another third party that can do the same thing tomorrow, dark mode
+// now takes the same OSM tiles as light mode and darkens them in CSS, so the
+// map depends on exactly one tile source in both themes.
 const TILES = {
   light: {
     url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -246,10 +252,11 @@ const TILES = {
     maxZoom: 19,
   },
   dark: {
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    attribution: "&copy; OpenStreetMap, &copy; CARTO",
-    subdomains: "abcd",
-    maxZoom: 20,
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: "&copy; OpenStreetMap",
+    subdomains: "abc",
+    maxZoom: 19,
+    className: "ff-tiles-dark",
   },
 };
 
@@ -634,6 +641,12 @@ class TankpriserCard extends HTMLElement {
         .ff-body { padding: 0 16px 8px; }
         .ff-map { width:100%; }
         .leaflet-container { font: inherit; background: var(--card-background-color); }
+        /* Dark mode: OSM's own tiles, inverted back to a dark basemap. The
+           hue rotation puts water and greenery back the right way round after
+           the invert; without it the sea comes out orange. */
+        .ff-tiles-dark {
+          filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.75);
+        }
         /* make popups follow the HA theme (dark-friendly) */
         .leaflet-popup-content-wrapper, .leaflet-popup-tip {
           background: var(--card-background-color, #fff);
@@ -1045,6 +1058,8 @@ class TankpriserCard extends HTMLElement {
       attribution: t.attribution,
       subdomains: t.subdomains,
       maxZoom: t.maxZoom,
+      // Only the tile pane carries it, so markers and popups stay untouched.
+      className: t.className || "",
     });
     this._tileLayer.addTo(this._map);
   }

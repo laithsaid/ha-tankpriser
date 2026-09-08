@@ -189,7 +189,7 @@ same user on two devices sets it twice.
 | --- | --- | --- | --- |
 | Chain price APIs (OK, Q8/F24, Shell, OIL!) | HA server | Prices | Server-side; honest `User-Agent`, no auth. |
 | DAWA `api.dataforsyningen.dk` | HA server | Area resolution, postnummer centres, station address geocoding | Server-side, keyless. Chosen over Google: no API key/billing, and Google's terms forbid showing Google-derived coordinates on a non-Google map. |
-| OSM / CARTO map tiles | **browser** | Map background | Leaks IP + viewed area. Avoid with `show_map: false`. |
+| OSM map tiles | **browser** | Map background (dark mode darkens the same tiles in CSS) | Leaks IP + viewed area. Avoid with `show_map: false`. |
 | A car's `entity_picture` URL | **browser** | Car photo on the marker | Only if the picture is an external URL; `no-referrer`. Use a `/local/…` image to avoid it. |
 
 Leaflet and all chain icons are **vendored and served by HA**, so the map needs

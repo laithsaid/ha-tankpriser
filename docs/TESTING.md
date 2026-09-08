@@ -395,7 +395,7 @@ entities:
 | Zoom in | Clusters break down to individual forecourts |
 | `cluster: false` | Every station is its own marker, overlaps included |
 | `map_height: 320` | 320 px tall — and changing it takes effect without a browser reload |
-| `map_theme: dark` / `light` | Tiles switch (CARTO dark vs OSM standard) |
+| `map_theme: dark` / `light` | Tiles switch (the same OSM tiles, darkened in CSS vs plain) |
 | `map_theme: auto` | Follows the HA theme — switch your theme and confirm |
 | `show_list: false` | Map only, no table |
 | Prices update | Reload the entry (⋮ → Reload). The map repaints **without** a browser refresh — it listens for `tankpriser_price_updated` |
@@ -715,7 +715,7 @@ lines from `custom_components.tankpriser`. Common messages:
 | `Kortet kunne ikke indlæses. Prøver igen…` | Leaflet itself failed to load. It is served from your own HA (`/tankpriser/vendor/`), so this is a local problem — the file did not deploy, or the browser is holding a broken cached copy. Not an internet issue |
 | Map paints but is empty | No station in view has coordinates. In `area` coverage, check `stations` actually has lat/long; in `national`, check the websocket returned something (DevTools → Network → WS) |
 | Map shows stations far outside the radius | `coverage: national`, the default — the viewport is the filter, not your radius. Set `coverage: area` to pin it |
-| Map tiles grey, markers fine | The browser cannot reach OpenStreetMap/CARTO (offline, DNS filtering, ad blocker). Prices are unaffected; `show_map: false` removes the dependency entirely |
+| Map tiles grey, markers fine | The browser cannot reach OpenStreetMap (offline, DNS filtering, ad blocker). Prices are unaffected; `show_map: false` removes the dependency entirely |
 | `Tankpriser geocoding pass done: N of M addresses new or changed` | Normal info line: Q8/F24 street addresses resolved against DAWA. Once per install, then a re-verification pass every 180 days. The map refreshes itself if anything changed |
 | `Tankpriser: <address> moved to lat,lon` | A re-verification found a different position for a station that had one — worth a look, but it just works |
 | A Q8/F24 pin has a dashed border and **no** navigate button | Its position is only estimated (DAWA could not match the address exactly, e.g. a motorway plaza). The popup says so; navigating to an estimate would take you confidently to the wrong place |
