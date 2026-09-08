@@ -1075,6 +1075,12 @@ class TankpriserCard extends HTMLElement {
     if (this._userMoved) return;
     const here = this._followPosition();
     if (!here) return;
+    // Leaflet caches the container size, and the card is laid out inside a
+    // dashboard section that settles after the map is created. Fitting against
+    // the stale size silently picks a zoom for a map four times too wide: the
+    // first pool framed 15 km of Hamburg while its stations sat 18 and 102 km
+    // away, off the screen. Re-measure first and the fit is honest.
+    this._map.invalidateSize({ animate: false });
     const near = stations
       .filter((st) => st.lat != null && st.lon != null)
       .sort((a, b) => (a.distance ?? 1e9) - (b.distance ?? 1e9))
