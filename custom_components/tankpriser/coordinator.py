@@ -28,6 +28,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from . import geo, geocode
 from .nearby import country_for_position
 from .const import (
+    country_of,
     BASELINE_SAVE_DELAY,
     CONF_ANCHOR,
     CONF_FILLUP_ENABLED,
@@ -59,7 +60,6 @@ from .sources import (
     apply_discounts,
     area_for,
     country_needs_area,
-    country_of,
     fetch_all,
     without_hidden,
 )

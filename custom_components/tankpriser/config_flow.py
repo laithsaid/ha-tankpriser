@@ -25,7 +25,6 @@ from .sources import (
     ProviderAuthError,
     country_needs_area,
     default_fuel_types,
-    country_of,
     default_radius,
     fuel_types_for,
     invalidate_cache,
@@ -35,6 +34,7 @@ from .sources import (
 )
 from .const import (
     CHAINS,
+    country_of,
     CONF_ACCURACY_ENABLED,
     CONF_ANCHOR,
     CONF_CALIBRATION_ENABLED,
