@@ -507,11 +507,67 @@ const clusterIcons = (card) =>
       "the popup names both countries");
     assert.ok(html.includes("17,59"), "Danish price to two decimals");
     assert.ok(html.includes("2,229"), "German price to three");
-    assert.ok(!/cheap|billig/i.test(html), "no cross-currency comparison");
+    // Each country may name its OWN cheapest — that is the whole grouped
+    // answer. What must never appear is a comparison BETWEEN them, which no
+    // rate in the integration could honestly support.
+    assert.ok(
+      !/cheaper|billigere|end i |than in |vs\.?\s/i.test(html),
+      "no cross-currency comparison"
+    );
 
     const empty = card._pickPopupHtml({ searched_km: 25, countries: [] });
     assert.ok(/25/.test(empty), "an empty answer says how far it looked");
     console.log("border -> 2 plotted, both currencies, grouped popup");
+
+    // --- a pick puts the stations ON the map, not just in the bubble --------
+    // Listing them inside the pin answered "what does it cost there" and not
+    // "where is it", which is half of what a map is for.
+    card._hass = {
+      ...card._hass,
+      callService: async () => ({ response: answer }),
+    };
+    await card._askAt(window.L, 54.84, 9.40);
+    const pins = card._pickLayer.getLayers();
+    // One pin per station, plus the 📍 itself.
+    assert.strictEqual(pins.length, 3, "both stations plotted alongside the pin");
+    const prices = pins
+      .map((m) => m.options.ffPrice)
+      .filter((v) => v != null)
+      .sort((a, b) => a - b);
+    assert.strictEqual(
+      JSON.stringify(prices),
+      JSON.stringify([2.229, 17.59]),
+      "the plotted pins carry both countries' prices"
+    );
+    // Cheapest is per currency: across a border there is no single cheapest.
+    assert.strictEqual(
+      pins.filter((m) => m.options.ffCheap).length,
+      2,
+      "each currency gets its own cheapest, rather than one winner"
+    );
+
+    // The pins live in their own layer, so a price refresh that clears the
+    // area pool must not wipe the pick.
+    card._markerLayer.clearLayers();
+    assert.strictEqual(
+      card._pickLayer.getLayers().length,
+      3,
+      "clearing the area pool leaves the pick alone"
+    );
+
+    // A second pick replaces the first rather than piling up.
+    await card._askAt(window.L, 54.80, 9.42);
+    assert.strictEqual(
+      card._pickLayer.getLayers().length,
+      3,
+      "a second pick replaces the first"
+    );
+
+    // The bubble is now a summary, not a repeat of the list.
+    const summary = card._pickPopupHtml(answer, 2);
+    assert.ok(!summary.includes("OK Kruså"), "the bubble no longer lists stations");
+    assert.ok(/2 vist/.test(summary), "it says how many were plotted");
+    console.log("pick   -> stations on the map, own layer, summary bubble");
   }
 
   console.log("\nmap tests passed");

@@ -186,9 +186,18 @@ when the chain last changed them.
 
 **📍 asks about a place that is neither you nor a car.** Tap the pin button
 under the zoom controls and it lights up; the next tap on the map asks what fuel
-costs *there* and answers in a bubble on the spot — the cheapest few, with price
-and distance, grouped by country if the point is near a border. Useful before a
-trip, or to see what a town you are heading for is charging.
+costs *there*, **drops the stations it finds onto the map** as ordinary
+price pins, and frames them alongside the pin you dropped. The bubble on the pin
+itself is only a summary — which country's cheapest is what, how many stations
+were plotted and how far was searched — because the detail belongs on the
+forecourts, where you can see which way they are and how far apart.
+
+Picked stations sit in their own layer, so the area prices go on refreshing
+underneath them and a refresh never wipes your pick; the next pick replaces it.
+Near a border both countries are plotted, each price in its own currency, and
+each currency gets its own highlighted cheapest — there is no single cheapest
+across two currencies. Useful before a trip, or to see what a town you are
+heading for is charging.
 
 It is armed by the button rather than fired by any tap, on purpose: where a
 source is queried by area (Germany) every ask is a real request against your own

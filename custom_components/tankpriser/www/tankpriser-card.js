@@ -872,6 +872,11 @@ class TankpriserCard extends HTMLElement {
         .ff-pick-name { flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; }
         .ff-pick-price { font-weight:600; white-space:nowrap; }
         .ff-pick-dist { opacity:.7; white-space:nowrap; }
+        .ff-pick-foot {
+          margin-top:4px; padding-top:3px; opacity:.7; font-size:11px;
+          border-top:1px solid var(--divider-color, #e0e0e0);
+        }
+        .ff-popup-dist { opacity:.75; }
         .ff-pick-dot { font-size:20px; line-height:1; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
         .ff-mapctl a.ff-follow.active:hover { background:#1a5fd0; }
         /* live "you are here" dot */
@@ -1130,13 +1135,20 @@ class TankpriserCard extends HTMLElement {
       const label = block.fuel_type || answer.fuel_type || this._config.fuel || "";
       for (const s of block.stations) {
         if (s.latitude == null || s.longitude == null) continue;
-        out.push(this._stationMarker(s, label, block.unit || answer.unit || ""));
+        out.push(
+          this._stationMarker(
+            s,
+            label,
+            block.unit || answer.unit || "",
+            block.decimals
+          )
+        );
       }
     }
     return out;
   }
 
-  _stationMarker(s, label, unit) {
+  _stationMarker(s, label, unit, decimals) {
     return {
       name: s.name,
       company: s.company,
@@ -1150,6 +1162,7 @@ class TankpriserCard extends HTMLElement {
       // two prices sit side by side in different currencies, and a €/L price
       // printed with kr./L after it is worse than no price at all.
       unit: unit || "",
+      decimals: decimals,
       lines: s.price != null ? [{ label, price: s.price, unit: unit || "" }] : [],
       discount: s.discount_ore || null,
       listPrice: s.list_price != null ? s.list_price : null,
@@ -1483,51 +1496,8 @@ class TankpriserCard extends HTMLElement {
     this._markerLayer.clearLayers();
     const points = [];
     for (const s of stations) {
-      const mp = s.price;
-      const cheap = mp != null && globalMin != null && mp === globalMin;
-      const meta = companyMeta(s.company);
-      const iconUrl = this._iconUrl(s.company);
-      const haveIcon = iconUrl && _iconStatus[iconUrl] === "ok";
-      const iconHtml = haveIcon
-        ? `<img class="ff-mico" src="${iconUrl}" alt="">`
-        : `<span class="ff-mcode" style="background:${meta.color}">${this._escape(meta.code)}</span>`;
-      const label = mp != null ? this._price(mp) : "–";
-      const icon = L.divIcon({
-        className: "ff-pin-wrap",
-        html: `<div class="ff-pin${cheap ? " cheap" : ""}${s.approx ? " approx" : ""}">${iconHtml}<span class="ff-mprice">${label}</span></div>`,
-        iconSize: null,
-      });
-      const marker = L.marker([s.lat, s.lon], { icon });
-      marker.options.ffPrice = mp;
-      marker.options.ffCheap = cheap;
-      marker.options.ffCompany = s.company;
-
-      const priceLines = s.lines
-        .map((p) => `${this._escape(p.label)}: <b>${this._price(p.price)}</b>`)
-        .join("<br>");
-      // `updated` is the chain's own "prices valid from" stamp, not the time we
-      // polled — that is what actually tells you how stale a price is.
-      const updated = s.updated
-        ? `<div class="ff-popup-updated">Priser opdateret: ${this._escape(s.updated)}</div>`
-        : "";
-      // With a loyalty discount configured, the price shown is what you pay —
-      // so show the pump price too, or the card and the forecourt sign
-      // disagree and you have no way to tell which is wrong.
-      const discount =
-        s.discount && s.listPrice != null
-          ? `<div class="ff-popup-disc">Pumpepris ${this._price(s.listPrice)} ·
-             din rabat ${this._escape(s.discount)} øre</div>`
-          : "";
-      marker.bindPopup(
-        `<b>${this._escape(s.name)}</b>${s.city ? "<br>" + this._escape(s.city) : ""}` +
-          `<br>${priceLines}` +
-          updated +
-          discount +
-          // _navHtml carries the "estimated position" notice for approximate
-          // pins, so there is no separate line for it here.
-          this._navHtml(s)
-      );
-      this._markerLayer.addLayer(marker);
+      const cheap = s.price != null && globalMin != null && s.price === globalMin;
+      this._markerLayer.addLayer(this._stationPin(L, s, cheap));
       points.push([s.lat, s.lon]);
     }
 
@@ -1928,6 +1898,76 @@ class TankpriserCard extends HTMLElement {
   // end of every drag, and where the source is queried by area those are real
   // requests against the user's own key. Arming also gives the gesture a name:
   // nobody discovers a long-press, but a button that lights up explains itself.
+  // One station as a map pin: the chain's icon, its price, and a popup.
+  //
+  // Extracted so a station picked with 📍 is drawn by exactly the same code as
+  // one from the area pool — two renderers would drift, and a pin that looked
+  // different would read as a different kind of thing rather than the same
+  // forecourt found another way.
+  //
+  // `unit` and `decimals` ride on the station where it has them: at a border
+  // one answer holds both currencies, and Germany signs to three decimals where
+  // Denmark signs to two, so a card-wide setting would print a price that
+  // disagrees with the pump on one side.
+  _stationPin(L, s, cheap) {
+    const money = (v) =>
+      v == null ? "–" : this._price(v, s.unit || "", s.decimals);
+    const meta = companyMeta(s.company);
+    const iconUrl = this._iconUrl(s.company);
+    const haveIcon = iconUrl && _iconStatus[iconUrl] === "ok";
+    const iconHtml = haveIcon
+      ? `<img class="ff-mico" src="${iconUrl}" alt="">`
+      : `<span class="ff-mcode" style="background:${meta.color}">${this._escape(meta.code)}</span>`;
+    // The pin itself stays bare of the unit — at map scale the number is the
+    // signal and "17,59 kr./L" on every pin is a wall of text.
+    const label = s.price != null ? this._price(s.price, "", s.decimals) : "–";
+    const icon = L.divIcon({
+      className: "ff-pin-wrap",
+      html: `<div class="ff-pin${cheap ? " cheap" : ""}${s.approx ? " approx" : ""}">${iconHtml}<span class="ff-mprice">${label}</span></div>`,
+      iconSize: null,
+    });
+    const marker = L.marker([s.lat, s.lon], { icon });
+    marker.options.ffPrice = s.price;
+    marker.options.ffCheap = cheap;
+    marker.options.ffCompany = s.company;
+
+    const priceLines = (s.lines || [])
+      .map((p) => `${this._escape(p.label)}: <b>${money(p.price)}</b>`)
+      .join("<br>");
+    // `updated` is the chain's own "prices valid from" stamp, not the time we
+    // polled — that is what actually tells you how stale a price is.
+    const updated = s.updated
+      ? `<div class="ff-popup-updated">Priser opdateret: ${this._escape(s.updated)}</div>`
+      : "";
+    // With a loyalty discount configured, the price shown is what you pay —
+    // so show the pump price too, or the card and the forecourt sign
+    // disagree and you have no way to tell which is wrong.
+    const discount =
+      s.discount && s.listPrice != null
+        ? `<div class="ff-popup-disc">Pumpepris ${money(s.listPrice)} ·
+           din rabat ${this._escape(s.discount)} øre</div>`
+        : "";
+    // Distance is only known for a station that came out of a `nearby` answer,
+    // which is exactly the 📍 case — and there it is the thing you want.
+    const away =
+      s.distance != null
+        ? `<div class="ff-popup-dist">${this._escape(
+            Number(s.distance).toFixed(1).replace(".", ",")
+          )} km herfra</div>`
+        : "";
+    marker.bindPopup(
+      `<b>${this._escape(s.name)}</b>${s.city ? "<br>" + this._escape(s.city) : ""}` +
+        `<br>${priceLines}` +
+        away +
+        updated +
+        discount +
+        // _navHtml carries the "estimated position" notice for approximate
+        // pins, so there is no separate line for it here.
+        this._navHtml(s)
+    );
+    return marker;
+  }
+
   _addPickControl(L) {
     const card = this;
     const Pick = L.Control.extend({
@@ -1977,11 +2017,25 @@ class TankpriserCard extends HTMLElement {
       : "Vis priser et andet sted";
   }
 
-  async _askAt(L, lat, lon) {
-    if (this._pickMarker) {
-      this._map.removeLayer(this._pickMarker);
-      this._pickMarker = null;
+  // Picked stations live in their own layer, not in `_markerLayer`.
+  //
+  // The area pool clears that layer whenever the prices change, which would
+  // wipe a pick a few seconds after it was made — and worse, a pick would
+  // survive into the next render as a phantom if the signature happened not to
+  // change. A separate group keeps the two sets independent: the pick lasts
+  // until the next pick, and the pool goes on refreshing underneath it.
+  _ensurePickLayer(L) {
+    if (!this._pickLayer) {
+      this._pickLayer = L.layerGroup();
+      this._map.addLayer(this._pickLayer);
     }
+    return this._pickLayer;
+  }
+
+  async _askAt(L, lat, lon) {
+    const layer = this._ensurePickLayer(L);
+    layer.clearLayers();
+    this._pickMarker = null;
     const marker = L.marker([lat, lon], {
       icon: L.divIcon({
         className: "ff-pick-pin",
@@ -1991,7 +2045,7 @@ class TankpriserCard extends HTMLElement {
       }),
       keyboard: false,
     });
-    marker.addTo(this._map);
+    layer.addLayer(marker);
     this._pickMarker = marker;
     marker.bindPopup('<div class="ff-pick-pop">Henter priser…</div>').openPopup();
 
@@ -2012,59 +2066,83 @@ class TankpriserCard extends HTMLElement {
       );
       return;
     }
-    marker.setPopupContent(this._pickPopupHtml(answer));
+
+    // The stations belong ON THE MAP, where you can see which way they are and
+    // how far apart. A list inside the pin's bubble answered "what does it
+    // cost there" but not "where is it", which is half of what a map is for.
+    const found = this._answerStations(answer);
+    const cheapestPer = {};
+    for (const station of found) {
+      const key = station.unit || "";
+      if (station.price == null) continue;
+      if (cheapestPer[key] == null || station.price < cheapestPer[key]) {
+        cheapestPer[key] = station.price;
+      }
+    }
+    for (const station of found) {
+      // Cheapest is per currency, because across a border there is no single
+      // cheapest to highlight — see the grouped answer.
+      const cheap =
+        station.price != null && station.price === cheapestPer[station.unit || ""];
+      layer.addLayer(this._stationPin(L, station, cheap));
+    }
+
+    marker.setPopupContent(this._pickPopupHtml(answer, found.length));
+    // Frame the pin and what it found, or the stations can be plotted off the
+    // edge of a map that was somewhere else entirely.
+    if (found.length) {
+      this._userMoved = true; // a deliberate look elsewhere, not a stray pan
+      this._map.fitBounds(
+        found.map((st) => [st.lat, st.lon]).concat([[lat, lon]]),
+        { padding: [40, 40], maxZoom: 12 }
+      );
+    }
   }
 
-  _pickPopupHtml(answer) {
+  // A summary, not a list. The stations are pins on the map now, each with its
+  // own price and popup, so repeating them here would be the same answer twice
+  // — and the one thing the pin knows that they do not is what was searched.
+  _pickPopupHtml(answer, plotted) {
     const blocks =
       answer && Array.isArray(answer.countries) && answer.countries.length
         ? answer.countries
         : answer
           ? [answer]
           : [];
-    const parts = [];
+    const lines = [];
     for (const block of blocks) {
-      const rows = (block.stations || []).slice(0, 3);
+      const rows = block.stations || [];
       if (!rows.length) continue;
-      // One heading per country, and never a comparison between them: two
-      // currencies cannot be ranked against each other without a rate nobody
-      // has. The reader does that sum themselves, which is what they were
-      // going to do anyway.
-      const head =
+      const best = rows[0];
+      const price =
+        best.price != null
+          ? this._price(best.price, block.unit, block.decimals)
+          : "–";
+      const name =
         blocks.length > 1 && block.country_name
-          ? `<div class="ff-pick-country">${this._escape(block.country_name)}</div>`
+          ? `${this._escape(block.country_name)}: `
           : "";
-      const list = rows
-        .map((s) => {
-          // Decimals come from the country block: Germany signs its forecourts
-          // to three and Denmark to two, so one card-wide setting would print a
-          // price that disagrees with the pump on one side of the border.
-          const price =
-            s.price != null
-              ? this._price(s.price, block.unit, block.decimals)
-              : "–";
-          const dist =
-            s.distance_km != null
-              ? `${Number(s.distance_km).toFixed(1).replace(".", ",")} km`
-              : "";
-          return (
-            `<div class="ff-pick-row"><span class="ff-pick-name">` +
-            `${this._escape(s.name || "")}</span>` +
-            `<span class="ff-pick-price">${price}</span>` +
-            `<span class="ff-pick-dist">${this._escape(dist)}</span></div>`
-          );
-        })
-        .join("");
-      parts.push(head + list);
+      lines.push(
+        `<div class="ff-pick-row"><span class="ff-pick-name">${name}billigst` +
+          `</span><span class="ff-pick-price">${price}</span></div>`
+      );
     }
-    if (!parts.length) {
-      const reach = answer && answer.searched_km ? Math.round(answer.searched_km) : null;
+    if (!lines.length) {
+      const reach =
+        answer && answer.searched_km ? Math.round(answer.searched_km) : null;
       return `<div class="ff-pick-pop">${
         reach ? `Ingen stationer inden for ${reach} km.` : "Ingen stationer her."
       }</div>`;
     }
-    return `<div class="ff-pick-pop">${parts.join("")}</div>`;
+    const count = plotted != null ? plotted : 0;
+    const reach =
+      answer && answer.searched_km ? Math.round(answer.searched_km) : null;
+    const foot = `<div class="ff-pick-foot">${count} vist${
+      reach ? ` · søgt ${reach} km` : ""
+    }</div>`;
+    return `<div class="ff-pick-pop">${lines.join("")}${foot}</div>`;
   }
+
 
 
   _recenter() {
