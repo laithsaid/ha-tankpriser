@@ -238,32 +238,45 @@ def _default_fuel(hass: HomeAssistant, entry=None) -> str | None:
 def _warn_if_tracker_is_not_the_one_watched(
     hass: HomeAssistant, entity_id: str
 ) -> None:
-    """Say so when the simulated car is not the car anything is watching.
+    """Say so when NOTHING is watching the car being driven.
 
     Driving a tracker nothing is configured to follow produces a perfectly
     quiet, perfectly wrong test: the positions are written, and every sensor
     ignores them. That is a confusing half-hour to debug, and one log line
     prevents it.
+
+    The test is "does ANY entry follow this car", asked once — not "does this
+    entry follow it", asked per entry. Once a second country exists the two
+    differ: driving through Germany, the Danish entry is supposed to be
+    watching a Danish car, and warning about it fired on every single call
+    while nothing at all was wrong. A warning that cries wolf on a correct
+    setup is a warning that gets read past, which costs more than it ever saved.
     """
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        watched = str(entry.options.get(CONF_NEARBY_TRACKER, "") or "")
-        if watched and watched != entity_id:
-            _LOGGER.warning(
-                "Tankpriser is driving %s, but %s is set to follow %s. The "
-                "nearby sensors and the motion inference will not see this "
-                "drive. Point either one at the other.",
-                entity_id,
-                entry.title,
-                watched,
-            )
-        elif not watched:
-            _LOGGER.warning(
-                "Tankpriser is driving %s, but %s has no tracker configured, "
-                "so nothing will infer motion from it. Set it under "
-                "Configure -> Area & fuel types.",
-                entity_id,
-                entry.title,
-            )
+    entries = hass.config_entries.async_entries(DOMAIN)
+    if not entries:
+        return
+    if any(
+        str(entry.options.get(CONF_NEARBY_TRACKER, "") or "") == entity_id
+        for entry in entries
+    ):
+        return  # something follows this car, so the drive is visible
+
+    # Nothing follows it. Say what each entry IS pointed at, because the fix is
+    # to change one of them and the log line may be all there is to go on.
+    state = ", ".join(
+        f"{entry.title} follows {watched}"
+        if (watched := str(entry.options.get(CONF_NEARBY_TRACKER, "") or ""))
+        else f"{entry.title} has none set"
+        for entry in entries
+    )
+    _LOGGER.warning(
+        "Tankpriser is driving %s, but no entry is set to follow it, so the "
+        "nearby sensors and the motion inference will not see this drive (%s). "
+        "Point one of them at %s under Configure -> Area & fuel types.",
+        entity_id,
+        state,
+        entity_id,
+    )
 
 
 def _circle_km(country: str, requested_km: float) -> float:

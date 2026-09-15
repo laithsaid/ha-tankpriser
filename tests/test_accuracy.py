@@ -464,6 +464,68 @@ def test_the_correction_reaches_the_prediction() -> None:
     )
 
 
+def test_a_cold_start_does_not_own_the_verdict_for_ever() -> None:
+    print("the Polo case: one wild first tank, settled ever since")
+    # A car barely driven on its first tank, then consistently driven after.
+    # The first grade is made by a model with nothing to learn from, so it is
+    # enormous; every tank since is close. Lifetime bias is dominated by the
+    # one, and reporting that alone is false about the model as it stands.
+    tanks = [tank(0, 60.0, 8.0)]          # crawled: a huge optimistic error
+    day = 61.0
+    for _ in range(6):                     # then steady, ~10 days a tank
+        tanks.append(tank(day, 10.0, 45.0))
+        day += 10.5
+    report = acc.backtest(CAPACITY, tanks)
+
+    check(
+        "the lifetime bias is dragged badly optimistic",
+        report.bias_pct > 25,
+        report.bias_pct,
+    )
+    check(
+        "but the settled tanks are close",
+        abs(report.settled_bias_pct) < abs(report.bias_pct) * 0.6,
+        (report.bias_pct, report.settled_bias_pct),
+    )
+    check(
+        "the cold start is excluded from the settled set",
+        report.settled_count == report.sample_count - 1,
+        (report.settled_count, report.sample_count),
+    )
+    check(
+        "and the verdict says so instead of just condemning the model",
+        "cold start" in report.verdict,
+        report.verdict,
+    )
+    check(
+        "the lifetime number is still the one quoted, not silently swapped",
+        f"{abs(report.bias_pct):.0f} %" in report.verdict,
+        report.verdict,
+    )
+    check(
+        "and both figures survive the service response",
+        acc.as_dict(report)["settled_bias_pct"] == report.settled_bias_pct
+        and acc.as_dict(report)["settled_tanks"] == report.settled_count,
+        acc.as_dict(report)["settled_bias_pct"],
+    )
+
+
+def test_a_merely_noisy_car_is_not_given_a_cold_start_note() -> None:
+    print("the trap: subsetting an alternating car invents a lean")
+    noisy = []
+    day = 0.0
+    for index in range(9):
+        days = 14.0 if index % 2 else 6.0
+        noisy.append(tank(day, days, 45.0))
+        day += days + 0.5
+    report = acc.backtest(CAPACITY, noisy)
+    check(
+        "no cold-start note, because the lifetime bias is already centred",
+        "cold start" not in report.verdict,
+        report.verdict,
+    )
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for test in tests:

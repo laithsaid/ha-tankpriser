@@ -45,7 +45,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Final
 
-from .const import MIN_SEGMENT_DAYS
+from .const import MIN_SEGMENT_DAYS, MIN_SEGMENTS_FOR_PREDICTION
 from .prediction import ConsumptionModel, Segment, predict
 
 # A tank that ends below this fraction is one the driver cut fine. Not an error
@@ -122,6 +122,11 @@ class AccuracyReport:
     # Mean absolute error of the recent half minus the earlier half. Negative
     # means it is getting better as it learns, which is what should happen.
     trend_pct: float | None = None
+    # The same bias, over the tanks that were a fair test of the model — those
+    # graded once it had enough tanks behind it to predict from tanks at all.
+    # `bias_pct` stays the lifetime figure; the table still shows every tank.
+    settled_bias_pct: float | None = None
+    settled_count: int = 0
     # Whether these scores were produced with the correction applied.
     calibrated: bool = False
     # The correction that applies to this car's *next* prediction. 1.0 = none.
@@ -265,6 +270,8 @@ def _summarise(
 
     errors = [s.error_pct for s in scored]
     absolute = [abs(e) for e in errors]
+    settled = settled_scores(scored)
+    settled_errors = [s.error_pct for s in settled]
     report = AccuracyReport(
         car=car,
         scored=scored,
@@ -274,10 +281,30 @@ def _summarise(
         good_count=sum(1 for e in absolute if e <= GOOD_ERROR_PCT),
         low_finishes=sum(1 for s in scored if s.finished_low),
         trend_pct=_trend(absolute),
+        settled_bias_pct=(
+            round(sum(settled_errors) / len(settled_errors), 1)
+            if settled_errors
+            else None
+        ),
+        settled_count=len(settled),
         calibrated=calibrated,
         calibration=calibration_from(scored),
     )
     return replace(report, verdict=verdict_of(report))
+
+
+def settled_scores(scored: list[TankScore]) -> list[TankScore]:
+    """The tanks that were a fair test of the model.
+
+    A tank graded before the model had ``MIN_SEGMENTS_FOR_PREDICTION`` tanks
+    behind it was not predicted from tank data at all — the model was still
+    guessing from a default rate, so grading it measures the guess, not the
+    model. Those early scores are real and stay in the table, but they must not
+    decide the headline: a car whose first tank scored +300 % reads as wildly
+    optimistic for the rest of its life while its last several tanks land
+    within 10 %, which is the opposite of what the driver needs to know.
+    """
+    return [s for s in scored if s.tanks_known >= MIN_SEGMENTS_FOR_PREDICTION]
 
 
 def _trend(absolute: list[float]) -> float | None:
@@ -302,6 +329,12 @@ def verdict_of(report: AccuracyReport) -> str:
     off by 20 % in both directions is merely noisy — irregular driving does that
     — while one that is off by 20 % the *same way* every time is wrong in a way
     that could be corrected.
+
+    The headline stays the LIFETIME bias, deliberately. Grading only the settled
+    tanks looks like the obvious fix for a cold start and is a trap: drop a tank
+    from a car that alternates long and short and the remainder no longer
+    balances, so a perfectly centred model is reported as leaning. What a cold
+    start earns is a second sentence — see below.
     """
     if not report.scored or report.bias_pct is None:
         return "not enough data"
@@ -311,6 +344,25 @@ def verdict_of(report: AccuracyReport) -> str:
     bias = report.bias_pct
     spread = report.mean_abs_error_pct or 0.0
     direction = "optimistic" if bias > 0 else "pessimistic"
+
+    # A big lifetime lean that the settled tanks do not share is a model that
+    # has since learned its car, and calling it "consistently optimistic" is
+    # false today. Say both numbers rather than silently picking one.
+    excluded = report.sample_count - report.settled_count
+    settled = report.settled_bias_pct
+    note = ""
+    if (
+        excluded
+        and settled is not None
+        and report.settled_count >= 3
+        and abs(bias) > 25
+        and abs(settled) < abs(bias) * 0.6
+    ):
+        note = (
+            f" — though the {report.settled_count} tanks graded once it had data "
+            f"to learn from sit {abs(settled):.0f} % off, so most of that lean is "
+            "the cold start rather than the model today"
+        )
 
     if abs(bias) <= GOOD_ERROR_PCT and spread <= 20:
         return "matching reality — no consistent lean, and the spread is small"
@@ -322,7 +374,7 @@ def verdict_of(report: AccuracyReport) -> str:
     if abs(bias) > 25:
         return (
             f"consistently {direction} by about {abs(bias):.0f} % — the model is "
-            "leaning the same way nearly every tank"
+            "leaning the same way nearly every tank" + note
         )
     return f"slightly {direction}, by about {abs(bias):.0f} % on average"
 
@@ -341,6 +393,8 @@ def as_dict(report: AccuracyReport) -> dict:
         "within_10_pct": report.good_count,
         "low_finishes": report.low_finishes,
         "trend_pct": report.trend_pct,
+        "settled_bias_pct": report.settled_bias_pct,
+        "settled_tanks": report.settled_count,
         "tanks": [
             {
                 "index": s.index,
