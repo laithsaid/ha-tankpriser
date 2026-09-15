@@ -1247,6 +1247,14 @@ class TankpriserCard extends HTMLElement {
       attribution: t.attribution,
       subdomains: t.subdomains,
       maxZoom: t.maxZoom,
+      // Home Assistant's frontend ships <meta name="referrer" content="same-origin">,
+      // so by default every tile <img> leaves the browser with no Referer at all.
+      // OpenStreetMap's tile usage policy treats an anonymous browser request as a
+      // policy violation and answers it with a 403 whose body is a PNG reading
+      // "Access blocked" — the map fills with that text instead of failing outright,
+      // and only where the HTTP cache had no earlier tile, which is why it looks
+      // like a zoom problem. Asking for the origin puts a Referer back on the wire.
+      referrerPolicy: "strict-origin-when-cross-origin",
       // Only the tile pane carries it, so markers and popups stay untouched.
       className: t.className || "",
     });
