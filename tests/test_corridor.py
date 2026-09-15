@@ -100,6 +100,41 @@ def test_motion_derived_from_two_positions() -> None:
     check("that is moving", motion.moving is True)
 
 
+def test_a_tracker_that_jumps_is_not_a_drive() -> None:
+    print("infer_motion when the two fixes cannot be one journey")
+    # The live case: the phone is at home, the question is asked 150 km away,
+    # 47 seconds after the tracker last reported. The arithmetic says 14,000
+    # km/h; believing it laid a 135 km corridor and answered with a forecourt
+    # 105 km away while one sat 3 km from the asker.
+    far = nb.destination(*HAMBURG, COURSE_SSE, 150.0)
+    motion = nb.infer_motion(
+        *far, {"latitude": HAMBURG[0], "longitude": HAMBURG[1]}, elapsed_s=47
+    )
+    check("no heading is claimed from a jump", motion.course_deg is None, motion.course_deg)
+    check("so it is not treated as moving", motion.moving is False, motion.speed_kmh)
+    check(
+        "and the search is a circle, not a corridor",
+        len(nb.search_plan(*far, motion, 25.0)) == 1,
+    )
+    # The boundary still behaves: a fast but possible drive is still a drive.
+    fast = nb.destination(*HAMBURG, COURSE_SSE, 45.0)
+    real = nb.infer_motion(
+        *fast, {"latitude": HAMBURG[0], "longitude": HAMBURG[1]}, elapsed_s=900
+    )
+    check(
+        "180 km/h is still a drive, not a jump",
+        real.moving is True and round(real.speed_kmh) == 180,
+        real.speed_kmh,
+    )
+    # A *reported* speed is believed however odd, because the device knows.
+    told = nb.infer_motion(*HAMBURG, {"speed": 90.0, "course": 160})
+    check(
+        "a reported speed is not capped",
+        told.source == "reported" and round(told.speed_kmh) == 324,
+        told.speed_kmh,
+    )
+
+
 def test_a_parked_phone_never_invents_a_heading() -> None:
     print("infer_motion on a phone that has not really gone anywhere")
     # 200 m of GPS wander over ten minutes.
@@ -283,6 +318,7 @@ def test_a_thin_answer_says_so() -> None:
 if __name__ == "__main__":
     test_a_tracker_that_reports_speed_is_believed()
     test_motion_derived_from_two_positions()
+    test_a_tracker_that_jumps_is_not_a_drive()
     test_a_parked_phone_never_invents_a_heading()
     test_slow_is_not_moving()
     test_parked_is_one_circle_where_you_stand()

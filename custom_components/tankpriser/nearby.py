@@ -63,6 +63,23 @@ MOVING_MIN_KMH: Final = 30.0
 MIN_FIX_DISTANCE_M: Final = 1500.0
 # Past this the older fix says where you were, not where you are going.
 MAX_FIX_AGE_S: Final = 900.0
+# And above this the two fixes are not one journey at all.
+#
+# Found live: the phone was at home in Silkeborg and the question was asked from
+# Kruså, 150 km away, 47 seconds after the tracker last reported. The arithmetic
+# is obedient and says 14,068 km/h, so the car was "moving", a 135 km corridor
+# was laid south, and the answer named a forecourt 105 km away while an OK sat
+# 3 km from the asker. Nothing was stale and nothing was broken — the tracker
+# simply had not been to Kruså.
+#
+# There is no speed a car does between two fixes that this rules out; what it
+# rules out is the pair of fixes being a drive. A tracker that jumps — a phone
+# that woke up somewhere else, a flight, a Shortcut run from a position the
+# tracker has never held — is not evidence of a heading, and the honest answer
+# is the one given for a tracker with nothing usable on it: no heading, search
+# around rather than ahead. A *reported* speed is still believed outright; the
+# device knows what it is doing and this cap is not about it.
+MAX_DERIVED_KMH: Final = 200.0
 # One hour of driving is the horizon worth searching, floored so a slow road
 # still looks ahead and capped so a fast one does not spend requests on places
 # you will reach in an hour and a half.
@@ -172,6 +189,11 @@ def infer_motion(
         # noise. Both mean: search around, not ahead.
         return Motion(metres / 1000.0 / (elapsed_s / 3600.0), None, "derived")
     speed_kmh = (metres / 1000.0) / (elapsed_s / 3600.0)
+    if speed_kmh > MAX_DERIVED_KMH:
+        # A jump, not a drive — see MAX_DERIVED_KMH. Keep the source so the
+        # answer can still say where the reading came from, but offer no
+        # heading: with none, `moving` is False and the search is a circle.
+        return Motion(0.0, None, "derived")
     return Motion(speed_kmh, initial_bearing(last_lat, last_lon, latitude, longitude), "derived")
 
 
