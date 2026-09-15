@@ -37,6 +37,8 @@
  *                                        #   from your position or from Home
  *   sort: price                          # optional, default price; or distance
  *   show_my_location: true               # optional, default true — live GPS dot
+ *   ask_on_map: true                     # optional, default true — 📍 asks prices
+ *                                        #   at a place you tap
  *   follow_me: false                     # optional, default false — start with
  *                                        #   follow-me armed (➤ button toggles it)
  *   show_list: false                     # optional; default: shown only when the
@@ -562,6 +564,11 @@ class TankpriserCard extends HTMLElement {
       sort: config.sort === "distance" ? "distance" : "price",
       // Show a live "you are here" dot on the map, updated while you move.
       show_my_location: config.show_my_location !== false,
+      // Pointing at a place costs one request per pick, and it is
+      // armed by a button rather than fired by any tap, so it is on
+      // by default: the cost is deliberate and the button explains
+      // itself where a hidden long-press would not.
+      ask_on_map: config.ask_on_map !== false,
       // Start with follow-me armed. Off by default: it takes control of the map
       // and keeps the GPS in high-accuracy mode, so you ask for it explicitly.
       follow_me: config.follow_me === true,
@@ -849,6 +856,23 @@ class TankpriserCard extends HTMLElement {
         /* follow-me: clearly "armed" when on, since it moves the map for you */
         .ff-mapctl a.ff-follow { font-size:14px; transform:none; }
         .ff-mapctl a.ff-follow.active { background:#1f6feb; color:#fff; }
+        /* pick-a-place: armed state has to be unmistakable, because while it is
+           on the next tap spends a request instead of panning the map. */
+        .ff-mapctl a.ff-pick { font-size:15px; }
+        .ff-mapctl a.ff-pick.ff-on { background:#1f6feb; color:#fff; }
+        .ff-map.ff-picking { cursor: crosshair; }
+        .ff-map.ff-picking .leaflet-grab { cursor: crosshair; }
+        .ff-pick-pop { min-width:150px; font-size:12px; }
+        .ff-pick-country {
+          font-weight:600; margin:4px 0 2px; padding-top:4px;
+          border-top:1px solid var(--divider-color, #e0e0e0);
+        }
+        .ff-pick-country:first-child { border-top:0; padding-top:0; margin-top:0; }
+        .ff-pick-row { display:flex; gap:6px; align-items:baseline; }
+        .ff-pick-name { flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; }
+        .ff-pick-price { font-weight:600; white-space:nowrap; }
+        .ff-pick-dist { opacity:.7; white-space:nowrap; }
+        .ff-pick-dot { font-size:20px; line-height:1; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
         .ff-mapctl a.ff-follow.active:hover { background:#1a5fd0; }
         /* live "you are here" dot */
         .ff-me-wrap { background: transparent !important; border: 0 !important; }
@@ -1086,9 +1110,60 @@ class TankpriserCard extends HTMLElement {
       });
   }
 
+  // Every station the answer reached, across every country in it.
+  //
+  // Near a border the service answers with more than one country, because a
+  // 25 km circle at Kruså genuinely holds Danish and German forecourts. The
+  // top-level `stations` is only the country you are standing in — it has to
+  // be, since one ranked list cannot hold two currencies — so plotting that
+  // alone drew half the map and stopped at the border. `countries` carries all
+  // of them, each with its own unit; older answers have no `countries` at all,
+  // so fall back to the single list rather than showing nothing.
+  _answerStations(answer) {
+    if (!answer) return [];
+    const blocks = Array.isArray(answer.countries) && answer.countries.length
+      ? answer.countries
+      : [answer];
+    const out = [];
+    for (const block of blocks) {
+      if (!Array.isArray(block.stations)) continue;
+      const label = block.fuel_type || answer.fuel_type || this._config.fuel || "";
+      for (const s of block.stations) {
+        if (s.latitude == null || s.longitude == null) continue;
+        out.push(this._stationMarker(s, label, block.unit || answer.unit || ""));
+      }
+    }
+    return out;
+  }
+
+  _stationMarker(s, label, unit) {
+    return {
+      name: s.name,
+      company: s.company,
+      city: s.city,
+      lat: s.latitude,
+      lon: s.longitude,
+      approx: !!s.coord_approx,
+      updated: s.updated || null,
+      price: s.price != null ? s.price : null,
+      // The unit travels with the station, not with the card: at the border
+      // two prices sit side by side in different currencies, and a €/L price
+      // printed with kr./L after it is worse than no price at all.
+      unit: unit || "",
+      lines: s.price != null ? [{ label, price: s.price, unit: unit || "" }] : [],
+      discount: s.discount_ore || null,
+      listPrice: s.list_price != null ? s.list_price : null,
+      distance: s.distance_km != null ? s.distance_km : null,
+    };
+  }
+
   _followStations() {
     const answer = this._followData;
-    if (!answer || !Array.isArray(answer.stations)) return [];
+    if (!answer) return [];
+    if (Array.isArray(answer.countries) && answer.countries.length) {
+      return this._answerStations(answer);
+    }
+    if (!Array.isArray(answer.stations)) return [];
     const label = answer.fuel_type || this._config.fuel || "";
     return answer.stations
       .filter((s) => s.latitude != null && s.longitude != null)
@@ -1377,6 +1452,10 @@ class TankpriserCard extends HTMLElement {
         if (this._pos) this._drawMe(this._pos, this._posAccuracy);
       }
       this._addCarControl(L);
+      // Independent of show_my_location: pointing at a place is the one mode
+      // that is not about where you are, so switching your own dot off must
+      // not take it away.
+      if (this._config.ask_on_map) this._addPickControl(L);
       setTimeout(() => this._map && this._map.invalidateSize(), 200);
     }
 
@@ -1840,6 +1919,153 @@ class TankpriserCard extends HTMLElement {
     this._mapControls = new Controls();
     this._map.addControl(this._mapControls);
   }
+
+  // 📍 "what does it cost over there" — a place you point at, which is neither
+  // where your phone is nor where a car is.
+  //
+  // It is armed rather than always-on, and that is the whole design. A map that
+  // queried on every tap would spend a request on every stray tap and on the
+  // end of every drag, and where the source is queried by area those are real
+  // requests against the user's own key. Arming also gives the gesture a name:
+  // nobody discovers a long-press, but a button that lights up explains itself.
+  _addPickControl(L) {
+    const card = this;
+    const Pick = L.Control.extend({
+      options: { position: "topleft" },
+      onAdd() {
+        const wrap = L.DomUtil.create("div", "leaflet-bar ff-mapctl");
+        const pick = L.DomUtil.create("a", "ff-pick", wrap);
+        pick.href = "#";
+        pick.title = "Vis priser et andet sted";
+        pick.setAttribute("role", "button");
+        pick.setAttribute("aria-label", "Vis priser et andet sted");
+        pick.innerHTML = "📍";
+        L.DomEvent.on(pick, "click", (ev) => {
+          L.DomEvent.stop(ev);
+          card._setPicking(!card._picking);
+        });
+        card._pickEl = pick;
+        L.DomEvent.disableClickPropagation(wrap);
+        card._syncPickButton();
+        return wrap;
+      },
+    });
+    this._pickControl = new Pick();
+    this._map.addControl(this._pickControl);
+
+    this._map.on("click", (ev) => {
+      if (!this._picking || !ev.latlng) return;
+      // One place at a time: disarm immediately, so a second tap pans the map
+      // like it always does instead of quietly spending another request.
+      this._setPicking(false);
+      this._askAt(L, ev.latlng.lat, ev.latlng.lng);
+    });
+  }
+
+  _setPicking(on) {
+    this._picking = !!on;
+    if (this._mapEl) this._mapEl.classList.toggle("ff-picking", this._picking);
+    this._syncPickButton();
+  }
+
+  _syncPickButton() {
+    const el = this._pickEl;
+    if (!el) return;
+    el.classList.toggle("ff-on", !!this._picking);
+    el.title = this._picking
+      ? "Tryk på kortet for at se priser der"
+      : "Vis priser et andet sted";
+  }
+
+  async _askAt(L, lat, lon) {
+    if (this._pickMarker) {
+      this._map.removeLayer(this._pickMarker);
+      this._pickMarker = null;
+    }
+    const marker = L.marker([lat, lon], {
+      icon: L.divIcon({
+        className: "ff-pick-pin",
+        html: '<div class="ff-pick-dot">📍</div>',
+        iconSize: [26, 26],
+        iconAnchor: [13, 24],
+      }),
+      keyboard: false,
+    });
+    marker.addTo(this._map);
+    this._pickMarker = marker;
+    marker.bindPopup('<div class="ff-pick-pop">Henter priser…</div>').openPopup();
+
+    let answer = null;
+    try {
+      const res = await this._hass.callService(
+        "tankpriser",
+        "nearby",
+        { latitude: lat, longitude: lon },
+        undefined,
+        false,
+        true
+      );
+      answer = res && res.response ? res.response : res;
+    } catch (err) {
+      marker.setPopupContent(
+        '<div class="ff-pick-pop">Kunne ikke hente priser her.</div>'
+      );
+      return;
+    }
+    marker.setPopupContent(this._pickPopupHtml(answer));
+  }
+
+  _pickPopupHtml(answer) {
+    const blocks =
+      answer && Array.isArray(answer.countries) && answer.countries.length
+        ? answer.countries
+        : answer
+          ? [answer]
+          : [];
+    const parts = [];
+    for (const block of blocks) {
+      const rows = (block.stations || []).slice(0, 3);
+      if (!rows.length) continue;
+      // One heading per country, and never a comparison between them: two
+      // currencies cannot be ranked against each other without a rate nobody
+      // has. The reader does that sum themselves, which is what they were
+      // going to do anyway.
+      const head =
+        blocks.length > 1 && block.country_name
+          ? `<div class="ff-pick-country">${this._escape(block.country_name)}</div>`
+          : "";
+      const list = rows
+        .map((s) => {
+          // Decimals come from the country block: Germany signs its forecourts
+          // to three and Denmark to two, so one card-wide setting would print a
+          // price that disagrees with the pump on one side of the border.
+          const price =
+            s.price != null
+              ? this._price(s.price, block.unit, block.decimals)
+              : "–";
+          const dist =
+            s.distance_km != null
+              ? `${Number(s.distance_km).toFixed(1).replace(".", ",")} km`
+              : "";
+          return (
+            `<div class="ff-pick-row"><span class="ff-pick-name">` +
+            `${this._escape(s.name || "")}</span>` +
+            `<span class="ff-pick-price">${price}</span>` +
+            `<span class="ff-pick-dist">${this._escape(dist)}</span></div>`
+          );
+        })
+        .join("");
+      parts.push(head + list);
+    }
+    if (!parts.length) {
+      const reach = answer && answer.searched_km ? Math.round(answer.searched_km) : null;
+      return `<div class="ff-pick-pop">${
+        reach ? `Ingen stationer inden for ${reach} km.` : "Ingen stationer her."
+      }</div>`;
+    }
+    return `<div class="ff-pick-pop">${parts.join("")}</div>`;
+  }
+
 
   _recenter() {
     if (!this._map) return;

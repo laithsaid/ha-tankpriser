@@ -188,10 +188,26 @@ const clusterIcons = (card) =>
     recenter: card.querySelectorAll(".ff-recenter").length,
     follow: card.querySelectorAll(".ff-follow").length,
   };
+  ctlOff.pick = card.querySelectorAll(".ff-pick").length;
   console.log("loc off ->", JSON.stringify(ctlOff));
   assert.strictEqual(ctlOff.recenter, 0, "◎ must not exist with show_my_location: false");
   assert.strictEqual(ctlOff.follow, 0, "➤ must not exist with show_my_location: false");
-  assert.strictEqual(ctlOff.bar, 0, "the whole control bar goes with them");
+  // 📍 survives on purpose: pointing at a place is the one map mode that is not
+  // about where you are, so switching your own dot off must not remove it.
+  assert.strictEqual(ctlOff.pick, 1, "📍 is independent of show_my_location");
+
+  // 5b. ...and ask_on_map: false removes it, leaving no bar at all once the
+  //     position buttons are gone too.
+  const noPick = await mount(
+    { [CAR_A]: carState("Passat", 56.16, 10.2, 80) },
+    { ask_on_map: false }
+  );
+  console.log("pick off -> bar:", noPick.querySelectorAll(".ff-mapctl").length);
+  assert.strictEqual(
+    noPick.querySelectorAll(".ff-pick").length,
+    0,
+    "ask_on_map: false removes 📍"
+  );
 
   // 6. …and with it on, both are there.
   card = await mount({ [CAR_A]: carState("Passat", 56.16, 10.2, 80) }, {
@@ -431,6 +447,71 @@ const clusterIcons = (card) =>
     assert.ok(group, "clustering still works with no global L");
     assert.ok(group instanceof priv.MarkerClusterGroup, "and it is a real cluster group");
     console.log("global -> clustering survives handing window.L back");
+  }
+
+  // --- the border shows both sides -----------------------------------------
+  // The service answers a border position with one block per country, because
+  // one ranked list cannot hold two currencies. A card that plotted only the
+  // top-level `stations` drew half the map and stopped at the border.
+  {
+    const card = await mount({});
+    const answer = {
+      fuel_type: "Blyfri 95 (E10)",
+      unit: "kr./L",
+      stations: [
+        { name: "OK Kruså", company: "ok", latitude: 54.84, longitude: 9.40,
+          price: 17.59, distance_km: 4.2, coord_approx: false },
+      ],
+      countries: [
+        {
+          country: "dk", country_name: "Denmark", unit: "kr./L", decimals: 2,
+          fuel_type: "Blyfri 95 (E10)",
+          stations: [
+            { name: "OK Kruså", company: "ok", latitude: 54.84, longitude: 9.40,
+              price: 17.59, distance_km: 4.2, coord_approx: false },
+          ],
+        },
+        {
+          country: "de", country_name: "Germany", unit: "€/L", decimals: 3,
+          fuel_type: "Super E10",
+          stations: [
+            { name: "team Flensburg", company: "team", latitude: 54.78,
+              longitude: 9.43, price: 2.229, distance_km: 9.8,
+              coord_approx: false },
+          ],
+        },
+      ],
+    };
+    const plotted = card._answerStations(answer);
+    assert.strictEqual(plotted.length, 2, "both countries' stations are plotted");
+    const units = plotted.map((s) => s.unit).sort();
+    // Compared as JSON, not with deepStrictEqual: `plotted` is built inside the
+    // jsdom realm, so its Array has a different prototype and a strict deep
+    // compare rejects two arrays whose contents are identical.
+    assert.strictEqual(
+      JSON.stringify(units),
+      JSON.stringify(["kr./L", "€/L"].sort()),
+      "each station keeps its own currency"
+    );
+
+    // An answer from before `countries` existed must still plot.
+    const legacy = card._answerStations({
+      fuel_type: "Blyfri 95 (E10)", unit: "kr./L", stations: answer.stations,
+    });
+    assert.strictEqual(legacy.length, 1, "an answer with no countries still plots");
+
+    // The popup groups by country, prices each in its own decimals, and never
+    // claims one side is cheaper than the other.
+    const html = card._pickPopupHtml(answer);
+    assert.ok(html.includes("Denmark") && html.includes("Germany"),
+      "the popup names both countries");
+    assert.ok(html.includes("17,59"), "Danish price to two decimals");
+    assert.ok(html.includes("2,229"), "German price to three");
+    assert.ok(!/cheap|billig/i.test(html), "no cross-currency comparison");
+
+    const empty = card._pickPopupHtml({ searched_km: 25, countries: [] });
+    assert.ok(/25/.test(empty), "an empty answer says how far it looked");
+    console.log("border -> 2 plotted, both currencies, grouped popup");
   }
 
   console.log("\nmap tests passed");

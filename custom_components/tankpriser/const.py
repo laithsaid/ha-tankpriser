@@ -86,6 +86,16 @@ class Country:
     # wrong the moment a road bends. Where two match, the entry anchored
     # nearer wins, which is the answer the person who configured both wants.
     bbox: tuple[float, float, float, float] | None = None
+    # The country's name inside a Danish sentence ("i Tyskland"). `name` is what
+    # the UI shows and is English; this exists only for the spoken answer, which
+    # is the one place a country is ever said out loud — and only once a second
+    # country is in reach, because until then nothing needs naming. Empty falls
+    # back to `name`, so a new country works without it.
+    name_da: str = ""
+
+    def spoken_name(self, danish: bool) -> str:
+        """What to call this country in a spoken answer."""
+        return (self.name_da or self.name) if danish else self.name
 
     def contains(self, latitude: float, longitude: float) -> bool:
         """Whether a position falls inside this country's box."""
@@ -106,6 +116,7 @@ COUNTRIES: Final[dict[str, Country]] = {
             2,
             "øre",
             bbox=(54.4, 7.7, 57.9, 15.3),
+            name_da="Danmark",
         ),
         Country(
             COUNTRY_DE,
@@ -120,6 +131,7 @@ COUNTRIES: Final[dict[str, Country]] = {
                 "diesel": "Diesel",
             },
             bbox=(47.2, 5.8, 55.1, 15.1),
+            name_da="Tyskland",
         ),
     )
 }
@@ -495,6 +507,23 @@ SIMULATION_ENTITY: Final = "device_tracker.tankpriser_sim"
 DEFAULT_SIMULATION_INTERVAL_S: Final = 60.0
 MIN_SIMULATION_INTERVAL_S: Final = 15.0
 DEFAULT_SIMULATION_SPEED_KMH: Final = 110.0
+# Simulated seconds per real second. 1 is a drive you have to sit through in
+# real time: an hour of waiting to watch a car cover 135 km, which is why
+# nobody ever ran the long routes. At 60, one real minute is a simulated hour.
+#
+# It moves the CAR, not the clock the car reports: `speed_kmh` is still written
+# to the tracker unchanged, because that is what the motion inference reads and
+# a corridor planned for 7800 km/h would be nonsense. Only the distance
+# advanced per tick is multiplied.
+DEFAULT_SIMULATION_TIME_SCALE: Final = 1.0
+MAX_SIMULATION_TIME_SCALE: Final = 600.0
+# Compressing time multiplies the position writes, which are free, and would
+# equally multiply the announcements, which are not: each one is a real
+# `nearby` call, and in a country queried by area that is a handful of requests
+# against the user's own API key. So announcements are leashed to REAL seconds
+# and simply skipped on ticks that arrive sooner — the drive stays fast, the
+# request rate does not follow it.
+MIN_ANNOUNCE_INTERVAL_S: Final = 30.0
 
 # Routes worth driving, as waypoints. Straight lines between them, so add one
 # wherever a road genuinely bends. Named so a test is one service call rather

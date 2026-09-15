@@ -26,7 +26,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import geo, geocode
-from .nearby import country_for_position
+from .nearby import countries_for_position, country_for_position
 from .const import (
     country_of,
     BASELINE_SAVE_DELAY,
@@ -141,9 +141,31 @@ def entry_for_position(
     if latitude is None or longitude is None:
         return entries[0]
 
+    found = entries_for_position(hass, latitude, longitude)
+    return found[0] if found else None
+
+
+def entries_for_position(
+    hass: HomeAssistant,
+    latitude: float | None = None,
+    longitude: float | None = None,
+) -> list[ConfigEntry]:
+    """Every entry in reach of a position, the one that answers first.
+
+    Near a border more than one country is genuinely in reach, and a caller
+    that wants to *show* what is around — the map, the price list — wants all
+    of them. A caller that has to name one thing takes the first, which is what
+    `entry_for_position` does, so the two orderings can never drift apart.
+    """
+    entries = list(hass.config_entries.async_entries(DOMAIN))
+    if not entries:
+        return []
+    if latitude is None or longitude is None:
+        return entries[:1]
+
     # The rule itself is pure and lives in nearby.py, where it is tested
     # without Home Assistant; this only shapes the entries for it.
-    return country_for_position(
+    return countries_for_position(
         [
             (
                 entry,

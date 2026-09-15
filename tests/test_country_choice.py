@@ -191,6 +191,125 @@ check(
     entry_for_position(reversed_hass, *HAMBURG) is german,
 )
 
+
+# --- both sides of the border at once --------------------------------------
+# Picking ONE country is right for a sentence and wrong for a map. Standing at
+# Kruså, a 25 km circle holds Danish and German forecourts alike, and showing
+# half of them is showing the wrong map.
+def entries_for_position(hass, latitude=None, longitude=None):
+    entries = list(hass.config_entries.async_entries(const.DOMAIN))
+    if not entries:
+        return []
+    if latitude is None or longitude is None:
+        return entries[:1]
+    return nearby.countries_for_position(
+        [
+            (
+                entry,
+                const.country_of(
+                    str(entry.data.get(const.CONF_COUNTRY, const.DEFAULT_COUNTRY))
+                ),
+                _anchor_of(hass, entry),
+            )
+            for entry in entries
+        ],
+        latitude,
+        longitude,
+    )
+
+
+print("\nboth countries in reach")
+both = entries_for_position(hass, *KRUSAA)
+check("Kruså reaches both countries", len(both) == 2, [e.entry_id for e in both])
+check(
+    "and the nearer anchor leads, so the spoken answer is unchanged",
+    both[0] is entry_for_position(hass, *KRUSAA),
+    both[0].entry_id,
+)
+deep_dk = entries_for_position(hass, *COPENHAGEN)
+check(
+    "Copenhagen reaches Denmark only",
+    len(deep_dk) == 1 and deep_dk[0] is danish,
+    [e.entry_id for e in deep_dk],
+)
+deep_de = entries_for_position(hass, *MUNICH)
+check(
+    "Munich reaches Germany only",
+    len(deep_de) == 1 and deep_de[0] is german,
+    [e.entry_id for e in deep_de],
+)
+nowhere = entries_for_position(hass, *MID_ATLANTIC)
+check(
+    "somewhere no country claims still falls back to one entry",
+    len(nowhere) == 1,
+    [e.entry_id for e in nowhere],
+)
+check(
+    "the single answer is always the head of the list",
+    all(
+        entries_for_position(hass, *where)[0] is entry_for_position(hass, *where)
+        for where in (SILKEBORG, FLENSBURG, HAMBURG, KRUSAA, COPENHAGEN, MUNICH)
+    ),
+)
+
+print("\nsaying both without comparing them")
+dk_ranked = [{"name": "OK Kruså", "price": 17.59, "distance_km": 4.2}]
+de_ranked = [{"name": "team Flensburg", "price": 2.229, "distance_km": 9.8}]
+sentence = nearby.spoken_by_country(
+    [
+        {"name": "Denmark", "ranked": dk_ranked, "currency": "kroner"},
+        {"name": "Germany", "ranked": de_ranked, "currency": "euro"},
+    ],
+    danish=False,
+)
+check("it names both countries", "Denmark" in sentence and "Germany" in sentence, sentence)
+check("with each price in its own currency",
+      "kroner" in sentence and "euro" in sentence, sentence)
+check(
+    "and never claims one is cheaper than the other",
+    "cheaper" not in sentence and "billigere" not in sentence,
+    sentence,
+)
+quiet_side = nearby.spoken_by_country(
+    [
+        {"name": "Denmark", "ranked": dk_ranked, "currency": "kroner"},
+        {"name": "Germany", "ranked": [], "currency": "euro"},
+    ],
+    danish=False,
+)
+check(
+    "a country with nothing to show is left out rather than announced",
+    "Germany" not in quiet_side and "Denmark" in quiet_side,
+    quiet_side,
+)
+empty_everywhere = nearby.spoken_by_country(
+    [
+        {"name": "Denmark", "ranked": [], "currency": "kroner"},
+        {"name": "Germany", "ranked": [], "currency": "euro"},
+    ],
+    danish=False,
+    searched_km=25,
+)
+check(
+    "nothing anywhere says so, and names the range it covered",
+    "no stations" in empty_everywhere.lower() and "25" in empty_everywhere,
+    empty_everywhere,
+)
+danish_sentence = nearby.spoken_by_country(
+    [
+        {"name": const.country_of("dk").spoken_name(True), "ranked": dk_ranked,
+         "currency": "kroner"},
+        {"name": const.country_of("de").spoken_name(True), "ranked": de_ranked,
+         "currency": "euro"},
+    ],
+    danish=True,
+)
+check(
+    "Danish says Danmark and Tyskland, not Denmark and Germany",
+    "Danmark" in danish_sentence and "Tyskland" in danish_sentence,
+    danish_sentence,
+)
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} country-choice checks FAILED")

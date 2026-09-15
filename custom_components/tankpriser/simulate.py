@@ -27,7 +27,12 @@ from dataclasses import dataclass
 
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, EVENT_SIMULATION_STEP, SIMULATION_DATA_KEY
+from .const import (
+    DOMAIN,
+    EVENT_SIMULATION_STEP,
+    MIN_ANNOUNCE_INTERVAL_S,
+    SIMULATION_DATA_KEY,
+)
 from .nearby import destination, haversine_m, initial_bearing
 
 _LOGGER = logging.getLogger(__name__)
@@ -90,12 +95,17 @@ class DriveSimulation:
         announce: bool,
         loop: bool,
         fuel: str | None,
+        time_scale: float = 1.0,
     ) -> None:
         self.hass = hass
         self.entity_id = entity_id
         self.legs = build_legs(points)
         self.speed_kmh = speed_kmh
         self.interval_s = interval_s
+        self.time_scale = max(1.0, float(time_scale))
+        # Real monotonic time of the last announcement, so the leash below is
+        # about the wall clock rather than about how many ticks have gone by.
+        self._last_announce: float | None = None
         self.announce = announce
         self.loop = loop
         self.fuel = fuel
@@ -104,8 +114,19 @@ class DriveSimulation:
         self._task: asyncio.Task | None = None
 
     @property
+    def simulated_step_s(self) -> float:
+        """Seconds of driving each tick represents."""
+        return self.interval_s * self.time_scale
+
+    @property
     def step_km(self) -> float:
-        return self.speed_kmh * self.interval_s / 3600.0
+        """How far the car moves per tick.
+
+        Distance follows the SIMULATED clock, so a time scale of 60 covers an
+        hour of road in a minute of waiting. The speed written to the tracker
+        is untouched — see DEFAULT_SIMULATION_TIME_SCALE.
+        """
+        return self.speed_kmh * self.simulated_step_s / 3600.0
 
     @property
     def steps(self) -> int:
@@ -139,11 +160,13 @@ class DriveSimulation:
     async def _run(self) -> None:
         _LOGGER.info(
             "Tankpriser simulation: %s driving %.0f km at %.0f km/h, a step every "
-            "%.0fs (%d steps). %s",
+            "%.0fs real (%.0fx time, %.1f km a step, %d steps). %s",
             self.entity_id,
             self.total_km,
             self.speed_kmh,
             self.interval_s,
+            self.time_scale,
+            self.step_km,
             self.steps,
             (
                 "Each step asks for an answer, which for a source that is "
@@ -158,7 +181,7 @@ class DriveSimulation:
                     self.legs, self.travelled_km
                 )
                 self._write(latitude, longitude, bearing, self.speed_kmh)
-                if self.announce:
+                if self.announce and self._announce_is_due():
                     await self._announce(latitude, longitude)
                 self.hass.bus.async_fire(
                     EVENT_SIMULATION_STEP,
@@ -223,6 +246,23 @@ class DriveSimulation:
                 "updated_at": time.time(),
             },
         )
+
+    def _announce_is_due(self) -> bool:
+        """Whether enough REAL time has passed to spend another answer.
+
+        Without this, `time_scale` would multiply the request rate by exactly
+        the factor that makes the drive watchable: 60x faster is 60x the calls
+        against a key that is the user's own and revocable. The first tick
+        always announces, so a short drive still says something.
+        """
+        now = time.monotonic()
+        if (
+            self._last_announce is not None
+            and now - self._last_announce < MIN_ANNOUNCE_INTERVAL_S
+        ):
+            return False
+        self._last_announce = now
+        return True
 
     async def _announce(self, latitude: float, longitude: float) -> None:
         """Ask the real service what it would say from here, and log it."""

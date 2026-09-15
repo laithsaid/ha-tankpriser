@@ -216,6 +216,24 @@ simulate_drive:
           max: 3600
           unit_of_measurement: s
           mode: box
+    time_scale:
+      name: Speed up the simulation
+      description: >-
+        How many seconds of driving each real second covers. 1 drives in real
+        time, so 135 km at 110 km/h takes the hour it would really take. 60
+        turns one real minute into a simulated hour. The car still reports its
+        real speed, so the corridor search is planned for the speed you set —
+        only the waiting is compressed. Announcements stay limited to one every
+        30 real seconds however fast the car moves, so speeding up the drive
+        does not multiply the requests against your API key.
+      required: false
+      default: 1
+      example: 60
+      selector:
+        number:
+          min: 1
+          max: 600
+          mode: box
     tracker:
       name: Tracker entity
       description: >-

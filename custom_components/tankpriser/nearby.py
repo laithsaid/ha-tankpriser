@@ -391,6 +391,54 @@ def spoken_cheapest(
     )
 
 
+def spoken_by_country(
+    groups: list[dict],
+    danish: bool,
+    searched_km: float | None = None,
+) -> str:
+    """The cheapest in each country in reach, named, and deliberately not ranked.
+
+    `groups` are `{"name": str, "ranked": list, "currency": str}`, richest
+    country first as `countries_for_position` ordered them.
+
+    **Nothing here compares across the border, on purpose.** 17,59 kr/L and
+    2,23 €/L cannot be ordered without an exchange rate, and inventing one to
+    be able to say "the cheapest" would answer a question the prices alone
+    cannot answer — at a rate that goes stale the day it is written down. So
+    each country gets its own cheapest, said plainly, and the driver does the
+    sum they were going to do in their head anyway.
+
+    A country in reach with nothing to show is skipped rather than announced:
+    "nothing in Germany" is noise when Denmark just named a station 4 km away.
+    If no country has anything, the caller's single-country wording says so —
+    that is the one case where the searched range must be spoken.
+    """
+    parts = []
+    for group in groups:
+        ranked = group.get("ranked") or []
+        if not ranked:
+            continue
+        best = ranked[0]
+        price = _number(best["price"], danish)
+        distance = _number(best["distance_km"], danish, 1)
+        place = _spoken_place(best)
+        name = group.get("name") or ""
+        currency = group.get("currency") or ""
+        if danish:
+            parts.append(
+                f"I {name} er billigste {place}, {price} {currency}, "
+                f"{distance} kilometer væk."
+            )
+        else:
+            parts.append(
+                f"In {name} the cheapest is {place}, {price} {currency}, "
+                f"{distance} kilometres away."
+            )
+    if not parts:
+        return _nothing_found(danish, searched_km)
+    return " ".join(parts)
+
+
 def spoken_sentence(
     ranked: list[dict],
     danish: bool,
@@ -447,12 +495,45 @@ def spoken_sentence(
     return " ".join(lines)
 
 
+def countries_for_position(
+    candidates: list[tuple[object, object, tuple[float, float] | None]],
+    latitude: float,
+    longitude: float,
+) -> list[object]:
+    """Every configured country in reach of a position, nearest anchor first.
+
+    `country_for_position` answers "which ONE country", which is what a spoken
+    sentence and a single ranked list need. Standing near a border that is the
+    wrong question: a 25 km circle north of Flensburg holds Danish and German
+    forecourts alike, and showing one half of them is showing the wrong map.
+
+    So this returns every box that matches, ordered exactly the way the single
+    answer picks its winner — the two share this function, so they can never
+    disagree about which country is the primary one.
+    """
+    if not candidates:
+        return []
+    matches = [item for item in candidates if item[1].contains(latitude, longitude)]
+    if not matches:
+        # Somewhere no configured country claims: the first setup answers, which
+        # keeps a single-country install behaving exactly as it always did.
+        return [candidates[0][0]]
+
+    def _to_anchor(item) -> float:
+        anchor = item[2]
+        if anchor is None:
+            return float("inf")
+        return haversine_m(latitude, longitude, anchor[0], anchor[1])
+
+    return [item[0] for item in sorted(matches, key=_to_anchor)]
+
+
 def country_for_position(
     candidates: list[tuple[object, object, tuple[float, float] | None]],
     latitude: float,
     longitude: float,
 ) -> object | None:
-    """Which of several configured countries answers for a position.
+    """Which single country answers for a position.
 
     `candidates` are `(handle, Country, anchor)`, in configuration order;
     `handle` is whatever the caller wants back — a config entry, a code — and
@@ -464,21 +545,7 @@ def country_for_position(
     and said there was nothing within 15 km. Boxes overlap along a shared
     border on purpose — a box tight enough to split Flensburg from Kruså would
     be wrong the moment a road bends — so where two match, the nearer anchor
-    wins. Somewhere no configured country claims, the first setup answers,
-    which keeps a single-country install behaving exactly as it always did.
+    wins. Somewhere no configured country claims, the first setup answers.
     """
-    if not candidates:
-        return None
-    matches = [item for item in candidates if item[1].contains(latitude, longitude)]
-    if not matches:
-        return candidates[0][0]
-    if len(matches) == 1:
-        return matches[0][0]
-
-    def _to_anchor(item) -> float:
-        anchor = item[2]
-        if anchor is None:
-            return float("inf")
-        return haversine_m(latitude, longitude, anchor[0], anchor[1])
-
-    return min(matches, key=_to_anchor)[0]
+    found = countries_for_position(candidates, latitude, longitude)
+    return found[0] if found else None

@@ -48,11 +48,16 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_COUNTRY,
     CONF_FUEL_TYPES,
+    DEFAULT_COUNTRY,
+    country_of,
     MAPS_URLS,
     CONF_NEARBY_TRACKER,
     DEFAULT_SIMULATION_INTERVAL_S,
     DEFAULT_SIMULATION_SPEED_KMH,
+    DEFAULT_SIMULATION_TIME_SCALE,
+    MAX_SIMULATION_TIME_SCALE,
     MIN_SIMULATION_INTERVAL_S,
     SIMULATION_ENTITY,
     SIMULATION_ROUTES,
@@ -64,6 +69,7 @@ from .const import (
     DOMAIN,
     FUEL_TYPES,
     fuel_label,
+    price_decimals,
     price_unit,
     spoken_currency,
     NEARBY_MAX_STATIONS,
@@ -74,6 +80,7 @@ from .coordinator import (
     async_station_pool,
     credentials_of,
     discounts_of,
+    entries_for_position,
     entry_coordinator,
     entry_for_position,
     pool_target,
@@ -85,6 +92,7 @@ from .nearby import (
     search_plan,
     searched_km,
     should_extend,
+    spoken_by_country,
     spoken_cheapest,
     spoken_sentence,
 )
@@ -110,6 +118,7 @@ ATTR_INTERVAL = "interval"
 ATTR_TRACKER = "tracker"
 ATTR_ANNOUNCE = "announce"
 ATTR_LOOP = "loop"
+ATTR_TIME_SCALE = "time_scale"
 
 ATTR_DROP_ORE = "drop_ore"
 
@@ -158,6 +167,9 @@ _SIMULATE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_INTERVAL, default=DEFAULT_SIMULATION_INTERVAL_S): vol.All(
             vol.Coerce(float), vol.Range(min=MIN_SIMULATION_INTERVAL_S, max=3600)
         ),
+        vol.Optional(
+            ATTR_TIME_SCALE, default=DEFAULT_SIMULATION_TIME_SCALE
+        ): vol.All(vol.Coerce(float), vol.Range(min=1, max=MAX_SIMULATION_TIME_SCALE)),
         vol.Optional(ATTR_TRACKER): cv.entity_id,
         vol.Optional(ATTR_ANNOUNCE, default=True): cv.boolean,
         vol.Optional(ATTR_LOOP, default=False): cv.boolean,
@@ -325,6 +337,28 @@ def _step_out(latitude, longitude, motion, circle_km: float, index: int):
     return destination(latitude, longitude, motion.course_deg or 0.0, offset)
 
 
+def _country_of_entry(entry) -> str:
+    """The country code an entry covers, defaulting for a caller with none."""
+    if entry is None:
+        return DEFAULT_COUNTRY
+    return str(entry.data.get(CONF_COUNTRY, DEFAULT_COUNTRY)).lower()
+
+
+def _urls_for(listed: list[dict], template: str) -> list[str]:
+    """Navigation links, index-aligned with the stations they belong to.
+
+    An estimated position gets an empty string rather than being skipped:
+    dropping it would silently shift every station after it up one, and
+    navigate you to the wrong forecourt.
+    """
+    return [
+        ""
+        if station["coord_approx"]
+        else template.format(lat=station["latitude"], lon=station["longitude"])
+        for station in listed
+    ]
+
+
 async def _pool_for(
     hass: HomeAssistant, country: str, centres: list, circle_km: float
 ) -> list:
@@ -429,53 +463,107 @@ def async_register_services(hass: HomeAssistant) -> None:
         latitude = call.data[ATTR_LATITUDE]
         longitude = call.data[ATTR_LONGITUDE]
 
-        # Where the caller is decides which country answers, so the position
-        # has to be read before anything is defaulted from an entry.
-        entry = entry_for_position(hass, latitude, longitude)
-        fuel = call.data.get(ATTR_FUEL) or _default_fuel(hass, entry)
+        # Where the caller is decides which countries answer, so the position
+        # has to be read before anything is defaulted from an entry. Near a
+        # border more than one is genuinely in reach; the first is the one the
+        # single-country fields below describe.
+        entries = entries_for_position(hass, latitude, longitude)
+        primary = entries[0] if entries else None
+        fuel = call.data.get(ATTR_FUEL) or _default_fuel(hass, primary)
         if fuel is None:
             raise HomeAssistantError(
                 "No fuel given, and no Tankpriser area is configured to take a "
                 "default from."
             )
 
-        country, _ = pool_target(hass, latitude, longitude)
+        # Motion is a fact about the car, not about a country: inferred once,
+        # from the entry that answers, and then used to shape every search.
+        # Inferring it per country would let the same car be parked in Denmark
+        # and driving in Germany inside one answer.
         coordinator = entry_coordinator(hass, latitude, longitude)
-        # The shape of the search is inferred, never asked for: at 110 km/h
-        # nobody says a radius, and the right answer is not a bigger circle but
-        # a corridor along the road ahead.
         motion = _motion(hass, coordinator, latitude, longitude)
-        circle_km = _circle_km(country, call.data[ATTR_RADIUS_KM])
-        centres = search_plan(latitude, longitude, motion, circle_km)
-        reach_km = searched_km(latitude, longitude, centres, circle_km)
 
-        stations = await _pool_for(hass, country, centres, circle_km)
-        ranked = _rank(stations, latitude, longitude, reach_km, fuel, motion)
+        language = str(getattr(hass.config, "language", "") or "")
+        danish = language.lower().startswith("da")
+        template = _MAPS_URL[call.data[ATTR_MAPS]]
 
-        # The cheapest sitting out at the rim suggests the good prices carry on
-        # past it, and one more circle is the only way to find out. Affordable:
-        # the source answers a burst of these in a few seconds.
-        if motion.moving and should_extend(ranked, reach_km):
-            centres = centres + [
-                _step_out(latitude, longitude, motion, circle_km, len(centres))
-            ]
+        groups = []
+        for entry in entries or [None]:
+            country = _country_of_entry(entry)
+            # The shape of the search is inferred, never asked for: at 110 km/h
+            # nobody says a radius, and the right answer is not a bigger circle
+            # but a corridor along the road ahead.
+            circle_km = _circle_km(country, call.data[ATTR_RADIUS_KM])
+            centres = search_plan(latitude, longitude, motion, circle_km)
             reach_km = searched_km(latitude, longitude, centres, circle_km)
             stations = await _pool_for(hass, country, centres, circle_km)
             ranked = _rank(stations, latitude, longitude, reach_km, fuel, motion)
-        language = str(getattr(hass.config, "language", "") or "")
-        danish = language.lower().startswith("da")
+
+            # The cheapest sitting out at the rim suggests the good prices carry
+            # on past it, and one more circle is the only way to find out.
+            # Affordable: the source answers a burst of these in a few seconds.
+            if motion.moving and should_extend(ranked, reach_km):
+                centres = centres + [
+                    _step_out(latitude, longitude, motion, circle_km, len(centres))
+                ]
+                reach_km = searched_km(latitude, longitude, centres, circle_km)
+                stations = await _pool_for(hass, country, centres, circle_km)
+                ranked = _rank(stations, latitude, longitude, reach_km, fuel, motion)
+
+            groups.append(
+                {
+                    "country": country,
+                    "circles": len(centres),
+                    "searched_km": reach_km,
+                    "ranked": ranked,
+                }
+            )
+
+        # Which group the single-country fields describe. Normally the first,
+        # but a border ask where only the far side has anything must not report
+        # the near side's emptiness: "nothing within 25 kilometres" while a
+        # German forecourt sits 6 km away is the worst kind of wrong answer.
+        filled = [group for group in groups if group["ranked"]]
+        lead = filled[0] if filled else groups[0]
+        lead_country = lead["country"]
+        ranked = lead["ranked"]
+        reach_km = lead["searched_km"]
         listed = ranked[:NEARBY_MAX_STATIONS]
-        template = _MAPS_URL[call.data[ATTR_MAPS]]
+
+        # Two countries in reach and both with something to show is the only
+        # case that needs them named; one country keeps the exact wording the
+        # documented Shortcut has always spoken.
+        if len(filled) > 1:
+            spoken_one = spoken_by_country(
+                [
+                    {
+                        "name": country_of(group["country"]).spoken_name(danish),
+                        "ranked": group["ranked"],
+                        "currency": spoken_currency(group["country"]),
+                    }
+                    for group in groups
+                ],
+                danish=danish,
+                searched_km=reach_km,
+            )
+        else:
+            spoken_one = spoken_cheapest(
+                ranked,
+                danish=danish,
+                currency=spoken_currency(lead_country),
+                searched_km=reach_km,
+            )
+
         return {
             "fuel": fuel,
-            "country": country,
-            "fuel_type": fuel_label(fuel, country),
-            "unit": price_unit(country),
+            "country": lead_country,
+            "fuel_type": fuel_label(fuel, lead_country),
+            "unit": price_unit(lead_country),
             # What was actually searched, so an answer of "nothing" can be
             # told apart from "nothing was looked at", and so a Shortcut can
             # say the range out loud without knowing how it was chosen.
             "searched_km": reach_km,
-            "circles": len(centres),
+            "circles": lead["circles"],
             "moving": motion.moving,
             "speed_kmh": round(motion.speed_kmh, 1),
             "course_deg": (
@@ -486,16 +574,11 @@ def async_register_services(hass: HomeAssistant) -> None:
             # reads as "there are only 8 stations near you", which is never true.
             "count": len(ranked),
             # One station, said plainly — what the documented shortcut speaks.
-            "spoken_cheapest": spoken_cheapest(
-                ranked,
-                danish=danish,
-                currency=spoken_currency(country),
-                searched_km=reach_km,
-            ),
+            "spoken_cheapest": spoken_one,
             "spoken": spoken_sentence(
                 ranked,
                 danish=danish,
-                currency=spoken_currency(country),
+                currency=spoken_currency(lead_country),
                 searched_km=reach_km,
             ),
             "spoken_count": min(len(ranked), SPOKEN_STATIONS),
@@ -504,11 +587,30 @@ def async_register_services(hass: HomeAssistant) -> None:
             # urls[3] in a Shortcut. An estimated position gets an empty string
             # rather than being skipped: dropping it would silently shift every
             # station after it up one, and navigate you to the wrong forecourt.
-            "urls": [
-                ""
-                if s["coord_approx"]
-                else template.format(lat=s["latitude"], lon=s["longitude"])
-                for s in listed
+            "urls": _urls_for(listed, template),
+            # Everything in reach, one block per country, the one the fields
+            # above describe first. The top level stays single-country on
+            # purpose: a Shortcut reading `urls[0]` must keep getting a station
+            # priced in the currency `unit` just named, and prices in two
+            # currencies cannot share one ranked list. Callers that want to
+            # *show* the border — the map, the price list — read this instead.
+            "countries": [
+                {
+                    "country": group["country"],
+                    "country_name": country_of(group["country"]).spoken_name(danish),
+                    "fuel_type": fuel_label(fuel, group["country"]),
+                    "unit": price_unit(group["country"]),
+                    # Germany signs to three decimals and Denmark to
+                    # two, so a card showing both needs the figure
+                    # per country rather than one card-wide setting.
+                    "decimals": price_decimals(group["country"]),
+                    "searched_km": group["searched_km"],
+                    "circles": group["circles"],
+                    "count": len(group["ranked"]),
+                    "stations": group["ranked"][:NEARBY_MAX_STATIONS],
+                    "urls": _urls_for(group["ranked"][:NEARBY_MAX_STATIONS], template),
+                }
+                for group in groups
             ],
         }
 
@@ -540,6 +642,7 @@ def async_register_services(hass: HomeAssistant) -> None:
             call.data[ATTR_ANNOUNCE],
             call.data[ATTR_LOOP],
             call.data.get(ATTR_FUEL),
+            call.data[ATTR_TIME_SCALE],
         )
         simulation.start()
         _warn_if_tracker_is_not_the_one_watched(hass, entity_id)

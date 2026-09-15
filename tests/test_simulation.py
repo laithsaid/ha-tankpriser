@@ -144,7 +144,9 @@ def test_the_distance_covered_per_step() -> None:
     class Fake:
         speed_kmh = 110.0
         interval_s = 60.0
+        time_scale = 1.0
         total_km = total
+        simulated_step_s = sim.DriveSimulation.simulated_step_s
         step_km = sim.DriveSimulation.step_km
         steps = sim.DriveSimulation.steps
 
@@ -157,6 +159,72 @@ def test_the_distance_covered_per_step() -> None:
         walked * Fake.step_km.fget(fake) >= total,
         (walked, round(total)),
     )
+
+
+def test_time_scale_compresses_the_waiting_not_the_car() -> None:
+    print("a faster simulation still drives at the speed you set")
+    legs = sim.build_legs(ROUTE)
+    total = sum(leg.length_km for leg in legs)
+
+    class Fast:
+        speed_kmh = 110.0
+        interval_s = 60.0
+        time_scale = 60.0          # one real minute per simulated hour
+        total_km = total
+        simulated_step_s = sim.DriveSimulation.simulated_step_s
+        step_km = sim.DriveSimulation.step_km
+        steps = sim.DriveSimulation.steps
+
+    fast = Fast()
+    # Each tick is still 60 real seconds of waiting, but covers 60 minutes of
+    # road: 110 km rather than 1.83.
+    check(
+        "a tick covers an hour of driving",
+        abs(Fast.simulated_step_s.fget(fast) - 3600.0) < 0.001,
+        Fast.simulated_step_s.fget(fast),
+    )
+    check(
+        "so the car moves a whole hour's distance per tick",
+        abs(Fast.step_km.fget(fast) - 110.0) < 0.001,
+        Fast.step_km.fget(fast),
+    )
+    # The point of the whole feature: far fewer ticks to sit through.
+    class Real(Fast):
+        time_scale = 1.0
+
+    slow_steps = Fast.steps.fget(Real())
+    fast_steps = Fast.steps.fget(fast)
+    check(
+        "and the same route takes 60x fewer ticks to watch",
+        fast_steps * 60 <= slow_steps + 60,
+        (slow_steps, fast_steps),
+    )
+    check(
+        "the reported speed is untouched, so the corridor is planned for 110",
+        fast.speed_kmh == 110.0,
+        fast.speed_kmh,
+    )
+
+
+def test_announcements_are_leashed_to_real_time() -> None:
+    print("speeding the drive up must not speed the API calls up")
+    const = sys.modules["tp.const"]
+
+    class Ticker:
+        _last_announce = None
+        _announce_is_due = sim.DriveSimulation._announce_is_due
+
+    ticker = Ticker()
+    check("the first tick always answers", ticker._announce_is_due(), True)
+    check(
+        "a tick straight after does not",
+        not ticker._announce_is_due(),
+        False,
+    )
+    # Pretend the leash has run out.
+    ticker._last_announce -= const.MIN_ANNOUNCE_INTERVAL_S + 1
+    check("once enough real time has passed, it answers again",
+          ticker._announce_is_due(), True)
 
 
 def test_the_shipped_routes_are_sane() -> None:
@@ -181,6 +249,8 @@ if __name__ == "__main__":
     test_the_route_becomes_legs()
     test_where_the_car_is_after_driving()
     test_the_distance_covered_per_step()
+    test_time_scale_compresses_the_waiting_not_the_car()
+    test_announcements_are_leashed_to_real_time()
     test_the_shipped_routes_are_sane()
     print()
     if FAILURES:

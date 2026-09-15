@@ -184,6 +184,18 @@ when the chain last changed them.
 - **`area`** — restrict the map to the same Home location + radius the sensors
   use, so the map and the price table below it always agree.
 
+**📍 asks about a place that is neither you nor a car.** Tap the pin button
+under the zoom controls and it lights up; the next tap on the map asks what fuel
+costs *there* and answers in a bubble on the spot — the cheapest few, with price
+and distance, grouped by country if the point is near a border. Useful before a
+trip, or to see what a town you are heading for is charging.
+
+It is armed by the button rather than fired by any tap, on purpose: where a
+source is queried by area (Germany) every ask is a real request against your own
+API key, and a map that queried on every stray tap and the end of every drag
+would spend them freely. One tap, one answer, then it disarms itself. Turn the
+button off entirely with `ask_on_map: false`.
+
 Leaflet and all chain icons are served by Home Assistant itself, so the map
 works on a LAN with no internet. The one exception is the **background tiles**,
 which your browser fetches from OpenStreetMap in both themes — see
@@ -459,10 +471,27 @@ you, as any map should.
 Germany are two entries, and `tankpriser.nearby` picks the one whose country
 your position falls in — so the same Siri shortcut says Danish kroner at home
 and euro on the Autobahn, with no second shortcut and nothing to switch. Near
-the border the two overlap, and the entry anchored nearer wins: with a German
-entry anchored on Flensburg, asking in Kruså gives you the German prices you
-crossed the border for. Background sensors are unaffected either way — each
-entry keeps watching its own area.
+the border the two overlap, and the entry anchored nearer leads. Background
+sensors are unaffected either way — each entry keeps watching its own area.
+
+**Near a border you get both sides at once.** A 25 km circle at Kruså genuinely
+holds Danish and German forecourts, so the answer carries a block per country:
+the map plots both, and the spoken answer names each country's own cheapest —
+
+> In Denmark the cheapest is OK Kruså, 17,59 kroner, 4,2 kilometres away. In
+> Germany the cheapest is team Flensburg, 2,23 euro, 9,8 kilometres away.
+
+**It never says which of the two is cheaper, and that is deliberate.** 17,59
+kr/L and 2,23 €/L cannot be ordered without an exchange rate, and a rate baked
+into the integration would be wrong the week after it was written. Each price is
+shown in its own currency, to its own country's decimals — Germany signs its
+forecourts to three, Denmark to two — and the comparison is left to you, which
+is the sum you were going to do in your head anyway.
+
+Only the country you are standing in feeds the single-station fields a Shortcut
+reads (`spoken_cheapest` still speaks both, but `stations` and `urls` stay one
+country), so an existing shortcut keeps navigating to a station priced in the
+currency it just named.
 
 ### 15. Testing the driving features without driving
 
@@ -664,6 +693,7 @@ entities:
 | `show_distance` | `true` | How far away each station is, above its price. Measured from your live position when the map is tracking it, otherwise from Home — the header says which |
 | `sort` | `price` | `price` = cheapest first; `distance` = nearest first |
 | `show_my_location` | `true` | Live GPS dot and the ◎ / ➤ buttons. `false` removes all three and never asks for your location |
+| `ask_on_map` | `true` | The 📍 button: arm it, then tap the map to see prices at that point. Independent of `show_my_location` — it is not about where *you* are |
 | `follow_me` | `false` | Start with follow-me armed |
 | `follow_tracker` | — | A tracker to follow: the map centres on it and plots the stations fetched around it as it moves. Costs one search per refresh, throttled to a minute / 5 km; a parked car costs nothing |
 | `show_cars` | `true` | Plot your configured cars on the map |
@@ -1307,8 +1337,20 @@ data:
   route: de_north_south     # Flensburg to Munich, ~830 km
   speed_kmh: 130
   interval: 60              # real seconds between steps
+  time_scale: 60            # 60 s of driving per real second
   announce: true            # ask, and log what would be said
 ```
+
+**`time_scale` is what makes a long route watchable.** At `1` the car drives in
+real time, so 135 km at 130 km/h takes the hour it would really take — which is
+why nobody ever ran the long routes. At `60`, one real minute covers a simulated
+hour, and Flensburg to Munich takes about six minutes instead of six hours.
+
+The car still *reports* the speed you set, so the corridor is planned for
+130 km/h and not for the compressed figure — only the waiting is squeezed.
+Announcements stay limited to one every 30 real seconds however fast the car
+moves, so speeding the drive up does not multiply the requests against your API
+key.
 
 Watch it in *Settings → System → Logs* (set `custom_components.tankpriser` to
 info), where every step prints the position, the sentence, how many circles were
