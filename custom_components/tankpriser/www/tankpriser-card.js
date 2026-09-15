@@ -430,6 +430,50 @@ function _releaseGlobal() {
   else delete window.L;
 }
 
+// A <script> tag gets its integrity checked by the browser. We fetch the
+// cluster plugin instead (see _loadClusterPlugin), so the same guarantee has
+// to be made here or the CDN fallback would be trusted blindly.
+async function _verifyIntegrity(src, bytes) {
+  const expected = _sriFor(src);
+  if (!expected) return; // same-origin vendor copy, nothing to compare against
+  const [algo, want] = expected.split("-");
+  const name = { sha256: "SHA-256", sha384: "SHA-384", sha512: "SHA-512" }[algo];
+  if (!name) throw new Error("integrity " + src);
+  const digest = await crypto.subtle.digest(name, bytes);
+  const got = btoa(String.fromCharCode(...new Uint8Array(digest)));
+  if (got !== want) throw new Error("integrity " + src);
+}
+
+// leaflet.markercluster reaches for the bare global `L` from inside its own
+// function bodies, not just while it loads — L.markerClusterGroup is literally
+// `function (e) { return new L.MarkerClusterGroup(e) }`. Loading it with a
+// <script> tag therefore only works for as long as the global stays ours, and
+// _releaseGlobal deliberately gives the global back. Every cluster call after
+// that threw "Cannot read properties of undefined (reading 'MarkerClusterGroup')"
+// from inside _updateMap, which took the whole map down — tiles included, since
+// the throw happened before the tile layer was ever added.
+//
+// Evaluating the plugin with L as a function PARAMETER binds those lookups to
+// our copy for good, so the global is no longer part of the arrangement and
+// both things can be true at once: clustering works, and Home Assistant's own
+// map still gets a window.L we have not touched.
+async function _loadClusterPlugin(L) {
+  let lastErr;
+  for (const src of CLUSTER_JS) {
+    try {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error("load " + src);
+      const bytes = await res.arrayBuffer();
+      await _verifyIntegrity(src, bytes);
+      new Function("L", new TextDecoder().decode(bytes))(L);
+      return;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("no sources");
+}
+
 let _clusterPromise = null;
 function loadCluster() {
   if (_clusterPromise) return _clusterPromise;
@@ -439,9 +483,7 @@ function loadCluster() {
       _releaseGlobal();
       return L;
     }
-    // The plugin attaches itself to the global, so the global has to still be
-    // ours while it loads.
-    await _loadFirst(CLUSTER_JS);
+    await _loadClusterPlugin(L);
     _releaseGlobal();
     return L;
   })().catch((e) => {

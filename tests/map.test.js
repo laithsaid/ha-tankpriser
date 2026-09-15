@@ -396,6 +396,43 @@ const clusterIcons = (card) =>
   legacy.setConfig({ entity: TWO[0] });
   assert.deepStrictEqual([...legacy._config.entities], [TWO[0]], "entity: still accepted");
 
+  // --- the plugin must survive the global being handed back ----------------
+  //
+  // The harness above pre-loads Leaflet into the window, which is the one path
+  // where this cannot break: the card sees a global it did not create, leaves
+  // it alone, and _releaseGlobal never fires. When the card loads Leaflet
+  // ITSELF it owns the global and gives it back afterwards, and markercluster
+  // resolves `L` from the global inside its own function bodies — so every
+  // cluster call made after the hand-back threw, and took the map's tiles down
+  // with it. Assert the property directly: plugin bound to a private L, no
+  // global anywhere, cluster call still works.
+  {
+    const iso = new JSDOM(`<!doctype html><html><body></body></html>`, {
+      runScripts: "dangerously",
+      url: "http://ha.local:8123/",
+    });
+    const w = iso.window;
+    const s = w.document.createElement("script");
+    s.textContent = read("vendor/leaflet.js");
+    w.document.head.appendChild(s);
+    const priv = w.L;
+    assert.ok(priv, "leaflet loaded into the isolated window");
+
+    // Exactly what the card does now: L as a parameter, never via the global.
+    new w.Function("L", read("vendor/leaflet.markercluster.js"))(priv);
+    assert.ok(priv.markerClusterGroup, "plugin attached to our private handle");
+
+    // Now hand the global back, the way _releaseGlobal does.
+    if (typeof priv.noConflict === "function") priv.noConflict();
+    else delete w.L;
+    assert.strictEqual(w.L, undefined, "the global really is gone");
+
+    const group = priv.markerClusterGroup({ maxClusterRadius: 48 });
+    assert.ok(group, "clustering still works with no global L");
+    assert.ok(group instanceof priv.MarkerClusterGroup, "and it is a real cluster group");
+    console.log("global -> clustering survives handing window.L back");
+  }
+
   console.log("\nmap tests passed");
 })().catch((err) => {
   console.error("\nFAILED:", err && err.message);
