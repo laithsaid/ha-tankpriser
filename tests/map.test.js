@@ -570,6 +570,80 @@ const clusterIcons = (card) =>
     console.log("pick   -> stations on the map, own layer, summary bubble");
   }
 
+  // 8. A kilogram price must never stand in for a litre price.
+  //
+  //    CNG is sold by the kilogram. A station's headline price falls back to
+  //    the lowest price on it when the card's first fuel is not sold there —
+  //    and before units were tracked, that fallback happily picked 1,65 EUR/kg,
+  //    printed it on the pin beside real litre prices and crowned it the
+  //    cheapest forecourt on the map.
+  {
+    const PETROL = "sensor.tankpriser_euro_95";
+    const CNG = "sensor.tankpriser_cng";
+    const petrolState = {
+      state: "2.429",
+      attributes: {
+        friendly_name: "Euro 95 (E10)", fuel_type: "Euro 95 (E10)",
+        fuel_key: "blyfri95", unit_of_measurement: "\u20ac/L",
+        area: "Home", radius: "10 km",
+        stations: [{
+          name: "AVIA de Poel", company: "AVIA", postnummer: "7891",
+          city: "Klazienaveen", address: "", price: 2.419, updated: "",
+          latitude: 52.72, longitude: 7.00, coord_approx: false,
+        }],
+      },
+    };
+    const cngState = {
+      state: "1.699",
+      attributes: {
+        friendly_name: "CNG", fuel_type: "CNG",
+        fuel_key: "cng", unit_of_measurement: "\u20ac/kg",
+        area: "Home", radius: "10 km",
+        stations: [
+          {
+            name: "AVIA de Poel", company: "AVIA", postnummer: "7891",
+            city: "Klazienaveen", address: "", price: 1.699, updated: "",
+            latitude: 52.72, longitude: 7.00, coord_approx: false,
+          },
+          {
+            // Sells the gas and nothing else — the fallback's whole domain.
+            name: "CNG Punt Emmen", company: "CNG Punt", postnummer: "7811",
+            city: "Emmen", address: "", price: 1.649, updated: "",
+            latitude: 52.78, longitude: 6.90, coord_approx: false,
+          },
+        ],
+      },
+    };
+    const card = new Card();
+    card.setConfig({
+      entities: [PETROL, CNG],
+      show_map: false,
+      coverage: "area",
+      show_my_location: false,
+    });
+    window.document.getElementById("host").appendChild(card);
+    card.hass = hass({ [PETROL]: petrolState, [CNG]: cngState });
+    const rows = card._areaStations();
+
+    const both = rows.find((r) => r.name === "AVIA de Poel");
+    assert.strictEqual(
+      both.price, 2.419,
+      "a station selling both is headlined by the litre price"
+    );
+
+    const gasOnly = rows.find((r) => r.name === "CNG Punt Emmen");
+    assert.strictEqual(
+      gasOnly.price, null,
+      "a station selling only CNG has no litre price to show - 1,649 per kg is not one"
+    );
+
+    const gasLine = gasOnly.lines.find((l) => l.label === "CNG");
+    assert.strictEqual(gasLine.unit, "\u20ac/kg", "its own line is labelled per kilogram");
+    const petrolLine = both.lines.find((l) => l.label === "Euro 95 (E10)");
+    assert.strictEqual(petrolLine.unit, "\u20ac/L", "while the petrol line stays per litre");
+    console.log("units  -> a kilogram price never stands in for a litre price");
+  }
+
   console.log("\nmap tests passed");
 })().catch((err) => {
   console.error("\nFAILED:", err && err.message);
