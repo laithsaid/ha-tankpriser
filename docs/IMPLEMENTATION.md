@@ -67,7 +67,7 @@ trace you will ever see starts in one of them:
 
 | Trigger | Enters at | Does |
 | --- | --- | --- |
-| HA loads the component (once, because a config entry exists) | `__init__.async_setup` | registers the websocket command, the two services, and publishes the card |
+| HA loads the component (once, because a config entry exists) | `__init__.async_setup` | registers the websocket command, the services, the Assist intent, and publishes the card |
 | The config entry is set up (also on reload, and after options change) | `__init__.async_setup_entry` | builds the coordinator, does the **first refresh**, starts one `ConsumptionTracker` per car, forwards to the `sensor` platform |
 | A browser opens a dashboard | `www/tankpriser-card.js` (module top level) | defines `tankpriser-card` + `tankpriser-prediction-card`; HA instantiates one per card, calling `setConfig()` then `hass` on every state change |
 
@@ -79,6 +79,7 @@ After that, everything is a callback:
 - the card's websocket subscription to `tankpriser_price_updated` →
   `_ensureNational()` refetches the national list
 - a service call → `services._seed` / `services._reset`
+- Assist matching a sentence → `intents.CheapestFuelIntent.async_handle`
 
 Two things worth knowing about setup order. `async_setup` publishes the card
 *before* any entry is set up, because a client that loads the frontend while the
@@ -289,7 +290,8 @@ What each file is for, and which function to open first.
 | `config_flow.py` | `async_step_user`, then `TankpriserOptionsFlow.async_step_init` | Single entry (`async_set_unique_id(DOMAIN)`). Options is a menu: settings / notifications / chains → provider. Cars are **subentries** (`CarSubentryFlowHandler`), which is why one entry can hold several cars. |
 | `consumption.py` | `_ingest_current`, `location` | The only HA-aware half of the prediction. `location` walks four fallbacks (see below); the registry walk is lazy and normally never runs. |
 | `prediction.py` | `ConsumptionModel.add_reading`, `predict` | Pure, no HA imports — unit-tested directly. |
-| `services.py` | `_nearby`, `_seed`, `_reset` | `nearby` is `SupportsResponse.ONLY`: it ranks `async_national_stations()` around a caller-supplied point and returns `spoken` + `stations` + `urls`. `urls` is index-aligned with `stations`, an estimated position giving `""` rather than being dropped — closing the gap would shift the numbering and navigate to the wrong forecourt. The other two iterate `hass.data[DOMAIN][*].cars`. |
+| `services.py` | `nearby_answer`, `_seed`, `_reset` | `nearby_answer` is module-level rather than a closure so `intents.py` can answer with the same sentence. `nearby` is `SupportsResponse.ONLY`: it ranks `async_national_stations()` around a caller-supplied point and returns `spoken` + `stations` + `urls`. `urls` is index-aligned with `stations`, an estimated position giving `""` rather than being dropped — closing the gap would shift the numbering and navigate to the wrong forecourt. The other two iterate `hass.data[DOMAIN][*].cars`. |
+| `intents.py` | `CheapestFuelIntent.async_handle` | The Assist intent, and the only fuel price that reaches a CarPlay screen: CarPlay renders nine actionable domains and `sensor` is not one of them, so an Assist prompt is the whole surface. Registered in `async_setup`; the *sentences* cannot ship with the integration and live in the user's `custom_sentences/`. The decision worth keeping: a fuel we recognise but do not follow is refused by name, never substituted. |
 | `diagnostics.py` | `async_get_config_entry_diagnostics` | Redacts credentials, area name and notify target; keeps the postnummer. |
 | `www/tankpriser-card.js` | `setConfig`, `_update`, `_updateMap` | See [Walkthrough 3](#walkthrough-3-the-card-paints-the-map). |
 

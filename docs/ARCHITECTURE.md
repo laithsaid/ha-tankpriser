@@ -36,6 +36,7 @@ Everything is configured from the UI; there is no `configuration.yaml`.
    sensor.py    ── one TankpriserSensor per fuel                ▼
    websocket.py ── tankpriser/stations (national map)       sensor.py       ── CarPredictionSensor
    services.py  ── nearby(lat, lon) -> spoken + urls
+   intents.py   ── TankpriserCheapest (Assist / CarPlay)
    notifications.py ── price-change notify + event              │
       │                                                          │
       └──────────────────────┬───────────────────────────────────┘
@@ -57,6 +58,7 @@ Everything is configured from the UI; there is no `configuration.yaml`.
 | `coordinator.py` | One `TankpriserCoordinator` per entry: resolves the area, calls `fetch_all`, filters stations to the area, positions coordinate-less stations, fires notifications/events. Holds the per-car trackers in `.cars`. Also keeps a `nationwide` snapshot when a nearby tracker is configured — that ranking follows a device, which leaves the area. |
 | `nearby.py` | **Pure** (no HA imports): haversine, a bounding-box pre-filter, `rank_nearby()` — the stations around a point, cheapest first with distances — and `spoken_sentence()`, the same answer as a sentence to read aloud. |
 | `sensor.py` | `TankpriserSensor` (cheapest price per fuel, full list in attributes), `NearbyStationsSensor` (cheapest around a nominated device, nationwide pool, `spoken` sentence for Siri) and `CarPredictionSensor` (days-until-refuel + prediction attributes + car position/picture). |
+| `intents.py` | The `TankpriserCheapest` Assist intent — the CarPlay route, since CarPlay shows no sensors. Shares `services.nearby_answer`, so the spoken sentence has one source. |
 | `websocket.py` | `tankpriser/stations` command returning **all** national stations with coordinates — used by the card's `coverage: national` map instead of a huge sensor attribute. |
 | `notifications.py` | Compares successive refreshes and calls a `notify.*` service per the chosen rule; also fires the `tankpriser_price_updated` event. |
 | `config_flow.py` | Initial flow (fuel types), options flow (menu: settings / notifications / chain keys), and the **car subentry** flow (`ConfigSubentryFlow`). |

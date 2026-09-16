@@ -23,6 +23,7 @@ from .const import (
 )
 from .consumption import ConsumptionTracker
 from .coordinator import TankpriserCoordinator
+from .intents import async_register_intents
 from .services import async_register_accuracy, async_register_services
 from .simulate import stop_simulation
 from .websocket import async_register as async_register_ws
@@ -44,7 +45,7 @@ _RESOURCE_REGISTERED = False
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register integration-wide services (the national-stations websocket).
+    """Register integration-wide services, the websocket command and the intent.
 
     The Lovelace card is registered here rather than in `async_setup_entry`:
     `add_extra_js_url` only affects frontend pages served *after* the call, so
@@ -58,6 +59,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """
     async_register_ws(hass)
     async_register_services(hass)
+    async_register_intents(hass)
     await _async_register_card(hass)
 
     # `lovelace` may still be setting up when we get here (it is not a

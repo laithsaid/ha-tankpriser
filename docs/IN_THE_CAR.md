@@ -19,9 +19,12 @@ that is a bad way to follow instructions with one hand on a steering wheel.
 | **11c** | When it does not work |
 | **11d** | Already navigating? What that can and cannot do |
 | **11e** | Variants |
+| **11f** | The Assist prompt — a price on the CarPlay screen with no shortcut at all |
 
-The two routes are built differently. **Siri asks the `tankpriser.nearby`
+The three routes are built differently. **Siri asks the `tankpriser.nearby`
 service** with the phone's own position, so nothing in between can go stale.
-**Android Auto needs no shortcut at all**: add the `…_cheapest_nearby` sensor to
-the companion app's Android Auto favourites and it appears in the driving list,
-with navigation straight to the cheapest forecourt.
+**CarPlay can instead pin an Assist prompt** — one tap, no Shortcuts app, no
+token, answered from the device you nominated. **Android Auto needs no shortcut
+at all**: add the `…_cheapest_nearby` sensor to the companion app's Android Auto
+favourites and it appears in the driving list, with navigation straight to the
+cheapest forecourt.

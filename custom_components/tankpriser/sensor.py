@@ -28,8 +28,8 @@ from .const import (
     price_unit,
     NEARBY_MAX_STATIONS,
 )
-from .consumption import ConsumptionTracker, zone_coords
-from .coordinator import TankpriserCoordinator
+from .consumption import ConsumptionTracker
+from .coordinator import TankpriserCoordinator, tracker_origin
 from .nearby import rank_nearby, spoken_cheapest, spoken_sentence
 
 
@@ -388,25 +388,10 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
     def _origin(self) -> tuple[float, float, str] | None:
         """Where 'nearby' is measured from, with how it was found.
 
-        The device's own coordinates first. A tracker that reports by zone —
-        and a GPS one that has gone quiet while parked — puts a zone name in
-        its state instead, so fall back to that zone's position rather than
-        answering "no stations nearby" from a device that is simply at home.
+        In `coordinator.tracker_origin`, because the Assist intent asks the
+        same question of the same entity.
         """
-        state = self.hass.states.get(self.coordinator.nearby_tracker)
-        if state is None:
-            return None
-        lat = state.attributes.get("latitude")
-        lon = state.attributes.get("longitude")
-        try:
-            if lat is not None and lon is not None:
-                return float(lat), float(lon), "tracker"
-        except (TypeError, ValueError):
-            pass
-        zone_lat, zone_lon = zone_coords(self.hass, state.state)
-        if zone_lat is not None and zone_lon is not None:
-            return zone_lat, zone_lon, f"zone:{state.state}"
-        return None
+        return tracker_origin(self.hass, self.coordinator.nearby_tracker)
 
     def _ranked(self) -> list[dict]:
         """The current ranking, computed at most once per state write.

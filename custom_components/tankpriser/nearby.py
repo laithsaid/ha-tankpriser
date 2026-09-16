@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from math import asin, atan2, cos, degrees, radians, sin, sqrt
-from typing import Any, Final, Iterable
+from typing import Any, Final, Iterable, Mapping
 
 from .const import SPOKEN_STATIONS
 
@@ -343,6 +343,74 @@ _COUNT_WORDS: Final = {
 _HOUSE_NUMBER: Final = re.compile(r",?\s+\d+\s*[A-Za-z]?$")
 
 
+# --- what fuel did they just say? ------------------------------------------
+# Assist hands over the words, not a key. Each fuel is listed with everything a
+# person might call it in the three languages this integration answers in —
+# Danish, English and, since Germany, German. Order inside a key does not
+# matter; order BETWEEN keys does not either, because a phrase only ever
+# matches one key. What matters is that "diesel" alone means the ordinary B7
+# and never "Diesel Extra": the longest phrase wins, so the plain word is left
+# to the plain fuel.
+FUEL_SYNONYMS: Final[dict[str, tuple[str, ...]]] = {
+    "blyfri95": (
+        "blyfri 95", "blyfri95", "blyfri", "benzin", "oktan 95", "95",
+        "e10", "super e10", "super", "petrol", "gasoline", "unleaded",
+    ),
+    "blyfri98": ("blyfri 98", "blyfri98", "oktan 98", "98", "super plus"),
+    "blyfri95plus": (
+        "blyfri 95 extra", "95 extra", "e5", "super e5", "benzin extra",
+    ),
+    "oktan100": ("oktan 100", "100", "octane 100", "super 100"),
+    "diesel": ("diesel", "b7", "diesel b7", "almindelig diesel"),
+    "dieselplus": (
+        "diesel extra", "dieselextra", "premium diesel", "diesel plus",
+    ),
+    "hvo100": ("hvo100", "hvo 100", "hvo"),
+}
+
+# Anything that is not a word or a digit is noise between them: "blyfri-95",
+# "hvo 100." and "e5?" are all the same request.
+_WORDS: Final = re.compile(r"[^a-z0-9æøåäöüß]+")
+
+
+def _normalise(text: str) -> str:
+    return " ".join(w for w in _WORDS.split(str(text or "").lower()) if w)
+
+
+def fuel_from_words(spoken: str, labels: Mapping[str, str] | None = None) -> str | None:
+    """Which fuel a spoken phrase names, or None if it names none.
+
+    Pure, and deliberately not restricted to the fuels that are configured: a
+    question about a fuel we recognise but do not follow deserves to be told
+    so, and that is a different answer from not understanding the question.
+    The caller makes that distinction — see `intents.py`.
+
+    `labels` maps a phrase to a fuel key, and is how a country's own names get
+    in ("Super E10" is Germany's word for the same pump). A phrase may appear
+    for only one key; where a country renames a fuel, that rename is the whole
+    point of passing it.
+    """
+    said = _normalise(spoken)
+    if not said:
+        return None
+
+    candidates: list[tuple[str, str]] = [
+        (phrase, key) for key, phrases in FUEL_SYNONYMS.items() for phrase in phrases
+    ]
+    candidates += [
+        (_normalise(phrase), key) for phrase, key in (labels or {}).items()
+    ]
+
+    # Longest first: "diesel extra" must be decided before "diesel" gets a look,
+    # or every premium diesel question is answered about the ordinary pump.
+    for phrase, key in sorted(candidates, key=lambda c: -len(c[0])):
+        if not phrase:
+            continue
+        if said == phrase or f" {phrase} " in f" {said} ":
+            return key
+    return None
+
+
 def _spoken_place(station: dict) -> str:
     """How one station is named out loud.
 
@@ -411,6 +479,28 @@ def spoken_cheapest(
     return (
         f"The cheapest is {place}, {price} {currency}, {distance} kilometres away."
     )
+
+
+def spoken_not_followed(label: str, danish: bool) -> str:
+    """Asked about a fuel we recognise but do not track.
+
+    Worth its own sentence. Answering about petrol when the question was about
+    diesel is the one failure nobody can catch while driving — the number
+    sounds right, and it is for another pump.
+    """
+    if danish:
+        return (
+            f"Jeg følger ikke {label}. Tilføj den under brændstoftyper i "
+            "Tankpriser."
+        )
+    return f"I do not follow {label}. Add it under fuel types in Tankpriser."
+
+
+def spoken_no_position(danish: bool) -> str:
+    """Nothing to measure from: no device nominated and no Home location."""
+    if danish:
+        return "Jeg ved ikke, hvor du er."
+    return "I do not know where you are."
 
 
 def spoken_by_country(

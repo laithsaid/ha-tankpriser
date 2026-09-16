@@ -26,6 +26,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import geo, geocode
+from .consumption import zone_coords
 from .nearby import countries_for_position, country_for_position
 from .const import (
     country_of,
@@ -216,6 +217,36 @@ def entry_coordinator(
     if entry is None:
         return None
     return hass.data.get(DOMAIN, {}).get(entry.entry_id)
+
+
+def tracker_origin(
+    hass: HomeAssistant, entity_id: str
+) -> tuple[float, float, str] | None:
+    """Where a nominated device is, and how that was found.
+
+    The device's own coordinates first. A tracker that reports by zone — and a
+    GPS one that has gone quiet while parked — puts a zone name in its state
+    instead, so fall back to that zone's position rather than answering "no
+    stations nearby" about a device that is simply at home.
+
+    Shared by the nearby sensors and the Assist intent. They ask the same
+    question of the same entity, and the zone fallback is exactly the kind of
+    detail that gets fixed in one copy and not the other.
+    """
+    state = hass.states.get(entity_id) if entity_id else None
+    if state is None:
+        return None
+    lat = state.attributes.get("latitude")
+    lon = state.attributes.get("longitude")
+    try:
+        if lat is not None and lon is not None:
+            return float(lat), float(lon), "tracker"
+    except (TypeError, ValueError):
+        pass
+    zone_lat, zone_lon = zone_coords(hass, state.state)
+    if zone_lat is not None and zone_lon is not None:
+        return zone_lat, zone_lon, f"zone:{state.state}"
+    return None
 
 
 async def async_station_pool(

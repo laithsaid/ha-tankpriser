@@ -685,6 +685,28 @@ is the one property that could confidently navigate someone to the wrong place.
 
 ---
 
+## 5d. Test the Assist intent (the CarPlay prompt)
+
+Needs the sentence file from
+[README 11f](../README.md#11f-ask-on-the-cars-own-screen--no-shortcut-no-token)
+in `config/custom_sentences/<language>/` and a restart. Then type — do not
+speak — into **Assist** on any dashboard, which tests the same path with none of
+the car in the way:
+
+| Say | Expect |
+| --- | --- |
+| *billigste brændstof* | The same sentence the sensor's `spoken_cheapest` carries |
+| *billigste diesel* | The diesel price, not the petrol one |
+| *billigste hvo* (with HVO100 not configured) | "Jeg følger ikke HVO100…" — **not** another fuel's price |
+| Nothing matches at all ("Sorry, I don't understand") | The sentence file is not being read: wrong folder, wrong language code, or no restart |
+| "An unexpected error occurred" | The sentences matched but the intent is not registered — the integration failed to load; check the log |
+| Move the nominated tracker 50 km and ask again | A different station. The intent answers from that device, not from Home |
+
+With no device nominated it answers from Home, which is correct and is the
+documented fallback. Offline coverage: `tests/test_intent.py`.
+
+---
+
 ## 6. Reading logs / debugging
 
 Add to `configuration.yaml` (then restart):
@@ -740,9 +762,10 @@ python tests/test_geocode.py            # address parsing + geocode cache policy
 python tests/test_card_registration.py  # the Lovelace resource registration
 python tests/test_spoken.py             # the sentence Siri reads out
 python tests/test_nearby.py             # ranking stations around a position
+python tests/test_intent.py             # what fuel a spoken phrase names
 ```
 
-(`npm run test:py` runs all six.)
+(`npm run test:py` runs every one of them.)
 
 `tests/map.test.js` is the one worth knowing about: it loads the *real* card
 together with the vendored Leaflet and markercluster into a jsdom document and
@@ -790,6 +813,11 @@ Tracked here and in the project notes so nothing is lost while testing:
       shape of what *Perform action* hands back: the keys may sit under
       `service_response`, and 11b says to Quick Look it once. The old
       sensor-based build is kept in 11e as the fallback.
+- [ ] **The CarPlay Assist prompt** — paste the sentence file, restart, check it
+      in Assist on a dashboard (5d), then pin it to CarPlay's Quick Access and
+      tap it in the car. It is the only route with no Shortcuts app and no
+      token; the trade is that it answers from the nominated device, so its
+      failure mode is a stale position rather than a broken action.
 - [ ] **Card verification on a second client** — the desktop browser is covered;
       the mobile app takes the card by a different route (section 4a) and is the
       one that historically broke.

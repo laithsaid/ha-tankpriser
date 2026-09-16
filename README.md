@@ -72,7 +72,7 @@ What each feature *is*. How to switch it on is in
 | 8 | [Navigate here](#8-navigate-here) | Hand a forecourt to the phone's own navigator |
 | 9 | [Exact forecourt positions](#9-exact-forecourt-positions) | Street addresses geocoded, estimates marked as estimates |
 | 10 | [Cars on the map](#10-cars-on-the-map) | Your cars plotted, ringed by fuel level, hideable per device |
-| 11 | [In the car: CarPlay, Siri, Android Auto](#11-in-the-car-carplay-siri-and-android-auto) | A "cheapest nearby" sensor built for voice and car screens |
+| 11 | [In the car: CarPlay, Siri, Android Auto](#11-in-the-car-carplay-siri-and-android-auto) | Three routes to a price on a car screen: an Assist prompt, a Siri Shortcut, and a sensor Android Auto can navigate from |
 | 12 | [Fuel-consumption prediction](#12-fuel-consumption-prediction) | Hours of fuel left while driving (measured), days until the next fill-up while parked (learned) |
 | 12b | ["Fill up now" alerts](#12b-fill-up-now-alerts) | One push when a car is low *and* passing the cheapest station near it |
 | 12c | [Self-correcting predictions](#12c-self-correcting-predictions) | Each refuel grades the last prediction, and a repeated lean is corrected |
@@ -266,8 +266,9 @@ filter is never silent.
 ### 11. In the car: CarPlay, Siri and Android Auto
 
 Neither CarPlay nor Android Auto lets Home Assistant draw a map, so the card
-cannot appear there. Two routes get you the answer anyway, and they are built
-differently on purpose.
+cannot appear there — and CarPlay will not show a `sensor` either, so the price
+entities cannot stand in for it. Three routes get you the answer anyway, and
+they are built differently on purpose.
 
 **Siri and CarPlay ask the `tankpriser.nearby` service.** The shortcut takes the
 iPhone's *own* position at the moment you ask, hands it over with the question,
@@ -278,6 +279,13 @@ benzin"*, hear *"Billigste er OK Nordre Ringvej, 16,19 kroner, 1,9 kilometer
 væk"*, and the route starts on the CarPlay screen. The sentence is built
 server-side, in Home Assistant's own language, so the shortcut is one action
 rather than a Jinja loop.
+
+**CarPlay can also just ask, with nothing installed.** Tankpriser registers an
+**Assist intent**, and CarPlay pins an Assist prompt to its Quick Access tab —
+one tap on the car's own screen, the same sentence spoken back. No Shortcuts
+app, no token. The trade is that Assist cannot hand over the phone's position,
+so it answers from the device you nominated; the shortcut carries its own fix
+and is the one to use if a stale position would bother you.
 
 **Android Auto reads the `…_cheapest_nearby` sensors**, because a car head unit
 lists entities and cannot ask a question. Nominate a device — your phone, or the
@@ -293,6 +301,10 @@ the next town you are offered the forecourts halfway to the next town.
 The sensors re-rank when the device *moves*, not only on the price poll — and
 only write state when the ranking actually changed, so a driving phone does not
 flood the recorder.
+
+Ask for a fuel you have not configured and every route says so rather than
+quoting another one: a price that sounds right and is about the wrong pump is
+the one mistake nobody catches while driving.
 
 The Siri route is **confirmed working on CarPlay** (2026-07-26): asked by name,
 the station read out, route started on the car screen. It does depend on a
@@ -803,6 +815,11 @@ source entity reports coordinates, it appears on the map automatically.
 these two fields left empty. Skip to [11a](#11a-setting-up-your-iphone) if Siri
 is all you want.
 
+**The Assist prompt does need them**, because Assist cannot tell Home Assistant
+where the phone is — it answers from the device nominated below, or from Home if
+you nominate none. It is the shortest setup of the three:
+[11f](#11f-ask-on-the-cars-own-screen--no-shortcut-no-token).
+
 **Android Auto needs the sensors.** *Configure → Area & fuel types*, two fields:
 
 | Field | Notes |
@@ -835,10 +852,16 @@ sensor.tankpriser_blyfri_95_e10_cheapest_nearby
 > States**, filter `cheapest_nearby`, and copy what is actually there.
 
 **Android Auto then needs nothing more.** Parked, open the companion app →
-**Settings → Companion app → Android Auto favorites** and add the sensor.
-Android Auto renders sensor states in its driving list, and offers navigation to
-any entity carrying a location — which this one does, pointing at the cheapest
-nearby forecourt. Your `…_days_until_refuel` sensors work as favourites too.
+**Settings → Companion app → Android Auto favorites** (newer builds call it
+*Driving favorites*; from Home Assistant 2025.12 an entity's own **Add to** menu
+does it too) and add the sensor. Android Auto renders a favourite sensor's state
+in its driving list, and its navigation screen offers any entity carrying a
+location — which this one does, pointing at the cheapest nearby forecourt. Your
+`…_days_until_refuel` sensors work as favourites too.
+
+> Those car sensors carry a position as well, so they appear in the navigation
+> screen beside the stations — offering to route you to your own car. Harmless,
+> and it is the same attribute the map draws the car from.
 
 **iPhone takes more work**, because Apple does not let an integration install a
 Shortcut for you. The rest of this section is that: phone settings first, then
@@ -1050,8 +1073,9 @@ edit, no second entity to find:
   ```
 
 - **Just tell me, do not navigate:** delete the last three actions (the `urls`
-  lookup, Item from List and Open URLs). This variant also works as a saved
-  **Assist prompt** in CarPlay's Quick Access tab.
+  lookup, Item from List and Open URLs). If that is all you want, the Assist
+  prompt in [11f](#11f-ask-on-the-cars-own-screen--no-shortcut-no-token) does
+  the same thing with no shortcut at all.
 - **Name three and let you choose one.** The reply also carries `spoken`, which
   names the three cheapest with distances, and `urls` is index-aligned with
   them — so "number two" is item 2 of that list. Building a shortcut that asks
@@ -1087,6 +1111,105 @@ edit, no second entity to find:
 service-based shortcut in 11b is the same exchange with that stale position
 designed out, but it is new here: **test it parked before trusting it on a
 motorway.**
+
+#### 11f. Ask on the car's own screen — no Shortcut, no token
+
+CarPlay has four tabs, and it will act on nine kinds of entity: `button`,
+`cover`, `fan`, `light`, `lock`, `scene`, `script`, `switch` and friends. **A
+sensor is not one of them**, and no car platform lets Home Assistant draw a map
+— so neither the card nor the `…_cheapest_nearby` sensors can appear on an
+Apple car screen at all. That is why [11b](#11b-the-shortcut--eight-actions)
+exists.
+
+But there is a second thing CarPlay will pin to Quick Access: an **Assist
+prompt** — a fixed sentence, one tap, answered out loud on the car's screen.
+Tankpriser registers an Assist intent for it, so the tap answers with the same
+sentence Siri reads: *"Billigste er OK Nordre Ringvej, 16,19 kroner, 1,9
+kilometer væk."*
+
+No Shortcuts app, no long-lived token, no *Get contents of URL* — three of the
+four things that can silently break the shortcut are simply not in this path.
+**The fourth one is**, and it is the trade: Assist has no idea where your phone
+is, so the answer is measured from the device you nominated above, not from a
+position the phone hands over as it asks. Nominate your phone and it is right
+whenever the companion app has reported recently. In a tunnel, or after a
+force-quit, it will confidently answer about where you were. If that matters
+more to you than the setup cost, use [11b](#11b-the-shortcut--eight-actions).
+
+**1. Teach Assist the sentences.** Home Assistant only reads them from your own
+config folder, so an integration cannot ship them. Create
+`config/custom_sentences/da/tankpriser.yaml` (File editor, Studio Code Server or
+Samba) with:
+
+```yaml
+language: "da"
+intents:
+  TankpriserCheapest:
+    data:
+      - sentences:
+          - "billigste brændstof"
+          - "hvor tanker jeg billigst"
+          - "hvor er det billigst at tanke"
+      - sentences:
+          - "billigste {fuel}"
+          - "hvor er {fuel} billigst"
+          - "hvor køber jeg billigst {fuel}"
+lists:
+  fuel:
+    values:
+      - "benzin"
+      - "blyfri 95"
+      - "blyfri 98"
+      - "diesel"
+      - "diesel extra"
+      - "hvo"
+```
+
+In English, the same file under `config/custom_sentences/en/`:
+
+```yaml
+language: "en"
+intents:
+  TankpriserCheapest:
+    data:
+      - sentences:
+          - "cheapest fuel"
+          - "where is the cheapest fuel"
+      - sentences:
+          - "cheapest {fuel}"
+          - "where is the cheapest {fuel}"
+lists:
+  fuel:
+    values:
+      - "petrol"
+      - "diesel"
+      - "diesel extra"
+      - "hvo"
+```
+
+Restart Home Assistant, then test it by typing *billigste diesel* into Assist on
+your dashboard. You should get the sentence straight back.
+
+**2. Pin it in CarPlay.** On the iPhone: companion app → **Settings → CarPlay**
+→ *Quick access*, **Add Assist prompt**, and type the sentence exactly as above.
+It then sits on the Quick Access tab as a button; tapping it asks and speaks the
+answer.
+
+**3. Or say it.** The same sentence works anywhere Assist listens — the app's
+Assist button, a Voice Preview Edition puck, a wall tablet. `"Hey Siri"` still
+needs the shortcut in 11b; Assist is not a Siri trigger.
+
+A few things worth knowing:
+
+- **A fuel you do not follow is said so, not substituted.** Ask for HVO100 on a
+  setup that tracks petrol and diesel and it answers *"Jeg følger ikke HVO100"*
+  rather than quoting the petrol price — an answer that sounds entirely right
+  and is about the wrong pump is the one mistake you cannot catch while driving.
+- **Both country vocabularies work near a border.** With a German entry
+  configured, *"billigste super e10"* and *"billigste blyfri 95"* ask for the
+  same pump.
+- **No device nominated?** It answers from your Home location, which is what the
+  price sensors describe anyway.
 
 ### 12. Adding a car for prediction
 
@@ -1456,6 +1579,10 @@ is worked out, not asked for. This is what the Siri shortcut in [11b](#11b-the-s
 | `tankpriser.simulate_drive` | Drives a virtual car along a route, writing positions, speed and heading onto a tracker entity so the corridor search and the spoken answer can be tested without driving. Fields: `route` **or** `waypoints`, `speed_kmh`, `interval`, `tracker`, `announce`, `loop`, `fuel`. See [15. Simulating a drive](#15-simulating-a-drive) |
 | `tankpriser.stop_simulation` | Stops the running simulation and parks the car where it got to, with its speed set to zero so nothing goes on believing it is moving |
 | `tankpriser.test_notification` | Rehearses a price drop and sends the notification it would produce, titled `… (test)`. Checks the rule, the threshold and the notify service in one call, instead of waiting for the chains to move. If nothing can be sent it tells you which of those is the reason. Field: `drop_ore` (how much cheaper to pretend, default 10 øre/L) |
+
+| Intent | What it does |
+| --- | --- |
+| `TankpriserCheapest` | The Assist intent behind the CarPlay prompt. Optional slot `fuel` (free text — "benzin", "diesel extra", "super e10" are all understood, in Danish, English or a country's own name for the pump). Answers from the nominated device, or Home. Its sentences live in your own `custom_sentences/` folder — [11f](#11f-ask-on-the-cars-own-screen--no-shortcut-no-token) has both languages ready to paste. The reply also carries `stations` and `urls` as speech slots, so an automation firing the intent need not call the service again. |
 
 | Event | Payload |
 | --- | --- |
