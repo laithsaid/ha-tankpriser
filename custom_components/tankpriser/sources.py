@@ -40,6 +40,8 @@ from .const import (
     OIL_URL,
     OK_URL,
     PROVIDER_CACHE_TTL,
+    CIRCLEK_HEADERS,
+    CIRCLEK_URL,
     Q8_URL,
     RADIUS_OPTIONS,
     REQUEST_HEADERS,
@@ -118,6 +120,26 @@ _OK_PRODUCT_MAP: dict[str, str] = {
     "Blyfri 95": "blyfri95",
     "Oktan 100": "oktan100",
     "Svovlfri Diesel": "diesel",
+}
+# Circle K and INGO share one feed and one catalogue, keyed by a numeric code.
+# Map by `code`, never by `displayName`: the same product arrives as "MILES 95"
+# at one site and "miles 95" at the next, and "Benzin 95" and "Blyfri 95" are
+# one code with two spellings.
+#
+# Both brands sell an everyday 95 and a premium 95 under their own names; the
+# premium ones keep the 95 in their name, so they are the E5 "Extra" grade
+# rather than a 98. Three codes mean ordinary diesel because the catalogue has
+# never been tidied — see `parse_circlek` for what happens when two of them
+# turn up at one forecourt.
+_CIRCLEK_PRODUCT_MAP: dict[str, str] = {
+    "1030921": "blyfri95",      # miles 95 (Circle K)
+    "592327": "blyfri95",       # Benzin 95 / Blyfri 95 (INGO)
+    "1030941": "blyfri95plus",  # miles+ 95
+    "1030971": "blyfri95plus",  # UPGRADE 95 (INGO)
+    "1030928": "diesel",        # miles diesel
+    "797325": "diesel",         # Diesel (INGO)
+    "1030946": "diesel",        # Diesel
+    "1030876": "dieselplus",    # miles+ diesel
 }
 
 
@@ -358,6 +380,65 @@ def parse_ok(payload: dict) -> list[Station]:
                 longitude=lon,
                 updated=_short_date(rec.get("last_updated_time")),
                 prices=prices,
+            )
+        )
+    return stations
+
+
+# -- Circle K / INGO --------------------------------------------------------
+def parse_circlek(payload: dict) -> list[Station]:
+    """Parse the shared Circle K / INGO country feed (no coordinates).
+
+    Two brands arrive in one list and are told apart by the site name, which is
+    what `chain_key` and the card's icons both key off — and what a discount is
+    configured against, so a station that called itself the wrong thing would be
+    priced with somebody else's loyalty card.
+    """
+    stations: list[Station] = []
+    for rec in (payload or {}).get("sites", []) or []:
+        address = rec.get("address") or {}
+        postnummer = str(address.get("postalCode", "")).strip()
+        if not postnummer:
+            continue
+
+        raw_name = str(rec.get("name", "")).strip()
+        brand = "INGO" if raw_name.upper().startswith("INGO") else "Circle K"
+        street = str(address.get("street", "")).strip()
+        city = str(address.get("city", "")).strip()
+
+        prices: dict[str, float] = {}
+        newest = ""
+        for product in rec.get("fuelPrices", []) or []:
+            key = _CIRCLEK_PRODUCT_MAP.get(str(product.get("code", "")).strip())
+            if key is None:
+                continue
+            price = _to_float(product.get("price"))
+            if price is None:
+                continue
+            # Three codes mean ordinary diesel and a forecourt often lists two
+            # of them. Every one of the 207 sites doing that today quotes the
+            # same figure twice, so this is a tie-break and not a claim — but
+            # if they ever diverge, the lower one is the one a driver can act
+            # on, and it can never promise a price no pump is charging.
+            if key not in prices or price < prices[key]:
+                prices[key] = price
+            newest = max(newest, _short_date(product.get("lastUpdated")))
+
+        if not prices:
+            continue
+
+        stations.append(
+            Station(
+                name=f"{brand} {street}".strip() or brand,
+                company=brand,
+                postnummer=postnummer,
+                city=city,
+                address=street,
+                updated=newest,
+                prices=prices,
+                # Two forecourts of one brand share a postal code often enough
+                # here — the motorway pairs — so identity comes from their id.
+                station_id=str(rec.get("id", "")).strip(),
             )
         )
     return stations
@@ -653,8 +734,18 @@ class Provider:
         return self.scope == SCOPE_AREA
 
 
-def _one_shot(url: str, parser, auth: Auth = AUTH_OPEN):
-    """Fetcher: one GET returning a payload the parser turns into Stations."""
+def _one_shot(
+    url: str,
+    parser,
+    auth: Auth = AUTH_OPEN,
+    headers: dict[str, str] | None = None,
+):
+    """Fetcher: one GET returning a payload the parser turns into Stations.
+
+    `headers` are constant and public — Circle K wants `X-App-Name: PRICES` from
+    everyone and refuses the request without it. A credential goes through
+    `auth` instead, which knows never to put it in a URL.
+    """
     async def _fetch(
         session: aiohttp.ClientSession,
         credential: str | None = None,
@@ -664,7 +755,7 @@ def _one_shot(url: str, parser, auth: Auth = AUTH_OPEN):
             await _fetch_json(
                 session,
                 url,
-                extra_headers=auth.headers(credential),
+                extra_headers={**(headers or {}), **auth.headers(credential)},
                 params=auth.params(credential),
             )
         )
@@ -733,6 +824,12 @@ PROVIDERS: dict[str, Provider] = {
             fuels=frozenset(_SHELL_PRODUCT_MAP.values()),
         ),
         Provider("oil", "OIL!", fetch_oil, fuels=frozenset(OIL_FUELTYPES.values())),
+        Provider(
+            "circlek",
+            "Circle K / INGO",
+            _one_shot(CIRCLEK_URL, parse_circlek, headers=CIRCLEK_HEADERS),
+            fuels=frozenset(_CIRCLEK_PRODUCT_MAP.values()),
+        ),
         # Denmark, still missing (rechecked live 2026-09-16):
         #
         # * Circle K / INGO needs NO credential any more. The 2026 law made it

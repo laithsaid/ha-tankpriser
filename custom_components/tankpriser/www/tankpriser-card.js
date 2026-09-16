@@ -304,6 +304,10 @@ const COMPANIES = [
   { test: /q8/i, code: "Q8", color: "#00843D", icon: "q8.dk.png" },
   { test: /shell/i, code: "Shell", color: "#D9A400", icon: "shell.dk.ico" },
   { test: /circle ?k/i, code: "CK", color: "#E4002B", icon: "circlek.dk.ico" },
+  // INGO is Circle K's unmanned brand and arrives in the same feed, but it has
+  // its own mark on the forecourt — and without an entry here its 196 stations
+  // fell through to a grey pin with no icon at all.
+  { test: /ingo/i, code: "INGO", color: "#F5820B", icon: "ingo.dk.ico" },
   { test: /go.?on/i, code: "Go'on", color: "#2E9C48", icon: "goon.nu.png" },
   { test: /uno.?x/i, code: "Uno-X", color: "#111", icon: "uno-x.dk.ico" },
   { test: /ok/i, code: "OK", color: "#E4571B", icon: "ok.dk.ico" },

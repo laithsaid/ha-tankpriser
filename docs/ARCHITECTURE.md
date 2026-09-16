@@ -54,7 +54,7 @@ Everything is configured from the UI; there is no `configuration.yaml`.
 | `const.py` | All constants: endpoints, fuel-type table, config keys, tuning values, `DONATE_URL`. Pure (no HA imports), so `prediction.py` can import from it. |
 | `sources.py` | Fuel-price **providers**. Each chain is a `Provider` record; `fetch_all()` fetches the active ones concurrently through a shared TTL cache and normalises them into `Station` records. |
 | `geo.py` | DAWA (Danish address API) helpers: resolve *postnummer + radius* → set of postnumre; look up postnummer centre coordinates. Process-life caches. |
-| `geocode.py` | Street address → coordinates via DAWA, for the chains that publish no coordinates (Q8/F24). Three passes (exact house number → street+postnummer → fuzzy), cached in `.storage` for good, filled by a background task so setup is never delayed. |
+| `geocode.py` | Street address → coordinates via DAWA, for the chains that publish no coordinates (Q8/F24, Circle K/INGO). Three passes (exact house number → street+postnummer → fuzzy), cached in `.storage` for good, filled by a background task so setup is never delayed. |
 | `coordinator.py` | One `TankpriserCoordinator` per entry: resolves the area, calls `fetch_all`, filters stations to the area, positions coordinate-less stations, fires notifications/events. Holds the per-car trackers in `.cars`. Also keeps a `nationwide` snapshot when a nearby tracker is configured — that ranking follows a device, which leaves the area. |
 | `nearby.py` | **Pure** (no HA imports): haversine, a bounding-box pre-filter, `rank_nearby()` — the stations around a point, cheapest first with distances — and `spoken_sentence()`, the same answer as a sentence to read aloud. |
 | `sensor.py` | `TankpriserSensor` (cheapest price per fuel, full list in attributes), `NearbyStationsSensor` (cheapest around a nominated device, nationwide pool, `spoken` sentence for Siri) and `CarPredictionSensor` (days-until-refuel + prediction attributes + car position/picture). |
@@ -189,7 +189,7 @@ same user on two devices sets it twice.
 
 | Service | Called by | Purpose | Privacy |
 | --- | --- | --- | --- |
-| Chain price APIs (OK, Q8/F24, Shell, OIL!) | HA server | Prices | Server-side; honest `User-Agent`, no auth. |
+| Chain price APIs (OK, Q8/F24, Shell, OIL!, Circle K/INGO) | HA server | Prices | Server-side; honest `User-Agent`, no auth. Circle K also wants a constant `X-App-Name: PRICES` header, which is not a credential — it refuses the request without it. |
 | DAWA `api.dataforsyningen.dk` | HA server | Area resolution, postnummer centres, station address geocoding | Server-side, keyless. Chosen over Google: no API key/billing, and Google's terms forbid showing Google-derived coordinates on a non-Google map. |
 | OSM map tiles | **browser** | Map background (dark mode darkens the same tiles in CSS) | Leaks IP + viewed area. Avoid with `show_map: false`. |
 | A car's `entity_picture` URL | **browser** | Car photo on the marker | Only if the picture is an external URL; `no-referrer`. Use a `/local/…` image to avoid it. |

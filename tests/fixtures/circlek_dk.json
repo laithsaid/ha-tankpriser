@@ -1,0 +1,204 @@
+{
+ "sites": [
+  {
+   "id": "10103",
+   "name": "CIRCLE K HASSERIS",
+   "address": {
+    "street": "Hasseris Bymidte 2",
+    "city": "Aalborg",
+    "state": "Aalborg Kommune",
+    "postalCode": "9000",
+    "country": "DK"
+   },
+   "fuelPrices": [
+    {
+     "code": "1030946",
+     "displayName": "Diesel",
+     "price": 19.69,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:34.098Z"
+    },
+    {
+     "code": "1030921",
+     "displayName": "miles 95",
+     "price": 18.29,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:34.098Z"
+    },
+    {
+     "code": "1030928",
+     "displayName": "miles diesel",
+     "price": 19.69,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:34.098Z"
+    },
+    {
+     "code": "1030876",
+     "displayName": "miles+ diesel",
+     "price": 20.59,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:34.098Z"
+    },
+    {
+     "code": "1030941",
+     "displayName": "miles+ 95",
+     "price": 19.19,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:34.098Z"
+    }
+   ]
+  },
+  {
+   "id": "10107",
+   "name": "INGO BYLDERUP-BOV",
+   "address": {
+    "street": "Bygaden 29",
+    "city": "Bylderup-Bov",
+    "state": "Aabenraa Kommune",
+    "postalCode": "6372",
+    "country": "DK"
+   },
+   "fuelPrices": [
+    {
+     "code": "592327",
+     "displayName": "Benzin 95",
+     "price": 18.19,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:05:04.047Z"
+    },
+    {
+     "code": "797325",
+     "displayName": "Diesel",
+     "price": 19.59,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:05:04.047Z"
+    },
+    {
+     "code": "1030971",
+     "displayName": "UPGRADE 95",
+     "price": 18.88,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:05:04.047Z"
+    }
+   ]
+  },
+  {
+   "id": "10354",
+   "name": "CIRCLE K FRØSLEV ØST MOTORVEJSCENTER",
+   "address": {
+    "street": "Sønderjyske Motorvej 765",
+    "city": "Padborg",
+    "state": "Aabenraa Kommune",
+    "postalCode": "6330",
+    "country": "DK"
+   },
+   "fuelPrices": [
+    {
+     "code": "592327",
+     "displayName": "Blyfri 95",
+     "price": 18.29,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:31.450Z"
+    },
+    {
+     "code": "797325",
+     "displayName": "Diesel",
+     "price": 19.69,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:31.450Z"
+    },
+    {
+     "code": "1030921",
+     "displayName": "miles 95",
+     "price": 18.29,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:31.450Z"
+    },
+    {
+     "code": "1030928",
+     "displayName": "miles diesel",
+     "price": 19.69,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:31.450Z"
+    },
+    {
+     "code": "1030876",
+     "displayName": "miles+ diesel",
+     "price": 20.59,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:31.450Z"
+    },
+    {
+     "code": "1030941",
+     "displayName": "miles+ 95",
+     "price": 19.19,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:31.450Z"
+    },
+    {
+     "code": "1030946",
+     "displayName": "Diesel",
+     "price": 19.69,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:31.450Z"
+    }
+   ]
+  },
+  {
+   "id": "99001",
+   "name": "CIRCLE K ADBLUE ONLY",
+   "address": {
+    "street": "Ukendt Vej 1",
+    "city": "Ingenby",
+    "state": "",
+    "postalCode": "8600",
+    "country": "DK"
+   },
+   "fuelPrices": [
+    {
+     "code": "9999999",
+     "displayName": "AdBlue",
+     "price": 8.95,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:01:34.098Z"
+    }
+   ]
+  },
+  {
+   "id": "99002",
+   "name": "INGO UDEN POSTNUMMER",
+   "address": {
+    "street": "Vejen 2",
+    "city": "",
+    "state": "",
+    "country": "DK"
+   },
+   "fuelPrices": [
+    {
+     "code": "592327",
+     "displayName": "Benzin 95",
+     "price": 18.19,
+     "currency": "DKK",
+     "volumeUnit": "LITER",
+     "lastUpdated": "2026-09-16T09:05:04.047Z"
+    }
+   ]
+  }
+ ]
+}

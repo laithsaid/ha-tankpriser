@@ -193,6 +193,13 @@ OK_URL: Final = "https://mobility-prices.ok.dk/api/v1/fuel-prices"
 # only the fuel types OIL! actually sells and merge them by station_id.
 OIL_URL: Final = "https://apim-fuel-prices-prod.azure-api.net/Oil-FuelPrices/prices"
 OIL_FUELTYPES: Final = {"95E10": "blyfri95", "DieselB7": "diesel"}
+# Circle K + INGO: one feed, ~400 sites, both brands, prices inline. It became
+# open with the 2026 law — the documentation used to hand out an e-mail address
+# instead of a URL. The header is not a credential and there is nothing to
+# apply for, but it IS required: without it the API answers 400 "App not
+# allowed". No coordinates, so these are placed by postnummer like Q8.
+CIRCLEK_URL: Final = "https://api.circlek.com/eu/prices/v1/fuel/countries/DK"
+CIRCLEK_HEADERS: Final = {"X-App-Name": "PRICES"}
 
 # Germany: Tankerkoenig, the free consumer feed of the Bundeskartellamt's
 # MTS-K. Needs a personal key (see the Provider entry in sources.py) and

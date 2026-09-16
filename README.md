@@ -8,7 +8,8 @@ Fuel prices — **Blyfri 95/98, Diesel, HVO100, Super E5/E10 and more** — on
 your Home Assistant dashboard, on a map, in your car and in Siri.
 
 **Denmark** comes straight from the **official per-station price APIs** that
-Danish fuel chains are required to publish (OK, Q8, F24, Shell and OIL! today),
+Danish fuel chains are required to publish (OK, Q8, F24, Shell, OIL! and
+Circle K / INGO today),
 with no scraping, no account and no API key. Geographic filtering uses the free
 [DAWA](https://dawadocs.dataforsyningen.dk/) address API.
 
@@ -234,9 +235,10 @@ Maps in a new tab. You can pin one, or remove the link entirely.
 
 ### 9. Exact forecourt positions
 
-Chains that ship no coordinates (Q8 and F24) get their **street address geocoded
-against DAWA**, so their markers sit on the real forecourt rather than a
-postnummer centre — all 241 of them when last measured. Results are cached and
+Chains that ship no coordinates (Q8, F24, Circle K and INGO) get their **street
+address geocoded against DAWA**, so their markers sit on the real forecourt
+rather than a postnummer centre — all 241 Q8/F24 sites when last measured, and
+the 402 Circle K and INGO ones join them. Results are cached and
 re-verified every 180 days.
 
 A handful of stations still cannot be placed exactly — a motorway plaza with no
@@ -1604,7 +1606,7 @@ report as-is.
 | Germany: no stations at all, and the key is fine | The point you search from is somewhere with no forecourts inside 25 km — or in another country. *Configure → Area & fuel types → Search from this point*. |
 | Germany: the map only shows a small area | That is the whole map there is. Tankerkönig answers only about a circle of at most 25 km, so there is no nationwide list to plot and none can be built. |
 | A simulated drive changes nothing | The area is not following the simulated car. *Configure → Area & fuel types → Rank stations near this device* → `device_tracker.tankpriser_sim`. The log warns about this when the drive starts. |
-| A chain you expect is missing | Only OK, Q8, F24, Shell and OIL! publish open APIs today. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
+| A chain you expect is missing | Only OK, Q8, F24, Shell, OIL! and Circle K / INGO publish open APIs today. Go'on issues a personal key and Uno-X issues OAuth credentials; neither is wired up yet. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
 | Every Tankpriser card is a small red error box on one device, and fine on the others | That device is not loading the card script. Fully close and reopen the HA app there (on iPhone/iPad: *Settings → Companion app → Debugging → Reset frontend cache*), or hard-refresh the browser. If it comes back, check *Settings → Dashboards → ⋮ → Resources* lists `/tankpriser/tankpriser-card.js` — if it does not, the integration logs a warning saying so at startup, and adding it by hand as a **JavaScript Module** is the fix. If the device is an **iPad running the companion app** and none of that helps, see [Known issues](#the-cards-do-not-load-in-the-ipad-companion-app). |
 | The card says "Configuration error" | Same cause as the row above: a browser holding an old `index.html`. |
 | The map is blank/grey but markers show | The background tiles are blocked (no internet, or a DNS/ad blocker). The prices are unaffected; `show_map: false` removes the dependency. |
@@ -1661,7 +1663,8 @@ served from an integration static path rather than from `/hacsfiles/`.
 
 ## Privacy and data sources
 
-- **Prices** come from each chain's own public API: OK, Q8/F24, Shell and OIL!.
+- **Prices** come from each chain's own public API: OK, Q8/F24, Shell, OIL! and
+  Circle K / INGO.
   Each is fetched nationwide, cached for 10 minutes and shared by everything in
   the integration, so a shorter poll interval does not multiply requests. The
   User-Agent identifies this integration honestly, with a link, rather than
