@@ -20,8 +20,17 @@ in the country, updated within five minutes of a price change by law. It needs
 a free personal API key, and it works differently enough in a few places to be
 worth reading [its own section](#14-germany) before setting it up.
 
-One setup covers one country. Fill up on both sides of the border? Add
-Tankpriser twice — once for each.
+**The Netherlands and Belgium** come from [ANWB](https://www.anwb.nl/)'s own
+service — around 3,900 Dutch and 1,800 Belgian forecourts, no key, LPG and CNG
+included. Neither country mandates an open price API the way Denmark and
+Germany do, so this one is undocumented goodwill rather than law, and **it
+publishes no timestamps**: those stations show a price but never a "last
+changed". Read [15. The Netherlands and Belgium](#15-the-netherlands-and-belgium)
+before relying on them.
+
+One setup covers one country. Driving from Rotterdam to Silkeborg? Add
+Tankpriser once per country and the one you are standing in answers — the same
+question, in euro on the way and in kroner when you get there.
 
 Two different scopes, worth knowing up front:
 
@@ -80,7 +89,8 @@ What each feature *is*. How to switch it on is in
 | 12c | [Self-correcting predictions](#12c-self-correcting-predictions) | Each refuel grades the last prediction, and a repeated lean is corrected |
 | 13 | [Sources that need an API key](#13-sources-that-need-an-api-key) | A guided page for sources that are not open — Germany's is one |
 | 14 | [Germany](#14-germany) | ~15,000 German stations, a corridor search while driving, prices to three decimals |
-| 15 | [Testing without driving](#15-testing-the-driving-features-without-driving) | Drive a virtual car across Germany to exercise all of it from your desk |
+| 15 | [The Netherlands and Belgium](#15-the-netherlands-and-belgium) | ~5,700 forecourts from ANWB, with LPG and CNG — and no price timestamps |
+| 16 | [Testing without driving](#16-testing-the-driving-features-without-driving) | Drive a virtual car across Germany to exercise all of it from your desk |
 
 ### 1. Local price sensors
 
@@ -91,7 +101,8 @@ coordinates and when the chain last changed that price, plus `average_price`,
 
 Eight fuels are modelled: **Blyfri 92**, **Blyfri 95 (E10)**, **Blyfri 98**,
 **Blyfri 95 Extra (E5)**, **Oktan 100**, **Diesel (B7)**, **Diesel Extra** and
-**HVO100**. Blyfri 92 comes only from Go'on, which needs
+**HVO100** — plus **LPG** and **CNG** where a country sells them. Blyfri 92
+comes only from Go'on, which needs
 [a free key](#13-sources-that-need-an-api-key); it is kept apart from Blyfri 95
 rather than folded into it, because it is cheaper — so it would win every
 ranking — and plenty of cars must not be filled with it. Which
@@ -528,14 +539,47 @@ reads (`spoken_cheapest` still speaks both, but `stations` and `urls` stay one
 country), so an existing shortcut keeps navigating to a station priced in the
 currency it just named.
 
-### 15. Testing the driving features without driving
+### 15. The Netherlands and Belgium
+
+Two more countries from one source: **ANWB**, the Dutch motoring club, whose own
+app draws its prices from it. No key, no signup — around **3,900 Dutch** and
+**1,800 Belgian** forecourts with exact coordinates, including **LPG** at about
+a quarter of them and **CNG** at a handful.
+
+They are set up exactly like Germany: one Tankpriser per country, and the one
+you are standing in answers. Rotterdam → Hamburg → Silkeborg is three entries
+and one question.
+
+Three things are different here, and they are worth knowing before you trust a
+number:
+
+- **No price timestamps.** ANWB publishes no "last changed" — not per price,
+  not per station. Every other source we read does, and the card prints it. For
+  these two countries there is simply nothing to print, so the popup shows no
+  time rather than the moment we happened to fetch, which is not the same thing
+  and would be read as one.
+- **No law behind it.** Denmark and Germany oblige their chains to publish;
+  neither the Netherlands nor Belgium does. The official figures in both
+  countries — the Dutch CBS monthly averages, the Belgian federal *maximum*
+  price — are national, not per forecourt, so they cannot answer "which
+  station". ANWB works and is clean, but it can change or stop without notice.
+- **Prices of zero get dropped.** The feed carries a couple of hundred of them.
+  A zero is a missing price, not a cheap one, and left in it would win every
+  ranking and send you to a pump that is not selling.
+
+**CNG is priced per kilogram**, not per litre, and is kept out of every
+comparison with a litre price for that reason — on the card, in the
+cheapest-nearby ranking and in what Siri says. A kilogram of gas next to a litre
+of petrol is a different question, not a better deal.
+
+### 16. Testing the driving features without driving
 
 The corridor, the direction filtering and the spoken answer only behave
 differently when something is *moving*, and nobody wants to drive to Munich to
 find out whether they work. `tankpriser.simulate_drive` moves a virtual car
 along a route — writing positions, speed and heading exactly as the companion
 app does — so all of it runs for real from your desk. See
-[15. Simulating a drive](#15-simulating-a-drive).
+[16. Simulating a drive](#16-simulating-a-drive).
 
 ### Also included
 
@@ -556,6 +600,9 @@ app does — so all of it runs for real from your desk. See
   Denmark). No `configuration.yaml` entry, ever.
 - **For Denmark:** no account and no API key. One chain, **Go'on**, is optional
   and does need a free key — see [13](#13-sources-that-need-an-api-key).
+- **For the Netherlands and Belgium:** no account and no API key
+  — see [15](#15-the-netherlands-and-belgium) for what that source does and
+  does not publish.
 - **For Germany:** a free [Tankerkönig](https://creativecommons.tankerkoenig.de/)
   API key, which you request yourself — see [14. Germany](#14-germany). Expect
   to wait: a person there activates each key by hand, and a key that has not
@@ -1474,9 +1521,33 @@ spoken sentence rounds to two — nobody reads out the 9/10 of a cent.
 price, and are ignored for German stations rather than quietly subtracted from a
 euro price.
 
-### 15. Simulating a drive
+### 15. The Netherlands and Belgium
 
-*([what this feature does](#15-testing-the-driving-features-without-driving)).*
+*([what this feature does](#15-the-netherlands-and-belgium))*
+
+**Add Tankpriser again and pick the country.** Nothing else: no key, no anchor
+point to choose — unlike Germany, both countries answer for the whole country at
+once, so the map and the nationwide "cheapest near me" work the same way they do
+in Denmark.
+
+Fuels offered there are the ones those forecourts actually sell: **Euro 95
+(E10)**, **Super 98 (E5)**, **Diesel (B7)**, **Premium diesel**, **LPG** and
+**CNG**. Prices are in euro and shown to three decimals, the way the signs are
+written.
+
+**Driving Rotterdam → Silkeborg** takes three entries — one Dutch, one German,
+one Danish — and no switching: `tankpriser.nearby` answers from the country your
+position falls in, so the same Siri shortcut or Assist prompt speaks euro on the
+way and kroner when you arrive. Near a border both sides answer, each in its own
+currency, and they are never added up or compared.
+
+Two limits of the middle leg, neither new: Germany's Tankerkönig answers only
+about a 25 km circle, so there is no national German map, and it needs
+[its own free key](#14-germany).
+
+### 16. Simulating a drive
+
+*([what this feature does](#16-testing-the-driving-features-without-driving)).*
 
 First, point your area at the simulated car: *Configure → Area & fuel types →
 Rank stations near this device* → `device_tracker.tankpriser_sim`. Without this
@@ -1597,7 +1668,7 @@ source imposes its own ceiling or where you are moving — the shape of the sear
 is worked out, not asked for. This is what the Siri shortcut in [11b](#11b-the-shortcut--eight-actions) calls, through the companion app's *Perform action*; Apple's *Get contents of URL* with a long-lived token reaches it without the app at all. Also for automations that announce prices unprompted. |
 | `tankpriser.seed_demo_history` | Injects synthetic tanks into a car so the prediction shows a number immediately. For testing and demos — **it overwrites learned history**. Fields: `car` (blank = all), `tanks`, `litres_per_day`, `days_per_tank` |
 | `tankpriser.reset_history` | Clears a car's learned history, returning it to `learning`. Use after changing the tank size, or to undo a demo seed. Field: `car` (blank = all) |
-| `tankpriser.simulate_drive` | Drives a virtual car along a route, writing positions, speed and heading onto a tracker entity so the corridor search and the spoken answer can be tested without driving. Fields: `route` **or** `waypoints`, `speed_kmh`, `interval`, `tracker`, `announce`, `loop`, `fuel`. See [15. Simulating a drive](#15-simulating-a-drive) |
+| `tankpriser.simulate_drive` | Drives a virtual car along a route, writing positions, speed and heading onto a tracker entity so the corridor search and the spoken answer can be tested without driving. Fields: `route` **or** `waypoints`, `speed_kmh`, `interval`, `tracker`, `announce`, `loop`, `fuel`. See [16. Simulating a drive](#16-simulating-a-drive) |
 | `tankpriser.stop_simulation` | Stops the running simulation and parks the car where it got to, with its speed set to zero so nothing goes on believing it is moving |
 | `tankpriser.test_notification` | Rehearses a price drop and sends the notification it would produce, titled `… (test)`. Checks the rule, the threshold and the notify service in one call, instead of waiting for the chains to move. If nothing can be sent it tells you which of those is the reason. Field: `drop_ore` (how much cheaper to pretend, default 10 øre/L) |
 
@@ -1683,7 +1754,8 @@ served from an integration static path rather than from `/hacsfiles/`.
 ## Privacy and data sources
 
 - **Prices** come from each chain's own public API: OK, Q8/F24, Shell, OIL!,
-  Circle K / INGO and — once you add its key — Go'on.
+  Circle K / INGO and — once you add its key — Go'on. The Netherlands and
+  Belgium come from ANWB's own service.
   Each is fetched nationwide, cached for 10 minutes and shared by everything in
   the integration, so a shorter poll interval does not multiply requests. The
   User-Agent identifies this integration honestly, with a link, rather than

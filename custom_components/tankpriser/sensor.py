@@ -88,7 +88,8 @@ class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
         self._fuel_key = fuel_key
         country = coordinator.country
         self._attr_name = fuel_label(fuel_key, country)
-        self._attr_native_unit_of_measurement = price_unit(country)
+        # Per fuel, not per country: CNG is sold by the kilogram.
+        self._attr_native_unit_of_measurement = price_unit(country, fuel_key)
         # Germany signs its forecourts to three decimals; Denmark to two.
         # Rounding for display only — the state keeps the full figure, so
         # comparisons and thresholds are never decided on a rounded price.
@@ -336,7 +337,7 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         self._fuel_key = fuel_key
         country = coordinator.country
         self._attr_name = f"{fuel_label(fuel_key, country)} cheapest nearby"
-        self._attr_native_unit_of_measurement = price_unit(country)
+        self._attr_native_unit_of_measurement = price_unit(country, fuel_key)
         self._attr_suggested_display_precision = price_decimals(country)
         self._attr_unique_id = f"{entry.entry_id}_{fuel_key}_nearby"
         # The ranking for the state currently being written; None means "recompute".

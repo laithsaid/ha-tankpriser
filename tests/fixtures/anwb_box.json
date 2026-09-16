@@ -1,0 +1,406 @@
+{
+ "value": [
+  {
+   "id": "appitup_430",
+   "coordinates": {
+    "latitude": 51.2557,
+    "longitude": 3.45167
+   },
+   "title": "OK",
+   "address": {
+    "streetAddress": "Rijksweg 55",
+    "postalCode": "4529JB",
+    "city": "Eede",
+    "country": "Nederland",
+    "iso3CountryCode": "NLD"
+   },
+   "type": "FUEL_STATION",
+   "prices": [
+    {
+     "fuelName": "Euro 95 (E10)",
+     "fuelType": "EURO95",
+     "value": 2.459,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 3
+     }
+    },
+    {
+     "fuelName": "Diesel (B7)",
+     "fuelType": "DIESEL",
+     "value": 2.479,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    },
+    {
+     "fuelName": "LPG",
+     "fuelType": "AUTOGAS",
+     "value": 0.959,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 2
+     }
+    },
+    {
+     "fuelName": "Super Plus 98 (E5)",
+     "fuelType": "EURO98",
+     "value": 2.679,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    },
+    {
+     "fuelName": "Premium diesel",
+     "fuelType": "DIESEL_SPECIAL",
+     "value": 2.569,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    }
+   ],
+   "openingHours": [
+    {
+     "dayOfWeek": [
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY",
+      "SUNDAY"
+     ],
+     "opens": "00:00",
+     "closes": "24:00"
+    }
+   ],
+   "shopOpeningHours": [
+    {
+     "dayOfWeek": [
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY"
+     ],
+     "opens": "08:00",
+     "closes": "20:00"
+    },
+    {
+     "dayOfWeek": [
+      "SATURDAY"
+     ],
+     "opens": "08:00",
+     "closes": "18:00"
+    },
+    {
+     "dayOfWeek": [
+      "SUNDAY"
+     ],
+     "opens": "10:00",
+     "closes": "18:00"
+    }
+   ]
+  },
+  {
+   "id": "appitup_753",
+   "coordinates": {
+    "latitude": 51.493456,
+    "longitude": 3.881643
+   },
+   "title": "AVIA de Poel",
+   "address": {
+    "streetAddress": "Anthony Fokkerstraat 77a",
+    "postalCode": "4462ES",
+    "city": "Goes",
+    "country": "Nederland",
+    "iso3CountryCode": "NLD"
+   },
+   "type": "FUEL_STATION",
+   "prices": [
+    {
+     "fuelName": "Euro 95 (E10)",
+     "fuelType": "EURO95",
+     "value": 2.419,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 2
+     }
+    },
+    {
+     "fuelName": "Diesel (B7)",
+     "fuelType": "DIESEL",
+     "value": 2.469,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    },
+    {
+     "fuelName": "LPG",
+     "fuelType": "AUTOGAS",
+     "value": 1.099,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 3
+     }
+    },
+    {
+     "fuelName": "Super Plus 98 (E5)",
+     "fuelType": "EURO98",
+     "value": 2.729,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    },
+    {
+     "fuelName": "CNG",
+     "fuelType": "CNG",
+     "value": 1.699,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    }
+   ],
+   "openingHours": [
+    {
+     "dayOfWeek": [
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY",
+      "SUNDAY"
+     ],
+     "opens": "00:00",
+     "closes": "24:00"
+    }
+   ],
+   "shopOpeningHours": [
+    {
+     "dayOfWeek": [
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY"
+     ],
+     "opens": "06:30",
+     "closes": "20:00"
+    },
+    {
+     "dayOfWeek": [
+      "SATURDAY"
+     ],
+     "opens": "08:00",
+     "closes": "20:00"
+    },
+    {
+     "dayOfWeek": [
+      "SUNDAY"
+     ],
+     "opens": "10:00",
+     "closes": "18:00"
+    }
+   ]
+  },
+  {
+   "id": "appitup_416",
+   "coordinates": {
+    "latitude": 51.251379,
+    "longitude": 3.442125
+   },
+   "title": "Total Express",
+   "address": {
+    "streetAddress": "Vlasstraat 2",
+    "postalCode": "4529PX",
+    "city": "Eede",
+    "country": "Nederland",
+    "iso3CountryCode": "NLD"
+   },
+   "type": "FUEL_STATION",
+   "prices": [
+    {
+     "fuelName": "Euro 95 (E10)",
+     "fuelType": "EURO95",
+     "value": 2.449,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 2
+     }
+    },
+    {
+     "fuelName": "Diesel (B7)",
+     "fuelType": "DIESEL",
+     "value": 2.479,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    },
+    {
+     "fuelName": "Super Plus 98 (E5)",
+     "fuelType": "EURO98",
+     "value": 0,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 0
+     }
+    }
+   ],
+   "openingHours": [
+    {
+     "dayOfWeek": [
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY"
+     ],
+     "opens": "07:30",
+     "closes": "19:00"
+    },
+    {
+     "dayOfWeek": [
+      "FRIDAY"
+     ],
+     "opens": "07:30",
+     "closes": "18:00"
+    },
+    {
+     "dayOfWeek": [
+      "SATURDAY"
+     ],
+     "opens": "07:30",
+     "closes": "16:00"
+    }
+   ],
+   "shopOpeningHours": null
+  },
+  {
+   "id": "xavvy_M|BEL|10167701",
+   "coordinates": {
+    "latitude": 51.276989,
+    "longitude": 4.524766
+   },
+   "title": "GABRIELS",
+   "address": {
+    "streetAddress": "Brechtsebaan 447",
+    "postalCode": "2900",
+    "city": "Schoten",
+    "country": "België",
+    "iso3CountryCode": "BEL"
+   },
+   "type": "FUEL_STATION",
+   "prices": [
+    {
+     "fuelName": "Euro 95 (E10)",
+     "fuelType": "EURO95",
+     "value": 2.058,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    },
+    {
+     "fuelName": "Premium diesel",
+     "fuelType": "DIESEL_SPECIAL",
+     "value": 2.514,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    },
+    {
+     "fuelName": "Diesel (B7)",
+     "fuelType": "DIESEL",
+     "value": 2.468,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    }
+   ],
+   "openingHours": [
+    {
+     "dayOfWeek": [
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY",
+      "SUNDAY"
+     ],
+     "opens": "00:00",
+     "closes": "24:00"
+    }
+   ],
+   "shopOpeningHours": null
+  },
+  {
+   "id": "xavvy_00041414-208c-4444-8888-acdc00000414",
+   "coordinates": {
+    "latitude": 51.169189,
+    "longitude": 6.94895
+   },
+   "title": "SELGROS",
+   "address": {
+    "streetAddress": "Oststr. 17",
+    "postalCode": "40724",
+    "city": "Hilden",
+    "country": "Duitsland",
+    "iso3CountryCode": "DEU"
+   },
+   "type": "FUEL_STATION",
+   "prices": [
+    {
+     "fuelName": "Diesel (B7)",
+     "fuelType": "DIESEL",
+     "value": 2.399,
+     "currency": "EUR",
+     "priceTier": {
+      "max": 3,
+      "value": 1
+     }
+    }
+   ],
+   "openingHours": [
+    {
+     "dayOfWeek": [
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY"
+     ],
+     "opens": "09:00",
+     "closes": "18:00"
+    }
+   ],
+   "shopOpeningHours": null
+  }
+ ]
+}

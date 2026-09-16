@@ -292,7 +292,21 @@ const FUEL_LABELS = {
   diesel: "Diesel (B7)",
   dieselplus: "Diesel Extra",
   hvo100: "HVO100",
+  lpg: "LPG",
+  cng: "CNG",
 };
+
+// Fuels sold by weight rather than volume — the mirror of FUEL_QUANTITY in
+// const.py. CNG is quoted per kilogram, and a kilogram price sitting in a list
+// of litre prices is not a cheap forecourt: it is a different question. Every
+// place that compares or prints a price asks this first.
+const FUEL_QUANTITY = { cng: "kg" };
+
+function fuelUnit(baseUnit, key) {
+  const quantity = FUEL_QUANTITY[key];
+  if (!quantity || !baseUnit) return baseUnit || "";
+  return `${baseUnit.split("/")[0]}/${quantity}`;
+}
 
 // Brand icons are bundled and served by Home Assistant. They used to be
 // fetched from a third-party favicon service, which told that service the
@@ -300,7 +314,9 @@ const FUEL_LABELS = {
 // on every single render. Nothing here leaves the local network.
 const ICON_BASE = "/tankpriser/vendor/icons/";
 const COMPANIES = [
-  { test: /oil/i, code: "OIL!", color: "#D81E05", icon: "oiltankstationer.dk.png" },
+  // Word-bounded: Tamoil and Lukoil are everywhere in the Netherlands and
+  // Belgium, and a bare /oil/ put the Danish OIL! mark on all of them.
+  { test: /\boil\b/i, code: "OIL!", color: "#D81E05", icon: "oiltankstationer.dk.png" },
   { test: /f24/i, code: "F24", color: "#7A1FA2", icon: "f24.dk.png" },
   { test: /q8/i, code: "Q8", color: "#00843D", icon: "q8.dk.png" },
   { test: /shell/i, code: "Shell", color: "#D9A400", icon: "shell.dk.ico" },
@@ -1257,10 +1273,16 @@ class TankpriserCard extends HTMLElement {
   _areaStations() {
     const byKey = new Map();
     let primaryFuel = null;
+    // Label -> the unit Home Assistant gives that entity. Two fuels on one
+    // card can be priced in different units (CNG is per kilogram), and the
+    // fallback headline below takes the lowest number it can see — which
+    // without this would crown the compressed gas the cheapest thing here.
+    const unitOf = {};
     for (const entityId of this._config.entities) {
       const st = this._hass.states[entityId];
       if (!st) continue;
       const fuel = st.attributes.fuel_type || entityId;
+      unitOf[fuel] = st.attributes.unit_of_measurement || "";
       if (primaryFuel === null) primaryFuel = fuel;
       for (const s of st.attributes.stations || []) {
         if (s.latitude == null || s.longitude == null) continue;
@@ -1280,11 +1302,18 @@ class TankpriserCard extends HTMLElement {
         if (s.list_price != null) rec.listPf[fuel] = s.list_price;
       }
     }
+    const primaryUnit = unitOf[primaryFuel] || "";
     return [...byKey.values()].map((r) => {
-      const vals = Object.values(r.pf);
+      const vals = Object.entries(r.pf)
+        .filter(([label]) => (unitOf[label] || "") === primaryUnit)
+        .map(([, p]) => p);
       const price =
         r.pf[primaryFuel] != null ? r.pf[primaryFuel] : vals.length ? Math.min(...vals) : null;
-      const lines = Object.entries(r.pf).map(([label, p]) => ({ label, price: p }));
+      const lines = Object.entries(r.pf).map(([label, p]) => ({
+        label,
+        price: p,
+        unit: unitOf[label] || "",
+      }));
       return {
         name: r.name, company: r.company, city: r.city,
         lat: r.lat, lon: r.lon, approx: r.approx,
@@ -1309,6 +1338,7 @@ class TankpriserCard extends HTMLElement {
       const lines = Object.entries(s.prices || {}).map(([k, p]) => ({
         label: FUEL_LABELS[k] || k,
         price: p,
+        unit: fuelUnit(this._nationalUnit, k),
       }));
       list.push({
         name: s.name, company: s.company, city: s.city,
@@ -1915,8 +1945,8 @@ class TankpriserCard extends HTMLElement {
   // Denmark signs to two, so a card-wide setting would print a price that
   // disagrees with the pump on one side.
   _stationPin(L, s, cheap) {
-    const money = (v) =>
-      v == null ? "–" : this._price(v, s.unit || "", s.decimals);
+    const money = (v, unit) =>
+      v == null ? "–" : this._price(v, unit != null ? unit : s.unit || "", s.decimals);
     const meta = companyMeta(s.company);
     const iconUrl = this._iconUrl(s.company);
     const haveIcon = iconUrl && _iconStatus[iconUrl] === "ok";
@@ -1937,7 +1967,7 @@ class TankpriserCard extends HTMLElement {
     marker.options.ffCompany = s.company;
 
     const priceLines = (s.lines || [])
-      .map((p) => `${this._escape(p.label)}: <b>${money(p.price)}</b>`)
+      .map((p) => `${this._escape(p.label)}: <b>${money(p.price, p.unit)}</b>`)
       .join("<br>");
     // `updated` is the chain's own "prices valid from" stamp, not the time we
     // polled — that is what actually tells you how stale a price is.

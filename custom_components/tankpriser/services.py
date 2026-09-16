@@ -563,7 +563,7 @@ async def nearby_answer(
         "fuel": fuel,
         "country": lead_country,
         "fuel_type": fuel_label(fuel, lead_country),
-        "unit": price_unit(lead_country),
+        "unit": price_unit(lead_country, fuel),
         # What was actually searched, so an answer of "nothing" can be
         # told apart from "nothing was looked at", and so a Shortcut can
         # say the range out loud without knowing how it was chosen.
@@ -604,7 +604,7 @@ async def nearby_answer(
                 "country": group["country"],
                 "country_name": country_of(group["country"]).spoken_name(danish),
                 "fuel_type": fuel_label(fuel, group["country"]),
-                "unit": price_unit(group["country"]),
+                "unit": price_unit(group["country"], fuel),
                 # Germany signs to three decimals and Denmark to
                 # two, so a card showing both needs the figure
                 # per country rather than one card-wide setting.

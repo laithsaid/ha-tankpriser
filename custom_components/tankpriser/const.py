@@ -45,6 +45,8 @@ VERSION: Final = _manifest_version()
 # to give away.
 COUNTRY_DK: Final = "dk"
 COUNTRY_DE: Final = "de"
+COUNTRY_NL: Final = "nl"
+COUNTRY_BE: Final = "be"
 DEFAULT_COUNTRY: Final = COUNTRY_DK
 
 
@@ -133,6 +135,38 @@ COUNTRIES: Final[dict[str, Country]] = {
             bbox=(47.2, 5.8, 55.1, 15.1),
             name_da="Tyskland",
         ),
+        Country(
+            COUNTRY_NL,
+            "Netherlands",
+            "€/L",
+            "euro",
+            3,
+            "cent",
+            {
+                "blyfri95": "Euro 95 (E10)",
+                "blyfri98": "Super 98 (E5)",
+                "diesel": "Diesel (B7)",
+                "dieselplus": "Premium diesel",
+            },
+            bbox=(50.6, 3.2, 53.7, 7.4),
+            name_da="Holland",
+        ),
+        Country(
+            COUNTRY_BE,
+            "Belgium",
+            "€/L",
+            "euro",
+            3,
+            "cent",
+            {
+                "blyfri95": "Euro 95 (E10)",
+                "blyfri98": "Super 98 (E5)",
+                "diesel": "Diesel (B7)",
+                "dieselplus": "Premium diesel",
+            },
+            bbox=(49.4, 2.4, 51.6, 6.5),
+            name_da="Belgien",
+        ),
     )
 }
 
@@ -147,9 +181,20 @@ def country_of(code: str) -> Country:
     return COUNTRIES.get(str(code or "").lower()) or COUNTRIES[DEFAULT_COUNTRY]
 
 
-def price_unit(country: str) -> str:
-    """What a price in this country is measured in."""
-    return country_of(country).unit
+def price_unit(country: str, fuel: str | None = None) -> str:
+    """What a price is measured in here — currency from the country, quantity
+    from the fuel.
+
+    Pass the fuel wherever one is known. Without it the country's own unit is
+    returned, which is right for everything sold by the litre and wrong for
+    CNG, so the callers that hold a fuel key all pass it.
+    """
+    unit = country_of(country).unit
+    quantity = FUEL_QUANTITY.get(fuel or "")
+    if not quantity:
+        return unit
+    currency = unit.rsplit("/", 1)[0]
+    return f"{currency}/{quantity}"
 
 
 def price_decimals(country: str) -> int:
@@ -205,6 +250,28 @@ CIRCLEK_HEADERS: Final = {"X-App-Name": "PRICES"}
 # provider cache is already well inside — except right after a key is saved,
 # when the dialog has just tested it. That trap is in the provider's guide.
 GOON_URL: Final = "https://goon.nu/wp-json/goon/v1/pump-prices"
+
+# The Netherlands and Belgium: ANWB's points-of-interest service, which is how
+# their own app draws fuel prices. No key, no documentation and no law behind
+# it — neither country mandates an open price API the way Denmark and Germany
+# do, and the official statistics (CBS monthly averages, the Belgian federal
+# maximum price) are not per-station and cannot answer "which forecourt".
+#
+# It takes a bounding box rather than a circle and answers with every station
+# inside it, whatever country it is in, so each country asks for its own box
+# and keeps only its own stations.
+#
+# What it does NOT publish is a timestamp — not per price, not per station. It
+# is the only source we read that cannot say when a price last moved, which is
+# why these stations show nothing rather than a time somebody might trust.
+ANWB_URL: Final = "https://api.anwb.nl/routing/points-of-interest/v3/all"
+# (lat_min, lon_min, lat_max, lon_max), as ANWB wants them.
+ANWB_BOXES: Final[dict[str, tuple[float, float, float, float]]] = {
+    COUNTRY_NL: (50.70, 3.30, 53.60, 7.30),
+    COUNTRY_BE: (49.45, 2.50, 51.55, 6.45),
+}
+# ISO3 codes as ANWB writes them, for keeping one country's box to itself.
+ANWB_ISO3: Final[dict[str, str]] = {COUNTRY_NL: "NLD", COUNTRY_BE: "BEL"}
 
 # Germany: Tankerkoenig, the free consumer feed of the Bundeskartellamt's
 # MTS-K. Needs a personal key (see the Provider entry in sources.py) and
@@ -394,7 +461,26 @@ FUEL_TYPES: Final = {
     "diesel": "Diesel (B7)",
     "dieselplus": "Diesel Extra",
     "hvo100": "HVO100",
+    # Sold by the litre like the rest. Common in the Netherlands and Belgium,
+    # where roughly a third of forecourts have a pump.
+    "lpg": "LPG",
+    # NOT sold by the litre — see FUEL_QUANTITY. It is here because the Dutch
+    # and Belgian feed carries it, and a kilogram of gas is a real price a
+    # driver of a CNG car needs; it is kept out of every comparison with a
+    # litre price instead of being quietly renamed into one.
+    "cng": "CNG",
 }
+
+# Fuels quoted per something other than a litre. The country decides the
+# currency and the decimals; this decides the denominator.
+#
+# It exists because CNG is priced per kilogram everywhere it is sold. Printing
+# 1,70 €/L next to 2,38 €/L would not merely be the wrong unit — it would make
+# the compressed gas look like the cheapest thing on the forecourt to anything
+# that compares two numbers, which is exactly what a "cheapest nearby" ranking
+# does. Prices in different units are never compared; see the card's
+# `_areaStations` and `fuelUnit`.
+FUEL_QUANTITY: Final[dict[str, str]] = {"cng": "kg"}
 DEFAULT_FUEL_TYPES: Final = ["blyfri95", "diesel"]
 
 
@@ -490,16 +576,21 @@ DONATE_URL: Final = "https://paypal.me/tankpriser"
 # Chain identification, for discounts. A station only tells us a `company`
 # string ("Q8 Service", "F24", "OK Plus"…), so each chain is matched by pattern.
 # ORDER MATTERS: "ok" is two letters and appears inside other words, so it is
-# tested last. The card carries the same table for its icons — keep them in step.
+# tested last AND word-bounded. The card carries the same table for its icons —
+# keep them in step.
 CHAINS: Final = [
-    ("oil", "OIL!", r"oil"),
+    # Word-bounded, unlike the rest: the Netherlands and Belgium are full of
+    # Tamoil and Lukoil forecourts (359 of them in one box), and a bare "oil"
+    # matched every one — which drew the Danish OIL! mark on somebody else's
+    # station. "OIL!" itself still matches, the bang is a boundary.
+    ("oil", "OIL!", r"\boil\b"),
     ("f24", "F24", r"f24"),
     ("q8", "Q8", r"q8"),
     ("shell", "Shell", r"shell"),
     ("circlek", "Circle K / INGO", r"circle ?k|ingo"),
     ("goon", "Go'on", r"go.?on"),
     ("unox", "Uno-X", r"uno.?x"),
-    ("ok", "OK", r"ok|^ok"),
+    ("ok", "OK", r"\bok\b"),
 ]
 
 

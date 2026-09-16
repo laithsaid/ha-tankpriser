@@ -236,7 +236,7 @@ async def _send_fillup(
     station = suggestion.station
     title, body = message(
         suggestion,
-        price_unit(country),
+        price_unit(country, suggestion.fuel_key),
         format_price(station["price"], country),
         danish,
         minor_unit(country),

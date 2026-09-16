@@ -211,7 +211,9 @@
     "country": {
       "options": {
         "dk": "Denmark — OK, Q8, F24, Shell and OIL!, no key needed",
-        "de": "Germany — Tankerkönig (MTS-K), needs a free API key"
+        "de": "Germany — Tankerkönig (MTS-K), needs a free API key",
+        "nl": "Netherlands — ANWB, no key needed (no price timestamps)",
+        "be": "Belgium — ANWB, no key needed (no price timestamps)"
       }
     },
     "maps": {

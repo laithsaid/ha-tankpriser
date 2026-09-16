@@ -189,7 +189,7 @@ same user on two devices sets it twice.
 
 | Service | Called by | Purpose | Privacy |
 | --- | --- | --- | --- |
-| Chain price APIs (OK, Q8/F24, Shell, OIL!, Circle K/INGO, Go'on) | HA server | Prices | Server-side; honest `User-Agent`. All open except Go'on, whose personal key travels as an `Authorization` header and never in a URL. Circle K also wants a constant `X-App-Name: PRICES` header, which is not a credential — it refuses the request without it. |
+| Chain price APIs (OK, Q8/F24, Shell, OIL!, Circle K/INGO, Go'on, ANWB for NL/BE) | HA server | Prices | Server-side; honest `User-Agent`. All open except Go'on, whose personal key travels as an `Authorization` header and never in a URL. Circle K also wants a constant `X-App-Name: PRICES` header, which is not a credential — it refuses the request without it. |
 | DAWA `api.dataforsyningen.dk` | HA server | Area resolution, postnummer centres, station address geocoding | Server-side, keyless. Chosen over Google: no API key/billing, and Google's terms forbid showing Google-derived coordinates on a non-Google map. |
 | OSM map tiles | **browser** | Map background (dark mode darkens the same tiles in CSS) | Leaks IP + viewed area. Avoid with `show_map: false`. |
 | A car's `entity_picture` URL | **browser** | Car photo on the marker | Only if the picture is an external URL; `no-referrer`. Use a `/local/…` image to avoid it. |

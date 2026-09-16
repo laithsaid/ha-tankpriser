@@ -40,8 +40,13 @@ from .const import (
     OIL_URL,
     OK_URL,
     PROVIDER_CACHE_TTL,
+    ANWB_BOXES,
+    ANWB_ISO3,
+    ANWB_URL,
     CIRCLEK_HEADERS,
     CIRCLEK_URL,
+    COUNTRY_BE,
+    COUNTRY_NL,
     GOON_URL,
     Q8_URL,
     RADIUS_OPTIONS,
@@ -132,6 +137,17 @@ _OK_PRODUCT_MAP: dict[str, str] = {
 # rather than a 98. Three codes mean ordinary diesel because the catalogue has
 # never been tidied — see `parse_circlek` for what happens when two of them
 # turn up at one forecourt.
+# ANWB names a fuel the same way in both countries, so one map serves the
+# Netherlands and Belgium. AUTOGAS is LPG and is sold by the litre; CNG is not
+# (see FUEL_QUANTITY) and is kept out of every litre comparison.
+_ANWB_PRODUCT_MAP: dict[str, str] = {
+    "EURO95": "blyfri95",
+    "EURO98": "blyfri98",
+    "DIESEL": "diesel",
+    "DIESEL_SPECIAL": "dieselplus",
+    "AUTOGAS": "lpg",
+    "CNG": "cng",
+}
 _GOON_PRODUCT_MAP: dict[str, str] = {
     "Blyfri 92": "blyfri92",
     "Blyfri 95": "blyfri95",
@@ -389,6 +405,94 @@ def parse_ok(payload: dict) -> list[Station]:
             )
         )
     return stations
+
+
+# -- ANWB (Netherlands, Belgium) --------------------------------------------
+def parse_anwb(payload: dict, country: str) -> list[Station]:
+    """Parse one ANWB bounding-box answer, keeping only `country`'s stations.
+
+    The box is geography, not a border: a Dutch box reaches into Germany and
+    Belgium, and those stations are somebody else's source to price. Keeping
+    them would put two prices of different ages on the same forecourt.
+
+    Two things this feed does that no other one does:
+
+    * **It quotes prices of zero.** 226 of them in the Netherlands as this was
+      written — Texaco, Total Express, a Shell. A zero is not a cheap price, it
+      is a missing one, and it would win every ranking and send somebody to a
+      pump that is not selling.
+    * **It carries no timestamp at all.** `updated` is left empty rather than
+      filled with the time we happened to fetch, which would look like a price
+      age and is not one.
+    """
+    wanted = ANWB_ISO3.get(country, "")
+    stations: list[Station] = []
+    for rec in (payload or {}).get("value", []) or []:
+        address = rec.get("address") or {}
+        if str(address.get("iso3CountryCode", "")).upper() != wanted:
+            continue
+
+        coords = rec.get("coordinates") or {}
+        lat = _to_float(coords.get("latitude"))
+        lon = _to_float(coords.get("longitude"))
+        if lat is None or lon is None:
+            continue
+
+        prices: dict[str, float] = {}
+        for product in rec.get("prices", []) or []:
+            key = _ANWB_PRODUCT_MAP.get(str(product.get("fuelType", "")).strip())
+            if key is None:
+                continue
+            price = _to_float(product.get("value"))
+            if price is None or price <= 0:
+                continue
+            prices[key] = price
+
+        if not prices:
+            continue
+
+        name = str(rec.get("title", "")).strip()
+        stations.append(
+            Station(
+                name=name,
+                # ANWB gives no separate brand, and the title is how the sign
+                # reads ("Shell Souburg", "TinQ Emmen"), so the first word is
+                # the chain — which is all `chain_key` ever looks at.
+                company=name.split(" ")[0] if name else "",
+                postnummer=str(address.get("postalCode", "")).strip(),
+                city=str(address.get("city", "")).strip(),
+                address=str(address.get("streetAddress", "")).strip(),
+                latitude=lat,
+                longitude=lon,
+                updated="",
+                prices=prices,
+                station_id=str(rec.get("id", "")).strip(),
+                country=country,
+            )
+        )
+    return stations
+
+
+def anwb_fetcher(country: str):
+    """Fetcher for one country's box."""
+    box = ANWB_BOXES[country]
+
+    async def _fetch(
+        session: aiohttp.ClientSession,
+        credential: str | None = None,
+        area: "Area | None" = None,
+    ) -> list[Station]:
+        payload = await _fetch_json(
+            session,
+            ANWB_URL,
+            params={
+                "type-filter": "FUEL_STATION",
+                "bounding-box-filter": ",".join(f"{v:g}" for v in box),
+            },
+        )
+        return parse_anwb(payload, country)
+
+    return _fetch
 
 
 # -- Go'on ------------------------------------------------------------------
@@ -929,6 +1033,20 @@ PROVIDERS: dict[str, Provider] = {
         #   auth.unoxmobility.net, data at api.unoxmobility.net), one request
         #   per 30 s, and the client_id/secret are applied for by e-mail.
         #   `Auth` has no client-credentials mode yet; that is the work.
+        Provider(
+            "anwb_nl",
+            "ANWB (Netherlands)",
+            anwb_fetcher(COUNTRY_NL),
+            country=COUNTRY_NL,
+            fuels=frozenset(_ANWB_PRODUCT_MAP.values()),
+        ),
+        Provider(
+            "anwb_be",
+            "ANWB (Belgium)",
+            anwb_fetcher(COUNTRY_BE),
+            country=COUNTRY_BE,
+            fuels=frozenset(_ANWB_PRODUCT_MAP.values()),
+        ),
         Provider(
             "tankerkoenig",
             "Tankerkönig (MTS-K)",

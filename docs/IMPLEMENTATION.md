@@ -454,7 +454,9 @@ Credentials live in the entry **data** (`CONF_CREDENTIALS`), never the URL
 fingerprint so a corrected key takes effect immediately.
 
 ### Add a fuel type
-Add `"<key>": ("Display name", "kr./L")` to `FUEL_TYPES` in `const.py`, then map
+Add `"<key>": "Display name"` to `FUEL_TYPES` in `const.py` — and, if it is not
+sold by the litre, an entry in `FUEL_QUANTITY` (CNG is per kilogram). The card
+carries the same two tables; keep them in step. Then map
 each provider's product name/id onto that key in the relevant `_*_PRODUCT_MAP`
 (or parser) in `sources.py`. Sensors, the options picker and the card pick it up
 automatically.

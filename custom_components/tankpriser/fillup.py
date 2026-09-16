@@ -97,6 +97,9 @@ class Suggestion:
     # How much cheaper this station is than the dearest one in range, in the
     # country's minor unit (øre, cents). Zero when there is nothing to compare.
     saving_minor: int = 0
+    # Which fuel this is about, so the alert can name the right unit — a CNG
+    # car is not filled by the litre.
+    fuel_key: str | None = None
 
 
 def evaluate(
@@ -150,6 +153,7 @@ def evaluate(
         days_until_empty=car.days_until_empty,
         station=best,
         saving_minor=int(round((dearest - best["price"]) * 100)),
+        fuel_key=car.fuel_key,
     )
 
 
