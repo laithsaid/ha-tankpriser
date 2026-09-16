@@ -26,6 +26,7 @@ from .const import (
     fuel_label,
     price_decimals,
     price_unit,
+    spoken_currency,
     NEARBY_MAX_STATIONS,
 )
 from .consumption import ConsumptionTracker
@@ -428,6 +429,10 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
         language = str(getattr(self.hass.config, "language", "") or "")
         return language.lower().startswith("da")
 
+    def _currency(self) -> str:
+        """The money this entry's prices are in, said out loud."""
+        return spoken_currency(self.coordinator.country)
+
     @property
     def native_value(self) -> float | None:
         ranked = self._ranked()
@@ -465,8 +470,15 @@ class NearbyStationsSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntit
             # in HA's language. `spoken_cheapest` is the one the documented
             # shortcut uses: one station, no list to hold in your head while
             # driving. `spoken` names three, for anyone who wants to choose.
-            "spoken_cheapest": spoken_cheapest(ranked, danish=self._danish()),
-            "spoken": spoken_sentence(ranked, danish=self._danish()),
+            # The currency word has to be passed: its default is Danish, so a
+            # German or Dutch price would otherwise be read out in kroner —
+            # a confident, plausible answer in the wrong money.
+            "spoken_cheapest": spoken_cheapest(
+                ranked, danish=self._danish(), currency=self._currency()
+            ),
+            "spoken": spoken_sentence(
+                ranked, danish=self._danish(), currency=self._currency()
+            ),
             "stations": ranked[:NEARBY_MAX_STATIONS],
         }
         if best is not None:

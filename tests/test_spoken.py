@@ -9,6 +9,7 @@ from Home Assistant — so this needs no stubbing at all. The argument named
 
 from __future__ import annotations
 
+import io
 import os
 import sys
 
@@ -136,6 +137,47 @@ def test_house_number_trimming(spoken) -> None:
 def test_falls_back_to_company_and_city_without_a_name(spoken) -> None:
     got = spoken._spoken_place({"name": "", "company": "Q8", "city": "Silkeborg"})
     assert got == "Q8 Silkeborg", got
+
+
+def test_the_sensor_says_the_right_money(spoken) -> None:
+    """`currency` defaults to Danish, so every caller outside Denmark must pass it.
+
+    Found on a real drive: the Dutch `..._cheapest_nearby` sensor announced
+    "1.50 kroner" for a station priced in euro, because the sensor called this
+    without a currency. The German entry had been doing the same thing quietly
+    since Germany shipped. A price in the wrong money is exactly the kind of
+    answer that sounds right at 130 km/h.
+
+    Checked statically, because `sensor.py` imports Home Assistant: every call
+    to either sentence builder must name a currency.
+    """
+    import ast
+    import os
+
+    source = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "custom_components", "tankpriser", "sensor.py",
+    )
+    tree = ast.parse(io.open(source, encoding="utf-8").read())
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and getattr(node.func, "id", "") in ("spoken_cheapest", "spoken_sentence")
+    ]
+    assert calls, "sensor.py no longer builds a spoken sentence"
+    for call in calls:
+        named = {kw.arg for kw in call.keywords}
+        assert "currency" in named, (
+            f"{call.func.id} at line {call.lineno} does not pass a currency, "
+            "so it will speak kroner wherever it is used"
+        )
+
+    # And the builder itself must still honour what it is given.
+    station = {"name": "OG Clean Fuels", "company": "OG", "city": "Enschede",
+               "price": 1.499, "distance_km": 8.8}
+    said = spoken.spoken_cheapest([station], danish=False, currency="euro")
+    assert "euro" in said and "kroner" not in said, said
 
 
 def main() -> int:
