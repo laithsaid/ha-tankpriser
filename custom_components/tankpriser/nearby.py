@@ -352,6 +352,7 @@ _HOUSE_NUMBER: Final = re.compile(r",?\s+\d+\s*[A-Za-z]?$")
 # and never "Diesel Extra": the longest phrase wins, so the plain word is left
 # to the plain fuel.
 FUEL_SYNONYMS: Final[dict[str, tuple[str, ...]]] = {
+    "blyfri92": ("blyfri 92", "blyfri92", "oktan 92", "92"),
     "blyfri95": (
         "blyfri 95", "blyfri95", "blyfri", "benzin", "oktan 95", "95",
         "e10", "super e10", "super", "petrol", "gasoline", "unleaded",

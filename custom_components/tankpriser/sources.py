@@ -42,6 +42,7 @@ from .const import (
     PROVIDER_CACHE_TTL,
     CIRCLEK_HEADERS,
     CIRCLEK_URL,
+    GOON_URL,
     Q8_URL,
     RADIUS_OPTIONS,
     REQUEST_HEADERS,
@@ -131,6 +132,11 @@ _OK_PRODUCT_MAP: dict[str, str] = {
 # rather than a 98. Three codes mean ordinary diesel because the catalogue has
 # never been tidied — see `parse_circlek` for what happens when two of them
 # turn up at one forecourt.
+_GOON_PRODUCT_MAP: dict[str, str] = {
+    "Blyfri 92": "blyfri92",
+    "Blyfri 95": "blyfri95",
+    "Diesel": "diesel",
+}
 _CIRCLEK_PRODUCT_MAP: dict[str, str] = {
     "1030921": "blyfri95",      # miles 95 (Circle K)
     "592327": "blyfri95",       # Benzin 95 / Blyfri 95 (INGO)
@@ -380,6 +386,62 @@ def parse_ok(payload: dict) -> list[Station]:
                 longitude=lon,
                 updated=_short_date(rec.get("last_updated_time")),
                 prices=prices,
+            )
+        )
+    return stations
+
+
+# -- Go'on ------------------------------------------------------------------
+def parse_goon(payload: dict) -> list[Station]:
+    """Parse the Go'on pump-price payload (ships exact coordinates).
+
+    The only Danish source behind a personal key, and the only one selling 92
+    octane — see `blyfri92` in `FUEL_TYPES` for why that is its own fuel and
+    not a cheap Blyfri 95.
+    """
+    stations: list[Station] = []
+    for rec in (payload or {}).get("stations", []) or []:
+        postnummer = str(rec.get("postalCode", "")).strip()
+        if not postnummer:
+            continue
+
+        street = str(rec.get("street", "")).strip()
+        house = str(rec.get("houseNumber") or "").strip()
+        location = " ".join(p for p in (street, house) if p).strip()
+        city = str(rec.get("city", "")).strip()
+
+        coords = rec.get("coordinates") or {}
+        lat = _to_float(coords.get("latitude"))
+        lon = _to_float(coords.get("longitude"))
+
+        prices: dict[str, float] = {}
+        newest = ""
+        for product in rec.get("prices", []) or []:
+            key = _GOON_PRODUCT_MAP.get(str(product.get("productName", "")).strip())
+            if key is None:
+                continue
+            price = _to_float(product.get("price"))
+            if price is None:
+                continue
+            prices[key] = price
+            newest = max(newest, _short_date(product.get("lastUpdated")))
+
+        if not prices:
+            continue
+
+        brand = str(rec.get("brand", "")).strip() or "Go'on"
+        stations.append(
+            Station(
+                name=f"{brand} {location}".strip() or brand,
+                company=brand,
+                postnummer=postnummer,
+                city=city,
+                address=location,
+                latitude=lat,
+                longitude=lon,
+                updated=newest,
+                prices=prices,
+                station_id=str(rec.get("stationId", "")).strip(),
             )
         )
     return stations
@@ -675,6 +737,10 @@ class Auth:
 AUTH_OPEN: Final = Auth()
 # Tankerkoenig takes the key only as `?apikey=` — no header form exists.
 AUTH_TANKERKOENIG: Final = Auth(AUTH_QUERY, param="apikey")
+# Go'on wants an ordinary bearer token, which is the Auth default. It answers
+# 401 without a header and 403 with a key it does not know; the options dialog
+# reads both as "that key is wrong", which is exactly right.
+AUTH_GOON: Final = Auth(AUTH_KEY)
 
 
 def redact(text: object, credential: str | None) -> str:
@@ -829,6 +895,26 @@ PROVIDERS: dict[str, Provider] = {
             "Circle K / INGO",
             _one_shot(CIRCLEK_URL, parse_circlek, headers=CIRCLEK_HEADERS),
             fuels=frozenset(_CIRCLEK_PRODUCT_MAP.values()),
+        ),
+        Provider(
+            "goon",
+            "Go'on",
+            _one_shot(GOON_URL, parse_goon, auth=AUTH_GOON),
+            auth=AUTH_GOON,
+            fuels=frozenset(_GOON_PRODUCT_MAP.values()),
+            signup_url="https://goon.nu/faa-adgang-til-api/",
+            guide=(
+                "1. Open the signup page, enter an e-mail address and submit. "
+                "The name/company field is optional.\n"
+                "2. The key arrives by return mail within a few minutes — it "
+                "is issued automatically, with nobody to wait for. Check spam "
+                "if it does not, or write to info@goongruppen.dk.\n"
+                "3. Paste it here.\n"
+                "4. If saving says it cannot connect, wait half a minute and "
+                "try once more: Go'on allows one request per key per 30 "
+                "seconds, and testing a key twice in quick succession trips "
+                "that limit even when the key is perfectly good."
+            ),
         ),
         # Denmark, still missing (rechecked live 2026-09-16):
         #

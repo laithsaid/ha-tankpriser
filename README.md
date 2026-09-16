@@ -8,8 +8,9 @@ Fuel prices — **Blyfri 95/98, Diesel, HVO100, Super E5/E10 and more** — on
 your Home Assistant dashboard, on a map, in your car and in Siri.
 
 **Denmark** comes straight from the **official per-station price APIs** that
-Danish fuel chains are required to publish (OK, Q8, F24, Shell, OIL! and
-Circle K / INGO today),
+Danish fuel chains are required to publish — OK, Q8, F24, Shell, OIL! and
+Circle K / INGO with no key at all, and Go'on with a free one anyone can
+request —
 with no scraping, no account and no API key. Geographic filtering uses the free
 [DAWA](https://dawadocs.dataforsyningen.dk/) address API.
 
@@ -88,8 +89,12 @@ area; its attributes carry **every station** in range with price, address,
 coordinates and when the chain last changed that price, plus `average_price`,
 `station_count` and `cheapest_station`.
 
-Seven fuels are modelled: **Blyfri 95 (E10)**, **Blyfri 98**, **Blyfri 95 Extra
-(E5)**, **Oktan 100**, **Diesel (B7)**, **Diesel Extra** and **HVO100**. Which
+Eight fuels are modelled: **Blyfri 92**, **Blyfri 95 (E10)**, **Blyfri 98**,
+**Blyfri 95 Extra (E5)**, **Oktan 100**, **Diesel (B7)**, **Diesel Extra** and
+**HVO100**. Blyfri 92 comes only from Go'on, which needs
+[a free key](#13-sources-that-need-an-api-key); it is kept apart from Blyfri 95
+rather than folded into it, because it is cheaper — so it would win every
+ranking — and plenty of cars must not be filled with it. Which
 ones exist near you depends on the chains around you — OK sells Oktan 100, Q8
 and F24 sell HVO100, and so on.
 
@@ -442,12 +447,19 @@ own data, rather than asking you to take it on trust.
 
 ### 13. Sources that need an API key
 
-Every Danish chain publishes openly and needs no setup. A source that only
-answers with a personal key appears under **Chains & API keys** with a
-step-by-step guide to requesting one; the key is validated immediately, stored
-in the config entry, sent only to that source and redacted from diagnostics.
-**Germany's Tankerkönig is one of these** — see [14. Germany](#14-germany). For
-a Danish setup the menu entry stays hidden, because nothing Danish needs a key.
+Most chains publish openly and need no setup at all. A source that only answers
+with a personal key appears under **Chains & API keys** with a step-by-step
+guide to requesting one; the key is validated immediately, stored in the config
+entry, sent only to that source as a header — never in a URL — and redacted from
+diagnostics. Two sources are like this today:
+
+- **Go'on** (Denmark, ~200 stations). The key comes from a two-field form and
+  arrives by return mail within minutes, automatically. Optional: everything
+  else Danish works without it, and Go'on is simply absent until you add it.
+  It is the only source selling **Blyfri 92**, so that fuel appears in the
+  picker but stays empty until the key is in.
+- **Tankerkönig** (Germany) — required there, since it is the only German
+  source. See [14. Germany](#14-germany).
 
 ### 14. Germany
 
@@ -542,7 +554,8 @@ app does — so all of it runs for real from your desk. See
   national map still works, since it does not use the radius).
 - Internet access from Home Assistant (the sources' APIs, and DAWA for
   Denmark). No `configuration.yaml` entry, ever.
-- **For Denmark:** no account and no API key.
+- **For Denmark:** no account and no API key. One chain, **Go'on**, is optional
+  and does need a free key — see [13](#13-sources-that-need-an-api-key).
 - **For Germany:** a free [Tankerkönig](https://creativecommons.tankerkoenig.de/)
   API key, which you request yourself — see [14. Germany](#14-germany). Expect
   to wait: a person there activates each key by hand, and a key that has not
@@ -1412,10 +1425,16 @@ from the same tanks; there is nothing to learn from between two refuels.
 *([what this feature does](#13-sources-that-need-an-api-key))*
 
 **Configure → Chains & API keys** — the menu entry only appears when a source
-for *this entry's country* needs a key. A Danish setup never shows it. Pick the
-source, follow the guide in the dialog, paste the key (it is checked
-immediately) and save. Clearing the field removes the key and stops using that
-source.
+for *this entry's country* needs a key. Pick the source, follow the guide in the
+dialog, paste the key (it is checked immediately) and save. Clearing the field
+removes the key and stops using that source.
+
+For **Go'on**, the form at
+[goon.nu/faa-adgang-til-api](https://goon.nu/faa-adgang-til-api/) wants an
+e-mail address and nothing else; the key is issued automatically. One trap worth
+knowing: Go'on allows **one request per key per 30 seconds**, so testing a key
+twice in quick succession is refused and the dialog says it cannot connect even
+though the key is fine. Wait half a minute and save again.
 
 ### 14. Germany
 
@@ -1606,7 +1625,7 @@ report as-is.
 | Germany: no stations at all, and the key is fine | The point you search from is somewhere with no forecourts inside 25 km — or in another country. *Configure → Area & fuel types → Search from this point*. |
 | Germany: the map only shows a small area | That is the whole map there is. Tankerkönig answers only about a circle of at most 25 km, so there is no nationwide list to plot and none can be built. |
 | A simulated drive changes nothing | The area is not following the simulated car. *Configure → Area & fuel types → Rank stations near this device* → `device_tracker.tankpriser_sim`. The log warns about this when the drive starts. |
-| A chain you expect is missing | Only OK, Q8, F24, Shell, OIL! and Circle K / INGO publish open APIs today. Go'on issues a personal key and Uno-X issues OAuth credentials; neither is wired up yet. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
+| A chain you expect is missing | OK, Q8, F24, Shell, OIL! and Circle K / INGO publish openly; **Go'on needs a free key** you paste under *Chains & API keys*. Uno-X is not wired up yet. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
 | Every Tankpriser card is a small red error box on one device, and fine on the others | That device is not loading the card script. Fully close and reopen the HA app there (on iPhone/iPad: *Settings → Companion app → Debugging → Reset frontend cache*), or hard-refresh the browser. If it comes back, check *Settings → Dashboards → ⋮ → Resources* lists `/tankpriser/tankpriser-card.js` — if it does not, the integration logs a warning saying so at startup, and adding it by hand as a **JavaScript Module** is the fix. If the device is an **iPad running the companion app** and none of that helps, see [Known issues](#the-cards-do-not-load-in-the-ipad-companion-app). |
 | The card says "Configuration error" | Same cause as the row above: a browser holding an old `index.html`. |
 | The map is blank/grey but markers show | The background tiles are blocked (no internet, or a DNS/ad blocker). The prices are unaffected; `show_map: false` removes the dependency. |
@@ -1663,8 +1682,8 @@ served from an integration static path rather than from `/hacsfiles/`.
 
 ## Privacy and data sources
 
-- **Prices** come from each chain's own public API: OK, Q8/F24, Shell, OIL! and
-  Circle K / INGO.
+- **Prices** come from each chain's own public API: OK, Q8/F24, Shell, OIL!,
+  Circle K / INGO and — once you add its key — Go'on.
   Each is fetched nationwide, cached for 10 minutes and shared by everything in
   the integration, so a shorter poll interval does not multiply requests. The
   User-Agent identifies this integration honestly, with a link, rather than

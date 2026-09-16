@@ -284,6 +284,7 @@ const FOLLOW_CRAWL_KM = 0.5;
 // Internal fuel key -> display label (used for national-mode popups, which
 // carry raw keys rather than the entity's display name).
 const FUEL_LABELS = {
+  blyfri92: "Blyfri 92",
   blyfri95: "Blyfri 95 (E10)",
   blyfri98: "Blyfri 98",
   blyfri95plus: "Blyfri 95 Extra (E5)",

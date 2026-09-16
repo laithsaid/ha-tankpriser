@@ -33,10 +33,11 @@ There is **no WAF, throttle, or rate-limit to worry about** anymore, and no
 browser geolocation. You can sanity-check a provider by opening its URL above in
 a browser — a large JSON body means it's healthy.
 
-Two more chains exist but need a personal credential you must obtain yourself,
-so they are **not wired in yet** (see the "Outstanding" section at the bottom):
-Go'on (a key from a form on goon.nu) and Uno-X (OAuth client credentials).
-Adding each is another parser in `sources.py` once the credential exists.
+**Go'on** needs a personal key — free, from a two-field form at
+goon.nu/faa-adgang-til-api, issued by return mail. Paste it under *Configure →
+Chains & API keys*. It is the only source selling **Blyfri 92**, so that fuel
+stays empty until the key is in. **Uno-X** is still **not wired in** (OAuth
+client credentials, requested 2026-09-16) — see "Outstanding" at the bottom.
 
 **Health check:** just install and add an area (section 2). If the sensor's
 `stations` attribute fills, the whole pipeline works.
@@ -825,9 +826,13 @@ Tracked here and in the project notes so nothing is lost while testing:
       all: the 2026 law made the feed open. 402 sites, both brands, one
       constant header. Verify it the same way as any other chain — its stations
       should appear in the list and on the map with their own marks.
+- [x] **Go'on** — done 2026-09-16. Key requested, pasted and the parser built:
+      199 stations, all with coordinates, and 92 octane as its own fuel. Verify
+      by pasting the key under *Chains & API keys* and watching Go'on stations
+      appear. If saving says "cannot connect", wait 30 s and save again — one
+      request per key per 30 seconds is their limit, and the dialog had just
+      spent one testing it.
 - [ ] **More chains (need your credential):**
-  - Go'on — two-field form at **goon.nu/faa-adgang-til-api/**, key by return
-    mail within minutes. Then I add a "Go'on API key" field + parser.
   - Uno-X — OAuth 2.0 client credentials, requested by e-mail (sent
     2026-09-16). It needs a token fetch and refresh, which `sources.Auth`
     cannot do yet, as well as the credential.

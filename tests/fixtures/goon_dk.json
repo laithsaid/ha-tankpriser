@@ -1,0 +1,125 @@
+{
+ "lastUpdated": "2026-09-16T17:05:02+00:00",
+ "stations": [
+  {
+   "stationId": "17",
+   "brand": "Go'on",
+   "owner": "Go'on Gruppen A/S",
+   "street": "Sorøvej",
+   "houseNumber": "13",
+   "postalCode": "4200",
+   "city": "Slagelse",
+   "coordinates": {
+    "latitude": 55.4098933937,
+    "longitude": 11.3756998761
+   },
+   "openingHours": "24/7",
+   "prices": [
+    {
+     "fuelType": "autobenzin",
+     "octane": "92",
+     "productName": "Blyfri 92",
+     "price": 18.16,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-16T17:05:02+00:00"
+    },
+    {
+     "fuelType": "autobenzin",
+     "octane": "95",
+     "productName": "Blyfri 95",
+     "price": 18.19,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-16T17:05:02+00:00"
+    },
+    {
+     "fuelType": "autodiesel",
+     "octane": null,
+     "productName": "Diesel",
+     "price": 19.59,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-16T17:05:02+00:00"
+    }
+   ]
+  },
+  {
+   "stationId": "25",
+   "brand": "Go'on",
+   "owner": "Go'on Gruppen A/S",
+   "street": "Præstehaven",
+   "houseNumber": "22",
+   "postalCode": "7400",
+   "city": "Herning",
+   "coordinates": {
+    "latitude": 56.14650305,
+    "longitude": 9.0454121374
+   },
+   "openingHours": "24/7",
+   "prices": [
+    {
+     "fuelType": "autobenzin",
+     "octane": "95",
+     "productName": "Blyfri 95",
+     "price": 18.19,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-16T17:05:02+00:00"
+    },
+    {
+     "fuelType": "autodiesel",
+     "octane": null,
+     "productName": "Diesel",
+     "price": 19.59,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-16T17:05:02+00:00"
+    }
+   ]
+  },
+  {
+   "stationId": "9001",
+   "brand": "Go'on",
+   "owner": "Go'on Gruppen A/S",
+   "street": "Ukendt Vej",
+   "houseNumber": "1",
+   "postalCode": "8600",
+   "city": "Silkeborg",
+   "coordinates": {
+    "latitude": 56.17,
+    "longitude": 9.55
+   },
+   "openingHours": "24/7",
+   "prices": [
+    {
+     "fuelType": "adblue",
+     "octane": null,
+     "productName": "AdBlue",
+     "price": 8.95,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-16T17:05:02+00:00"
+    }
+   ]
+  },
+  {
+   "stationId": "9002",
+   "brand": "Go'on",
+   "owner": "Go'on Gruppen A/S",
+   "street": "Vejen",
+   "houseNumber": "2",
+   "postalCode": "",
+   "city": "",
+   "coordinates": {
+    "latitude": 56.0,
+    "longitude": 9.0
+   },
+   "openingHours": "",
+   "prices": [
+    {
+     "fuelType": "autobenzin",
+     "octane": "95",
+     "productName": "Blyfri 95",
+     "price": 18.19,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-16T17:05:02+00:00"
+    }
+   ]
+  }
+ ]
+}

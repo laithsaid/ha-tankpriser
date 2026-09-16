@@ -200,6 +200,11 @@ OIL_FUELTYPES: Final = {"95E10": "blyfri95", "DieselB7": "diesel"}
 # allowed". No coordinates, so these are placed by postnummer like Q8.
 CIRCLEK_URL: Final = "https://api.circlek.com/eu/prices/v1/fuel/countries/DK"
 CIRCLEK_HEADERS: Final = {"X-App-Name": "PRICES"}
+# Go'on: ~200 stations with coordinates, but behind a personal key anyone can
+# get from a two-field form. One request per key per 30 s, which the 10-minute
+# provider cache is already well inside — except right after a key is saved,
+# when the dialog has just tested it. That trap is in the provider's guide.
+GOON_URL: Final = "https://goon.nu/wp-json/goon/v1/pump-prices"
 
 # Germany: Tankerkoenig, the free consumer feed of the Bundeskartellamt's
 # MTS-K. Needs a personal key (see the Provider entry in sources.py) and
@@ -377,6 +382,11 @@ DEFAULT_NOTIFY_RULE: Final = RULE_CHEAPEST
 # the common denominators present at nearly every station, so they are the
 # sensible defaults everywhere.
 FUEL_TYPES: Final = {
+    # 92 octane is sold by Go'on and nobody else we read, so it only appears
+    # once that key is configured. It is kept apart from Blyfri 95 rather than
+    # folded into it: it is cheaper, so it would win every ranking, and plenty
+    # of cars must not be filled with it.
+    "blyfri92": "Blyfri 92",
     "blyfri95": "Blyfri 95 (E10)",
     "blyfri98": "Blyfri 98",
     "blyfri95plus": "Blyfri 95 Extra (E5)",
