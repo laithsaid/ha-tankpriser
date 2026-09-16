@@ -733,10 +733,19 @@ PROVIDERS: dict[str, Provider] = {
             fuels=frozenset(_SHELL_PRODUCT_MAP.values()),
         ),
         Provider("oil", "OIL!", fetch_oil, fuels=frozenset(OIL_FUELTYPES.values())),
-        # Denmark: chains that require a personal credential go here once we
-        # have one to test against — e.g. Go'on (apply at goon.nu), Circle
-        # K/INGO (fueldkapi@circlekeurope.com) and Uno-X (bearer token). Each
-        # needs only auth=Auth(AUTH_KEY, ...), signup_url and guide text.
+        # Denmark, still missing (rechecked live 2026-09-16):
+        #
+        # * Circle K / INGO needs NO credential any more. The 2026 law made it
+        #   open: GET https://api.circlek.com/eu/prices/v1/fuel/countries/DK
+        #   with the header `X-App-Name: PRICES` (without it, 400 "App not
+        #   allowed"). 402 sites, prices inline, no coordinates — postnummer
+        #   geocoding like Q8. Not built yet; this is a parser, not a request.
+        # * Go'on issues a key from a two-field form at
+        #   goon.nu/faa-adgang-til-api/, by return e-mail.
+        # * Uno-X is OAuth 2.0 client credentials (token at
+        #   auth.unoxmobility.net, data at api.unoxmobility.net), one request
+        #   per 30 s, and the client_id/secret are applied for by e-mail.
+        #   `Auth` has no client-credentials mode yet; that is the work.
         Provider(
             "tankerkoenig",
             "Tankerkönig (MTS-K)",
