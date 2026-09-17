@@ -17,7 +17,7 @@
           "anchor": "Søg ud fra dette punkt"
         },
         "data_description": {
-          "anchor": "Tyske priser kan kun slås op omkring et punkt, og det punkt skal ligge fast: sensorer, historik og prisbeskeder sammenligner de samme stationer fra opdatering til opdatering. Spørger du højt, søges der stadig fra der, hvor du er."
+          "anchor": "Disse priser kan kun slås op omkring et punkt, og det punkt skal ligge fast: sensorer, historik og prisbeskeder sammenligner de samme stationer fra opdatering til opdatering. Spørger du højt, søges der stadig fra der, hvor du er."
         }
       },
       "credentials": {

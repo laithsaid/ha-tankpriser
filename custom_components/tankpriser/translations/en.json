@@ -17,7 +17,7 @@
           "anchor": "Search from this point"
         },
         "data_description": {
-          "anchor": "German prices can only be looked up around a point, and this one has to stand still: the sensors, the history and the price notifications all compare the same stations from one update to the next. Asking out loud still searches from wherever you actually are."
+          "anchor": "These prices can only be looked up around a point, and this one has to stand still: the sensors, the history and the price notifications all compare the same stations from one update to the next. Asking out loud still searches from wherever you actually are."
         }
       },
       "credentials": {
