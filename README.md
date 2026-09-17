@@ -811,7 +811,7 @@ entities:
 | `cluster` | `true` | Group nearby stations into clusters |
 | `show_list` | shown only when the map is off | Set `true` to show map *and* table |
 | `highlight_cheapest` | `true` | Emphasise the cheapest row |
-| `max_stations` | `0` (all) | Cap the number of rows in the table |
+| `max_stations` | `0` (all) | Cap the number of rows in the table. "All" means everything the sensor publishes, which is itself the cheapest 50 — see below |
 | `show_distance` | `true` | How far away each station is, above its price. Measured from your live position when the map is tracking it, otherwise from Home — the header says which |
 | `sort` | `price` | `price` = cheapest first; `distance` = nearest first |
 | `show_my_location` | `true` | Live GPS dot and the ◎ / ➤ buttons. `false` removes all three and never asks for your location |
@@ -1667,12 +1667,21 @@ Denmark, €/L in Germany. The state carries the full figure; `country` and
 
 | Attribute | Meaning |
 | --- | --- |
-| `stations` | Every station in range: `name`, `company`, `address`, `city`, `postnummer`, `price`, `list_price`, `discount_ore`, `updated`, `latitude`, `longitude`, `coord_approx` |
+| `stations` | The cheapest stations in range, up to 50: `name`, `company`, `address`, `city`, `postnummer`, `price`, `list_price`, `discount_ore`, `updated`, `latitude`, `longitude`, `coord_approx` |
 | `cheapest_station`, `cheapest_price` | The winner |
-| `average_price` | Mean across the area |
-| `station_count` | How many stations sell this fuel here |
+| `average_price` | Mean across the area — every station, not just the listed ones |
+| `station_count` / `listed_count` | How many sell this fuel here / how many are in `stations` above |
 | `discounted` | `true` if any price here has one of your loyalty discounts applied |
 | `area`, `radius`, `fuel_type`, `fuel_key` | What this sensor covers |
+
+**Why `stations` stops at 50.** Home Assistant's recorder refuses to store a
+state whose attributes exceed 16 KB — it does not shorten them, it stores none
+of them and logs a warning, so the sensor keeps working while its *history*
+holds nothing. A 10 km area in Denmark was never close to that line. A 50 km
+French one is: around Lyon it is roughly 400 forecourts and 110 KB. The list is
+cheapest-first, so the 50 that survive are the 50 the list exists to show, and
+`station_count` still tells you the real total. A handful of very long station
+names can trim it below 50 — `listed_count` says what actually went in.
 
 ### `sensor.tankpriser_<fuel>_cheapest_nearby` — only when a device is nominated
 

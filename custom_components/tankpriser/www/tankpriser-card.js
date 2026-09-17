@@ -44,7 +44,8 @@
  *   show_list: false                     # optional; default: shown only when the
  *                                        #   map is off. Set true to show both.
  *   highlight_cheapest: true             # optional, default true
- *   max_stations: 0                      # optional, 0 = all (list only)
+ *   max_stations: 0                      # optional, 0 = all (list only);
+ *                                        #   the sensor itself publishes at most 50
  *
  * Company icons are each chain's official favicon, bundled with the
  * integration and served by Home Assistant — no third-party requests. A

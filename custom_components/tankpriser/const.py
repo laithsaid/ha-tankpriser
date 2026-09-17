@@ -464,6 +464,32 @@ CONF_CALIBRATION_ENABLED: Final = "calibration_enabled"
 # publishes the whole country. Where it does not, the source imposes a ceiling
 # and `sources.radius_options` trims this ladder to it — see there, which is
 # also where the default comes from.
+# How many stations the area sensor lists in its attributes.
+#
+# Home Assistant's recorder refuses to store a state's attributes once they
+# exceed 16 KB, and says so in the log — it does not truncate, it drops the
+# lot. The list used to be uncapped, which was harmless while an area meant
+# 10 km of Denmark and stopped being harmless the moment France shipped with a
+# 50 km circle: measured against the live feed around Lyon, SP95-E10 came to
+# 343 stations and 94 KB, Gazole 401 and 110 KB — 5.7x and 6.7x over. The
+# sensor kept working (the card reads the live state) while its history
+# quietly held no attributes at all.
+#
+# 50 rows of his French data measured 13.7 KB and 100 measured 27.4 KB, so
+# fifty is the cap, cheapest first. `station_count` still reports the true
+# total — see `listed_count` on the nearby sensor for why a count that silently
+# equals its cap is worse than no count.
+#
+# A count alone is not a guarantee, though: 50 rows is 13.7 KB of French data
+# and 18.5 KB of pessimistic one, because a row carrying a 40-character name,
+# a long address and a Danish discount is half again as big as a French row
+# with nulls in those fields. So the count is a ceiling and the byte budget
+# below is the thing that actually holds — whichever runs out first wins.
+STATION_ATTR_LIMIT: Final = 50
+# The recorder's ceiling is 16 KB for the WHOLE attribute dict, so the list
+# gets most of it and the summary values keep the rest.
+STATION_ATTR_BUDGET: Final = 15_000
+
 RADIUS_OPTIONS: Final = ["5 km", "10 km", "15 km", "25 km", "50 km"]
 DEFAULT_RADIUS: Final = "10 km"
 

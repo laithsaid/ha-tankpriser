@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 from homeassistant.components.sensor import (
@@ -28,6 +29,8 @@ from .const import (
     price_unit,
     spoken_currency,
     NEARBY_MAX_STATIONS,
+    STATION_ATTR_BUDGET,
+    STATION_ATTR_LIMIT,
 )
 from .consumption import ConsumptionTracker
 from .coordinator import TankpriserCoordinator, tracker_origin
@@ -114,6 +117,52 @@ class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
         cheapest = data.cheapest(self._fuel_key)
         return cheapest.prices[self._fuel_key] if cheapest else None
 
+def _listed_stations(stations: list, fuel_key: str) -> list[dict]:
+    """The stations to publish as attributes: cheapest first, and small enough.
+
+    Home Assistant's recorder will not store a state whose attributes exceed
+    16 KB. It does not truncate them — it drops all of them and logs a warning,
+    so the sensor goes on working while its history quietly holds nothing. That
+    is exactly what France did: a 50 km circle around Lyon is ~400 forecourts
+    and 110 KB of attributes.
+
+    Two limits, and whichever runs out first wins. `STATION_ATTR_LIMIT` is the
+    count, which is what anyone reading the card cares about; the byte budget
+    is what actually holds, because a row with a long name, a long address and
+    a Danish discount is half again the size of a French one with nulls in
+    those fields. Measured cheaply: these rows are flat, so their JSON length
+    is their cost.
+
+    At least one station always survives, even a pathological one, because a
+    list with the cheapest station in it beats an empty list every time.
+    """
+    budget = STATION_ATTR_BUDGET
+    listed: list[dict] = []
+    for station in stations[:STATION_ATTR_LIMIT]:
+        row = {
+            "name": station.name,
+            "company": station.company,
+            "postnummer": station.postnummer,
+            "city": station.city,
+            "address": station.address,
+            # What you pay, discount already applied.
+            "price": station.prices[fuel_key],
+            # Present only when a discount changed the price, so a template can
+            # say "16,99 -> 16,79" without guessing.
+            "list_price": station.list_prices.get(fuel_key),
+            "discount_ore": station.discount_ore or None,
+            "updated": station.updated,
+            "latitude": station.latitude,
+            "longitude": station.longitude,
+            "coord_approx": station.coord_approx,
+        }
+        budget -= len(json.dumps(row, ensure_ascii=False, default=str).encode())
+        if budget < 0 and listed:
+            break
+        listed.append(row)
+    return listed
+
+
     @property
     def extra_state_attributes(self) -> dict:
         """Full station list and summary values for this fuel."""
@@ -123,6 +172,7 @@ class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
         stations = data.stations_for(self._fuel_key)
         prices = [s.prices[self._fuel_key] for s in stations]
         cheapest = stations[0] if stations else None
+        listed = _listed_stations(stations, self._fuel_key)
         return {
             "fuel_type": fuel_label(self._fuel_key, self.coordinator.country),
             "fuel_key": self._fuel_key,
@@ -133,33 +183,20 @@ class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
             "price_decimals": price_decimals(self.coordinator.country),
             "area": self.coordinator.area_label,
             "radius": self.coordinator.radius,
+            # How many sell this fuel here, not how many are listed below.
+            # The list is capped — see STATION_ATTR_LIMIT — and a count that
+            # silently equalled the cap would read as "there are only 50
+            # stations near you", which is the same lie the nearby sensor
+            # already learned not to tell.
             "station_count": len(stations),
+            "listed_count": len(listed),
             "cheapest_station": cheapest.name if cheapest else None,
             "cheapest_price": cheapest.prices[self._fuel_key] if cheapest else None,
             # True when any station here is priced with one of your discounts —
             # tells a reader whether these are pump prices or your prices.
             "discounted": any(s.discount_ore for s in stations),
             "average_price": round(sum(prices) / len(prices), 2) if prices else None,
-            "stations": [
-                {
-                    "name": s.name,
-                    "company": s.company,
-                    "postnummer": s.postnummer,
-                    "city": s.city,
-                    "address": s.address,
-                    # What you pay, discount already applied.
-                    "price": s.prices[self._fuel_key],
-                    # Present only when a discount changed the price, so a
-                    # template can say "16,99 -> 16,79" without guessing.
-                    "list_price": s.list_prices.get(self._fuel_key),
-                    "discount_ore": s.discount_ore or None,
-                    "updated": s.updated,
-                    "latitude": s.latitude,
-                    "longitude": s.longitude,
-                    "coord_approx": s.coord_approx,
-                }
-                for s in stations
-            ],
+            "stations": listed,
         }
 
     @callback
