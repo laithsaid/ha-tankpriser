@@ -70,6 +70,52 @@ async def async_setup_entry(
         )
 
 
+def _listed_stations(stations: list, fuel_key: str) -> list[dict]:
+    """The stations to publish as attributes: cheapest first, and small enough.
+
+    Home Assistant's recorder will not store a state whose attributes exceed
+    16 KB. It does not truncate them — it drops all of them and logs a warning,
+    so the sensor goes on working while its history quietly holds nothing. That
+    is exactly what France did: a 50 km circle around Lyon is ~400 forecourts
+    and 110 KB of attributes.
+
+    Two limits, and whichever runs out first wins. `STATION_ATTR_LIMIT` is the
+    count, which is what anyone reading the card cares about; the byte budget
+    is what actually holds, because a row with a long name, a long address and
+    a Danish discount is half again the size of a French one with nulls in
+    those fields. Measured cheaply: these rows are flat, so their JSON length
+    is their cost.
+
+    At least one station always survives, even a pathological one, because a
+    list with the cheapest station in it beats an empty list every time.
+    """
+    budget = STATION_ATTR_BUDGET
+    listed: list[dict] = []
+    for station in stations[:STATION_ATTR_LIMIT]:
+        row = {
+            "name": station.name,
+            "company": station.company,
+            "postnummer": station.postnummer,
+            "city": station.city,
+            "address": station.address,
+            # What you pay, discount already applied.
+            "price": station.prices[fuel_key],
+            # Present only when a discount changed the price, so a template can
+            # say "16,99 -> 16,79" without guessing.
+            "list_price": station.list_prices.get(fuel_key),
+            "discount_ore": station.discount_ore or None,
+            "updated": station.updated,
+            "latitude": station.latitude,
+            "longitude": station.longitude,
+            "coord_approx": station.coord_approx,
+        }
+        budget -= len(json.dumps(row, ensure_ascii=False, default=str).encode())
+        if budget < 0 and listed:
+            break
+        listed.append(row)
+    return listed
+
+
 class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
     """Cheapest price for one fuel type in a configured area.
 
@@ -116,52 +162,6 @@ class TankpriserSensor(CoordinatorEntity[TankpriserCoordinator], SensorEntity):
             return None
         cheapest = data.cheapest(self._fuel_key)
         return cheapest.prices[self._fuel_key] if cheapest else None
-
-def _listed_stations(stations: list, fuel_key: str) -> list[dict]:
-    """The stations to publish as attributes: cheapest first, and small enough.
-
-    Home Assistant's recorder will not store a state whose attributes exceed
-    16 KB. It does not truncate them — it drops all of them and logs a warning,
-    so the sensor goes on working while its history quietly holds nothing. That
-    is exactly what France did: a 50 km circle around Lyon is ~400 forecourts
-    and 110 KB of attributes.
-
-    Two limits, and whichever runs out first wins. `STATION_ATTR_LIMIT` is the
-    count, which is what anyone reading the card cares about; the byte budget
-    is what actually holds, because a row with a long name, a long address and
-    a Danish discount is half again the size of a French one with nulls in
-    those fields. Measured cheaply: these rows are flat, so their JSON length
-    is their cost.
-
-    At least one station always survives, even a pathological one, because a
-    list with the cheapest station in it beats an empty list every time.
-    """
-    budget = STATION_ATTR_BUDGET
-    listed: list[dict] = []
-    for station in stations[:STATION_ATTR_LIMIT]:
-        row = {
-            "name": station.name,
-            "company": station.company,
-            "postnummer": station.postnummer,
-            "city": station.city,
-            "address": station.address,
-            # What you pay, discount already applied.
-            "price": station.prices[fuel_key],
-            # Present only when a discount changed the price, so a template can
-            # say "16,99 -> 16,79" without guessing.
-            "list_price": station.list_prices.get(fuel_key),
-            "discount_ore": station.discount_ore or None,
-            "updated": station.updated,
-            "latitude": station.latitude,
-            "longitude": station.longitude,
-            "coord_approx": station.coord_approx,
-        }
-        budget -= len(json.dumps(row, ensure_ascii=False, default=str).encode())
-        if budget < 0 and listed:
-            break
-        listed.append(row)
-    return listed
-
 
     @property
     def extra_state_attributes(self) -> dict:

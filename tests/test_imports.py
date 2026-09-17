@@ -91,6 +91,53 @@ for module, tree in trees.items():
                 f"{alias.name} is not defined in {target}.py",
             )
 
+# --- entity classes keep their entity methods ------------------------------
+# Added after breaking exactly this, on 2026-09-17. A helper was inserted into
+# sensor.py at column 0 while sitting inside a class body. That ends the class,
+# and the methods that followed became nested functions inside the helper --
+# valid Python, so `ast.parse` was happy, the import check was happy, and both
+# suites stayed green. `TankpriserSensor` silently lost
+# `extra_state_attributes` and `_handle_coordinator_update`, and every area
+# sensor went out with nothing but a state: no station list, no station_count,
+# no fuel_type. It looked like a data problem for a good ten minutes.
+#
+# Nothing here can catch an indentation mistake by reading the code, so this
+# asserts the shape instead: these classes must carry these methods, by name.
+REQUIRED_METHODS = {
+    ("sensor", "TankpriserSensor"): (
+        "native_value",
+        "extra_state_attributes",
+        "_handle_coordinator_update",
+    ),
+    ("sensor", "CarPredictionSensor"): ("native_value", "extra_state_attributes"),
+    ("sensor", "NearbyStationsSensor"): (
+        "native_value",
+        "extra_state_attributes",
+        "_handle_coordinator_update",
+    ),
+}
+
+print()
+print("entity classes still carry their entity methods")
+for (module, class_name), required in sorted(REQUIRED_METHODS.items()):
+    tree = ast.parse(
+        io.open(os.path.join(BASE, f"{module}.py"), encoding="utf-8").read()
+    )
+    found = {
+        node.name
+        for top in tree.body
+        if isinstance(top, ast.ClassDef) and top.name == class_name
+        for node in top.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    for name in required:
+        check(
+            f"{module}.{class_name}.{name}",
+            name in found,
+            "not a method of that class -- check the indentation of anything "
+            "defined above it",
+        )
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} import checks FAILED")
