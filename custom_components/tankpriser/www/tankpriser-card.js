@@ -2163,10 +2163,27 @@ class TankpriserCard extends HTMLElement {
       );
     }
     if (!lines.length) {
+      // A pin can land inside a configured country's box and still be standing
+      // in another country — the boxes overspill their borders on purpose. So
+      // an empty answer says WHERE it came up empty, and where the position
+      // actually is when that country has no area set up. "Ingen stationer
+      // inden for 25 km" was said of Luxembourg City, and meant only that no
+      // German forecourt was within 25 km of it.
+      const elsewhere = answer && answer.no_source_country;
+      if (elsewhere) {
+        return (
+          `<div class="ff-pick-pop">Ingen priser her: ` +
+          `${this._escape(elsewhere)} er ikke sat op i Tankpriser.</div>`
+        );
+      }
       const reach =
         answer && answer.searched_km ? Math.round(answer.searched_km) : null;
+      const where =
+        answer && answer.country_name ? ` i ${this._escape(answer.country_name)}` : "";
       return `<div class="ff-pick-pop">${
-        reach ? `Ingen stationer inden for ${reach} km.` : "Ingen stationer her."
+        reach
+          ? `Ingen stationer inden for ${reach} km${where}.`
+          : "Ingen stationer her."
       }</div>`;
     }
     const count = plotted != null ? plotted : 0;

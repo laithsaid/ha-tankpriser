@@ -213,7 +213,9 @@
         "dk": "Danmark — OK, Q8, F24, Shell og OIL!, kræver ingen nøgle",
         "de": "Tyskland — Tankerkönig (MTS-K), kræver en gratis API-nøgle",
         "nl": "Holland — ANWB, kræver ingen nøgle (ingen tidsstempler på priserne)",
-        "be": "Belgien — ANWB, kræver ingen nøgle (ingen tidsstempler på priserne)"
+        "be": "Belgien — ANWB, kræver ingen nøgle (ingen tidsstempler på priserne)",
+        "lu": "Luxembourg — ANWB, kræver ingen nøgle (ingen tidsstempler på priserne)",
+        "fr": "Frankrig — ANWB, kræver ingen nøgle, søger omkring dig (ingen tidsstempler på priserne)"
       }
     },
     "maps": {

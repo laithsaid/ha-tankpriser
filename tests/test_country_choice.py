@@ -310,6 +310,109 @@ check(
     danish_sentence,
 )
 
+# --- an empty answer that says where it looked ------------------------------
+# Found live on 2026-09-17, by pinning the map near southern Belgium. The boxes
+# overspill their borders on purpose, so a pin can land inside a configured
+# country's box while standing in a country that is not configured at all.
+# Luxembourg City is inside BOTH the Belgian and the German box; Germany's
+# anchor was nearer, so Germany answered, and no German forecourt is within
+# 25 km of it. The answer was "No stations within 25 kilometres" with 233
+# Luxembourgish stations under the pin: true about the pool, a lie about the
+# place. Northern France did the same thing through Belgium's box.
+LUXEMBOURG_CITY = (49.6117, 6.1319)
+CHARLEVILLE = (49.7717, 4.7197)  # France, well inside the Belgian box
+ARDENNES = (50.0270, 5.3760)     # Saint-Hubert, genuinely in Belgium
+
+print()
+print("the trap: a box is not a border")
+check(
+    "Luxembourg City is inside Belgium's box",
+    const.country_of("be").contains(*LUXEMBOURG_CITY),
+)
+check(
+    "and inside Germany's, which is what used to answer",
+    const.country_of("de").contains(*LUXEMBOURG_CITY),
+)
+check(
+    "Charleville is inside Belgium's box although it is in France",
+    const.country_of("be").contains(*CHARLEVILLE),
+)
+
+print()
+print("naming what is not set up")
+FOUR = ("dk", "de", "nl", "be")
+missing_lux = nearby.unconfigured_here(FOUR, *LUXEMBOURG_CITY)
+check(
+    "a Luxembourg pin names Luxembourg first",
+    bool(missing_lux) and missing_lux[0].code == "lu",
+    [c.code for c in missing_lux],
+)
+check(
+    "smallest box first, so Luxembourg beats France for the same point",
+    [c.code for c in missing_lux] == ["lu", "fr"],
+    [c.code for c in missing_lux],
+)
+missing_fr = nearby.unconfigured_here(FOUR, *CHARLEVILLE)
+check(
+    "a northern-France pin names France",
+    bool(missing_fr) and missing_fr[0].code == "fr",
+    [c.code for c in missing_fr],
+)
+check(
+    "with every country set up there is nothing to report",
+    nearby.unconfigured_here(("dk", "de", "nl", "be", "lu", "fr"), *LUXEMBOURG_CITY)
+    == [],
+)
+check(
+    "a place genuinely in a configured country never names that country",
+    "be" not in [c.code for c in nearby.unconfigured_here(FOUR, *ARDENNES)],
+    [c.code for c in nearby.unconfigured_here(FOUR, *ARDENNES)],
+)
+check(
+    "somewhere no box claims at all is nobody's gap",
+    nearby.unconfigured_here(FOUR, *MID_ATLANTIC) == [],
+)
+
+print()
+print("the sentence stops implying the forecourts do not exist")
+searched_elsewhere = nearby.spoken_cheapest(
+    [], danish=False, currency="euro", searched_km=25, country_name="Germany"
+)
+check(
+    "an empty answer names the country it searched",
+    "Germany" in searched_elsewhere and "25" in searched_elsewhere,
+    searched_elsewhere,
+)
+check(
+    "and still says the range, which the Shortcut reads out",
+    "no stations within 25" in searched_elsewhere.lower(),
+    searched_elsewhere,
+)
+no_source = nearby.spoken_no_source("Luxembourg", danish=False)
+check(
+    "a country with no source says so instead of quoting a range",
+    "Luxembourg" in no_source and "not set up" in no_source,
+    no_source,
+)
+check(
+    "and says nothing about a range it never searched",
+    "kilometre" not in no_source and "within" not in no_source,
+    no_source,
+)
+check(
+    "Danish gets its own wording",
+    "ikke sat op" in nearby.spoken_no_source("Frankrig", danish=True),
+    nearby.spoken_no_source("Frankrig", danish=True),
+)
+# A box is a rectangle and a border is not, so the sentence must not claim to
+# know which country the pin is standing in: Charleville and Brussels are both
+# inside the Belgian box and only one of them is in Belgium.
+check(
+    "it never claims where you are, only what is missing",
+    "position" not in no_source.lower() and "you are" not in no_source.lower(),
+    no_source,
+)
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} country-choice checks FAILED")

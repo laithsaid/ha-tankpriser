@@ -22,6 +22,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
+from math import cos, radians
 from dataclasses import dataclass, field, replace
 from typing import Final
 
@@ -40,12 +41,16 @@ from .const import (
     OIL_URL,
     OK_URL,
     PROVIDER_CACHE_TTL,
+    ANWB_AREA_MAX_RADIUS_KM,
     ANWB_BOXES,
     ANWB_ISO3,
+    ANWB_MAX_BOX_DEG,
     ANWB_URL,
     CIRCLEK_HEADERS,
     CIRCLEK_URL,
     COUNTRY_BE,
+    COUNTRY_FR,
+    COUNTRY_LU,
     COUNTRY_NL,
     GOON_URL,
     Q8_URL,
@@ -473,21 +478,51 @@ def parse_anwb(payload: dict, country: str) -> list[Station]:
     return stations
 
 
+def anwb_box_around(area: "Area | None") -> tuple[float, float, float, float]:
+    """The box to ask about when a country is too big to ask for whole.
+
+    Drawn around the circle the caller is interested in, then clamped to
+    ``ANWB_MAX_BOX_DEG`` — over that line the service returns an empty list
+    rather than an error, so an unclamped box would report an empty France.
+    """
+    if area is None:
+        raise ValueError("This country can only be asked about an area")
+    radius_km = min(area.radius_km, ANWB_AREA_MAX_RADIUS_KM)
+    lat_span = radius_km / 111.0
+    # A degree of longitude shortens towards the poles; the floor keeps this
+    # finite, as it does in `nearby.bounding_box`.
+    lon_span = lat_span / max(cos(radians(area.latitude)), 0.01)
+    half = ANWB_MAX_BOX_DEG / 2.0
+    lat_span, lon_span = min(lat_span, half), min(lon_span, half)
+    return (
+        area.latitude - lat_span,
+        area.longitude - lon_span,
+        area.latitude + lat_span,
+        area.longitude + lon_span,
+    )
+
+
 def anwb_fetcher(country: str):
-    """Fetcher for one country's box."""
-    box = ANWB_BOXES[country]
+    """Fetcher for one country: its own box, or a box drawn around an area.
+
+    A country small enough to fit inside ANWB's box limit is asked for whole,
+    once, and cached. France is not — see ``ANWB_MAX_BOX_DEG`` — so it is asked
+    about the place the caller is standing, the way Tankerkoenig is.
+    """
+    box = ANWB_BOXES.get(country)
 
     async def _fetch(
         session: aiohttp.ClientSession,
         credential: str | None = None,
         area: "Area | None" = None,
     ) -> list[Station]:
+        window = box or anwb_box_around(area)
         payload = await _fetch_json(
             session,
             ANWB_URL,
             params={
                 "type-filter": "FUEL_STATION",
-                "bounding-box-filter": ",".join(f"{v:g}" for v in box),
+                "bounding-box-filter": ",".join(f"{v:g}" for v in window),
             },
         )
         return parse_anwb(payload, country)
@@ -1046,6 +1081,29 @@ PROVIDERS: dict[str, Provider] = {
             anwb_fetcher(COUNTRY_BE),
             country=COUNTRY_BE,
             fuels=frozenset(_ANWB_PRODUCT_MAP.values()),
+        ),
+        Provider(
+            "anwb_lu",
+            "ANWB (Luxembourg)",
+            anwb_fetcher(COUNTRY_LU),
+            country=COUNTRY_LU,
+            fuels=frozenset(_ANWB_PRODUCT_MAP.values()),
+        ),
+        # France answers the same feed, but no single box covers it: see
+        # ANWB_MAX_BOX_DEG. Area-scoped like Germany, so the same machinery
+        # that caps and caches a German circle caps and caches a French one —
+        # and, as with Germany, there is no nationwide pool to rank, so the
+        # "cheapest in the country" sensors do not exist here.
+        Provider(
+            "anwb_fr",
+            "ANWB (France)",
+            anwb_fetcher(COUNTRY_FR),
+            country=COUNTRY_FR,
+            scope=SCOPE_AREA,
+            fuels=frozenset(_ANWB_PRODUCT_MAP.values()),
+            max_radius_km=ANWB_AREA_MAX_RADIUS_KM,
+            # Porte de la Chapelle: somewhere France is guaranteed to sell fuel.
+            probe=Area(48.8987, 2.3595, 5_000),
         ),
         Provider(
             "tankerkoenig",

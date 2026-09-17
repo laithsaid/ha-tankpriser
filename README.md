@@ -20,12 +20,14 @@ in the country, updated within five minutes of a price change by law. It needs
 a free personal API key, and it works differently enough in a few places to be
 worth reading [its own section](#14-germany) before setting it up.
 
-**The Netherlands and Belgium** come from [ANWB](https://www.anwb.nl/)'s own
-service — around 3,900 Dutch and 1,800 Belgian forecourts, no key, LPG and CNG
-included. Neither country mandates an open price API the way Denmark and
-Germany do, so this one is undocumented goodwill rather than law, and **it
+**The Netherlands, Belgium, Luxembourg and France** come from
+[ANWB](https://www.anwb.nl/)'s own service — around 3,900 Dutch, 1,800 Belgian
+and 230 Luxembourgish forecourts, plus France nationwide, with no key and LPG
+and CNG included. None of the four mandates an open price API the way Denmark
+and Germany do, so this one is undocumented goodwill rather than law, and **it
 publishes no timestamps**: those stations show a price but never a "last
-changed". Read [15. The Netherlands and Belgium](#15-the-netherlands-and-belgium)
+changed". France is also searched around you rather than nationwide. Read
+[15. The Netherlands, Belgium, Luxembourg and France](#15-the-netherlands-belgium-luxembourg-and-france)
 before relying on them.
 
 One setup covers one country. Driving from Rotterdam to Silkeborg? Add
@@ -89,7 +91,7 @@ What each feature *is*. How to switch it on is in
 | 12c | [Self-correcting predictions](#12c-self-correcting-predictions) | Each refuel grades the last prediction, and a repeated lean is corrected |
 | 13 | [Sources that need an API key](#13-sources-that-need-an-api-key) | A guided page for sources that are not open — Germany's is one |
 | 14 | [Germany](#14-germany) | ~15,000 German stations, a corridor search while driving, prices to three decimals |
-| 15 | [The Netherlands and Belgium](#15-the-netherlands-and-belgium) | ~5,700 forecourts from ANWB, with LPG and CNG — and no price timestamps |
+| 15 | [The Netherlands, Belgium, Luxembourg and France](#15-the-netherlands-belgium-luxembourg-and-france) | ~5,900 Benelux forecourts from ANWB plus France, with LPG and CNG — and no price timestamps |
 | 16 | [Testing without driving](#16-testing-the-driving-features-without-driving) | Drive a virtual car across Germany to exercise all of it from your desk |
 
 ### 1. Local price sensors
@@ -539,16 +541,26 @@ reads (`spoken_cheapest` still speaks both, but `stations` and `urls` stay one
 country), so an existing shortcut keeps navigating to a station priced in the
 currency it just named.
 
-### 15. The Netherlands and Belgium
+### 15. The Netherlands, Belgium, Luxembourg and France
 
-Two more countries from one source: **ANWB**, the Dutch motoring club, whose own
-app draws its prices from it. No key, no signup — around **3,900 Dutch** and
-**1,800 Belgian** forecourts with exact coordinates, including **LPG** at about
-a quarter of them and **CNG** at a handful.
+Four countries from one source: **ANWB**, the Dutch motoring club, whose own app
+draws its prices from it. No key, no signup — around **3,900 Dutch**, **1,800
+Belgian** and **230 Luxembourgish** forecourts with exact coordinates, plus
+**France nationwide**, including **LPG** at about a quarter of them and **CNG**
+at a handful.
 
 They are set up exactly like Germany: one Tankpriser per country, and the one
 you are standing in answers. Rotterdam → Hamburg → Silkeborg is three entries
 and one question.
+
+**France is the exception, and it is set up like Germany rather than like the
+others.** The service answers a bounding box, and it refuses one bigger than
+about 6° square — by returning an empty list, not an error — so no single
+request can cover France. France therefore asks about a **50 km circle around
+you**, which means it needs an anchor point when you add it, and that there is
+no nationwide French map and no "cheapest in the country" sensor. Everything you
+actually ask while driving — `tankpriser.nearby`, the Siri shortcut, the Assist
+prompt, the 📍 pin on the map — works exactly as it does everywhere else.
 
 Three things are different here, and they are worth knowing before you trust a
 number:
@@ -559,10 +571,11 @@ number:
   time rather than the moment we happened to fetch, which is not the same thing
   and would be read as one.
 - **No law behind it.** Denmark and Germany oblige their chains to publish;
-  neither the Netherlands nor Belgium does. The official figures in both
-  countries — the Dutch CBS monthly averages, the Belgian federal *maximum*
-  price — are national, not per forecourt, so they cannot answer "which
-  station". ANWB works and is clean, but it can change or stop without notice.
+  none of these four does. The official figures — the Dutch CBS monthly
+  averages, the Belgian federal *maximum* price, the French *prix-carburants*
+  extract — are national or daily rather than per forecourt, so they cannot
+  answer "which station". ANWB works and is clean, but it can change or stop
+  without notice.
 - **Prices of zero get dropped.** The feed carries a couple of hundred of them.
   A zero is a missing price, not a cheap one, and left in it would win every
   ranking and send you to a pump that is not selling.
@@ -571,6 +584,20 @@ number:
 comparison with a litre price for that reason — on the card, in the
 cheapest-nearby ranking and in what Siri says. A kilogram of gas next to a litre
 of petrol is a different question, not a better deal.
+
+**Asking about a country you have not added.** Each country is matched by a
+box, and a box is generous — it overspills the border on purpose, so a road
+that bends across a frontier still gets an answer. The cost is that a position
+can sit inside a country's box while standing somewhere else entirely:
+Luxembourg is inside both the Belgian and the German box, and northern France
+is inside the Belgian one. Until 0.18.0 that produced a confident lie — pinning
+Luxembourg City answered *"no stations within 25 kilometres"*, which was true of
+the German stations it had searched and false about the 233 Luxembourgish ones
+under the pin. Now an empty answer says **where it looked** (*"no stations
+within 25 kilometres in Germany"*), and where the position is covered only by a
+country you have not set up it says so instead: *"No prices here: Luxembourg is
+not set up in Tankpriser."* If you see that, add that country — it is one more
+Tankpriser entry and, for these four, no key.
 
 ### 16. Testing the driving features without driving
 
@@ -600,9 +627,10 @@ app does — so all of it runs for real from your desk. See
   Denmark). No `configuration.yaml` entry, ever.
 - **For Denmark:** no account and no API key. One chain, **Go'on**, is optional
   and does need a free key — see [13](#13-sources-that-need-an-api-key).
-- **For the Netherlands and Belgium:** no account and no API key
-  — see [15](#15-the-netherlands-and-belgium) for what that source does and
-  does not publish.
+- **For the Netherlands, Belgium, Luxembourg and France:** no account and no
+  API key — see [15](#15-the-netherlands-belgium-luxembourg-and-france) for what
+  that source does and does not publish, and for why France is set up with an
+  anchor point and the other three are not.
 - **For Germany:** a free [Tankerkönig](https://creativecommons.tankerkoenig.de/)
   API key, which you request yourself — see [14. Germany](#14-germany). Expect
   to wait: a person there activates each key by hand, and a key that has not
@@ -1521,25 +1549,39 @@ spoken sentence rounds to two — nobody reads out the 9/10 of a cent.
 price, and are ignored for German stations rather than quietly subtracted from a
 euro price.
 
-### 15. The Netherlands and Belgium
+### 15. The Netherlands, Belgium, Luxembourg and France
 
-*([what this feature does](#15-the-netherlands-and-belgium))*
+*([what this feature does](#15-the-netherlands-belgium-luxembourg-and-france))*
 
-**Add Tankpriser again and pick the country.** Nothing else: no key, no anchor
-point to choose — unlike Germany, both countries answer for the whole country at
-once, so the map and the nationwide "cheapest near me" work the same way they do
-in Denmark.
+**Add Tankpriser again and pick the country.** For **the Netherlands, Belgium
+and Luxembourg** that is all of it: no key, no anchor point to choose — these
+three answer for the whole country at once, so the map and the nationwide
+"cheapest near me" work the same way they do in Denmark.
+
+**France also asks for an anchor point and a radius**, like Germany, because no
+single request can cover it — see
+[what this feature does](#15-the-netherlands-belgium-luxembourg-and-france).
+Pick the 50 km radius it offers; a smaller circle costs the same one request and
+finds less. There is no nationwide French map, and no French "cheapest in the
+country" sensor.
 
 Fuels offered there are the ones those forecourts actually sell: **Euro 95
 (E10)**, **Super 98 (E5)**, **Diesel (B7)**, **Premium diesel**, **LPG** and
-**CNG**. Prices are in euro and shown to three decimals, the way the signs are
-written.
+**CNG** — named the local way, so France offers **SP95-E10**, **SP98-E5**,
+**Gazole (B7)** and **GPL**. Prices are in euro and shown to three decimals, the
+way the signs are written.
 
 **Driving Rotterdam → Silkeborg** takes three entries — one Dutch, one German,
 one Danish — and no switching: `tankpriser.nearby` answers from the country your
 position falls in, so the same Siri shortcut or Assist prompt speaks euro on the
 way and kroner when you arrive. Near a border both sides answer, each in its own
 currency, and they are never added up or compared.
+
+**A trip through the Ardennes wants four**, because Luxembourg and the French
+border sit inside Belgium's box: without entries of their own they are answered
+by a neighbour that has nothing there. You will be told rather than left
+guessing — the pin says *"No prices here: Luxembourg is not set up in
+Tankpriser"* — but the fix is to add the country.
 
 Two limits of the middle leg, neither new: Germany's Tankerkönig answers only
 about a 25 km circle, so there is no national German map, and it needs
@@ -1754,8 +1796,9 @@ served from an integration static path rather than from `/hacsfiles/`.
 ## Privacy and data sources
 
 - **Prices** come from each chain's own public API: OK, Q8/F24, Shell, OIL!,
-  Circle K / INGO and — once you add its key — Go'on. The Netherlands and
-  Belgium come from ANWB's own service.
+  Circle K / INGO and — once you add its key — Go'on. The Netherlands, Belgium
+  and Luxembourg come from ANWB's own service, and so does France — one circle
+  at a time, since no single request covers it.
   Each is fetched nationwide, cached for 10 minutes and shared by everything in
   the integration, so a shorter poll interval does not multiply requests. The
   User-Agent identifies this integration honestly, with a link, rather than

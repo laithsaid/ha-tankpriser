@@ -94,7 +94,9 @@ from .nearby import (
     should_extend,
     spoken_by_country,
     spoken_cheapest,
+    spoken_no_source,
     spoken_sentence,
+    unconfigured_here,
 )
 from .accuracy import as_dict, backtest
 from .notifications import evaluate_and_notify
@@ -535,10 +537,30 @@ async def nearby_answer(
     reach_km = lead["searched_km"]
     listed = ranked[:NEARBY_MAX_STATIONS]
 
+    # Nothing anywhere. Before saying "no stations within N kilometres" —
+    # true of the pool we searched, a lie about the place — ask whether the
+    # position is simply somewhere nobody has set up. Boxes overspill their
+    # borders on purpose, so a pin can be inside a configured country's box
+    # and still be standing in another country entirely.
+    missing = (
+        unconfigured_here(
+            {
+                _country_of_entry(other)
+                for other in hass.config_entries.async_entries(DOMAIN)
+            },
+            latitude,
+            longitude,
+        )
+        if not filled
+        else []
+    )
+
     # Two countries in reach and both with something to show is the only
     # case that needs them named; one country keeps the exact wording the
     # documented Shortcut has always spoken.
-    if len(filled) > 1:
+    if missing:
+        spoken_one = spoken_no_source(missing[0].spoken_name(danish), danish)
+    elif len(filled) > 1:
         spoken_one = spoken_by_country(
             [
                 {
@@ -557,11 +579,25 @@ async def nearby_answer(
             danish=danish,
             currency=spoken_currency(lead_country),
             searched_km=reach_km,
+            # Only ever reaches the sentence when nothing was found, and then
+            # it is the whole point: which country came up empty.
+            country_name=country_of(lead_country).spoken_name(danish),
         )
 
     return {
         "fuel": fuel,
         "country": lead_country,
+        # The country the single-country fields describe, spelled out. The
+        # per-country blocks have carried one since the border answer; the top
+        # level needs it too, so that an empty answer can name the country it
+        # searched instead of quoting a range and leaving the rest to be
+        # guessed at.
+        "country_name": country_of(lead_country).spoken_name(danish),
+        # Set only when the answer is empty *because* the position is in a
+        # country with no area configured. The card puts this in the pin's
+        # bubble, so the map can say "that is France" instead of implying the
+        # forecourts there do not exist.
+        "no_source_country": missing[0].name if missing else "",
         "fuel_type": fuel_label(fuel, lead_country),
         "unit": price_unit(lead_country, fuel),
         # What was actually searched, so an answer of "nothing" can be

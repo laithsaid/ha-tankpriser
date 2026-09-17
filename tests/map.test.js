@@ -517,7 +517,31 @@ const clusterIcons = (card) =>
 
     const empty = card._pickPopupHtml({ searched_km: 25, countries: [] });
     assert.ok(/25/.test(empty), "an empty answer says how far it looked");
+
+    // An empty answer must also say WHERE it looked. A box overspills its
+    // border on purpose, so a pin can be answered by a country it is not in:
+    // "Ingen stationer inden for 25 km" was said of Luxembourg City and meant
+    // only that no GERMAN forecourt was within 25 km of it, while 233
+    // Luxembourgish ones stood under the pin.
+    const elsewhere = card._pickPopupHtml({
+      searched_km: 25, country_name: "Tyskland", countries: [],
+    });
+    assert.ok(/Tyskland/.test(elsewhere),
+      "an empty answer names the country it searched");
+    assert.ok(/25/.test(elsewhere), "and still says how far");
+
+    // And where the position is simply somewhere nobody set up, it says that
+    // instead of quoting a range that implies the forecourts do not exist.
+    const nosource = card._pickPopupHtml({
+      searched_km: 25, country_name: "Tyskland",
+      no_source_country: "Luxembourg", countries: [],
+    });
+    assert.ok(/Luxembourg/.test(nosource) && /er ikke sat op/.test(nosource),
+      "a country with no source is named as missing");
+    assert.ok(!/25/.test(nosource),
+      "and no range is quoted for a search that could not happen");
     console.log("border -> 2 plotted, both currencies, grouped popup");
+    console.log("gap    -> an empty bubble names the country, or what is missing");
 
     // --- a pick puts the stations ON the map, not just in the bubble --------
     // Listing them inside the pin answered "what does it cost there" and not

@@ -47,6 +47,8 @@ COUNTRY_DK: Final = "dk"
 COUNTRY_DE: Final = "de"
 COUNTRY_NL: Final = "nl"
 COUNTRY_BE: Final = "be"
+COUNTRY_LU: Final = "lu"
+COUNTRY_FR: Final = "fr"
 DEFAULT_COUNTRY: Final = COUNTRY_DK
 
 
@@ -167,6 +169,49 @@ COUNTRIES: Final[dict[str, Country]] = {
             bbox=(49.4, 2.4, 51.6, 6.5),
             name_da="Belgien",
         ),
+        Country(
+            COUNTRY_LU,
+            "Luxembourg",
+            "€/L",
+            "euro",
+            3,
+            "cent",
+            {
+                "blyfri95": "Euro 95 (E10)",
+                "blyfri98": "Super 98 (E5)",
+                "diesel": "Diesel (B7)",
+                "dieselplus": "Premium diesel",
+            },
+            # The whole country, and a small one: it sits entirely inside both
+            # the Belgian and the German box, which is exactly how it came to
+            # be a hole. A pin on Luxembourg City used to be answered by
+            # Germany — nearer anchor — and Germany's 25 km circle reaches no
+            # German forecourt from there, so the answer was "no stations
+            # within 25 kilometres" with 233 of them under the pin.
+            bbox=(49.4, 5.7, 50.2, 6.6),
+        ),
+        Country(
+            COUNTRY_FR,
+            "France",
+            "€/L",
+            "euro",
+            3,
+            "cent",
+            {
+                "blyfri95": "SP95-E10",
+                "blyfri98": "SP98-E5",
+                "diesel": "Gazole (B7)",
+                "dieselplus": "Gazole premium",
+                "lpg": "GPL",
+            },
+            # Metropolitan France including Corsica. This box swallows the
+            # Benelux whole, which no other box does and which is fine: a
+            # country only joins an answer if it has a forecourt within reach,
+            # so France stays out of a Brussels answer by having nothing
+            # within 50 km of it, and joins an Arlon one because it does.
+            bbox=(41.3, -5.2, 51.1, 9.6),
+            name_da="Frankrig",
+        ),
     )
 }
 
@@ -251,11 +296,13 @@ CIRCLEK_HEADERS: Final = {"X-App-Name": "PRICES"}
 # when the dialog has just tested it. That trap is in the provider's guide.
 GOON_URL: Final = "https://goon.nu/wp-json/goon/v1/pump-prices"
 
-# The Netherlands and Belgium: ANWB's points-of-interest service, which is how
-# their own app draws fuel prices. No key, no documentation and no law behind
-# it — neither country mandates an open price API the way Denmark and Germany
-# do, and the official statistics (CBS monthly averages, the Belgian federal
-# maximum price) are not per-station and cannot answer "which forecourt".
+# The Netherlands, Belgium, Luxembourg and France: ANWB's points-of-interest
+# service, which is how their own app draws fuel prices. No key, no
+# documentation and no law behind it — none of these four mandates an open
+# price API the way Denmark and Germany do, and the official statistics (CBS
+# monthly averages, the Belgian federal maximum price, the French
+# prix-carburants extract) are not per-station and cannot answer "which
+# forecourt".
 #
 # It takes a bounding box rather than a circle and answers with every station
 # inside it, whatever country it is in, so each country asks for its own box
@@ -265,13 +312,31 @@ GOON_URL: Final = "https://goon.nu/wp-json/goon/v1/pump-prices"
 # is the only source we read that cannot say when a price last moved, which is
 # why these stations show nothing rather than a time somebody might trust.
 ANWB_URL: Final = "https://api.anwb.nl/routing/points-of-interest/v3/all"
-# (lat_min, lon_min, lat_max, lon_max), as ANWB wants them.
+# A box wider or taller than this answers HTTP 200 with an EMPTY LIST — no
+# error, no status, nothing to catch. Measured 2026-09-17 by growing a box
+# around Paris: 6.0 x 6.0 returned 8,550 stations, 7.0 x 7.0 returned none.
+# That is why France is asked about an area instead of a country box, and why
+# `anwb_fetcher` clamps: a country whose box crept over the line would look
+# exactly like a country with no fuel in it.
+ANWB_MAX_BOX_DEG: Final = 6.0
+# The circle France is asked about, in km. 50 is the largest radius the options
+# dialog offers, and at these latitudes it draws a box of roughly 0.9 x 1.4
+# degrees — comfortably inside the limit above, and about 700 stations.
+ANWB_AREA_MAX_RADIUS_KM: Final = 50
+# (lat_min, lon_min, lat_max, lon_max), as ANWB wants them. A country is in
+# here when the whole of it fits one box; France does not and is area-scoped.
 ANWB_BOXES: Final[dict[str, tuple[float, float, float, float]]] = {
     COUNTRY_NL: (50.70, 3.30, 53.60, 7.30),
     COUNTRY_BE: (49.45, 2.50, 51.55, 6.45),
+    COUNTRY_LU: (49.40, 5.70, 50.20, 6.55),
 }
 # ISO3 codes as ANWB writes them, for keeping one country's box to itself.
-ANWB_ISO3: Final[dict[str, str]] = {COUNTRY_NL: "NLD", COUNTRY_BE: "BEL"}
+ANWB_ISO3: Final[dict[str, str]] = {
+    COUNTRY_NL: "NLD",
+    COUNTRY_BE: "BEL",
+    COUNTRY_LU: "LUX",
+    COUNTRY_FR: "FRA",
+}
 
 # Germany: Tankerkoenig, the free consumer feed of the Bundeskartellamt's
 # MTS-K. Needs a personal key (see the Provider entry in sources.py) and

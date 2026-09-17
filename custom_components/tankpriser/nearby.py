@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from math import asin, atan2, cos, degrees, radians, sin, sqrt
 from typing import Any, Final, Iterable, Mapping
 
-from .const import SPOKEN_STATIONS
+from .const import COUNTRIES, SPOKEN_STATIONS
 
 # Mean earth radius (IUGG), metres.
 EARTH_RADIUS_M = 6371008.8
@@ -437,20 +437,71 @@ def _number(value: float, danish: bool, decimals: int = 2) -> str:
     return text.replace(".", ",") if danish else text
 
 
-def _nothing_found(danish: bool, searched_km: float | None) -> str:
+def _nothing_found(
+    danish: bool, searched_km: float | None, country_name: str = ""
+) -> str:
     """What to say when the search came back empty.
 
-    It names the range it covered. Silence, or a bare "no stations nearby",
-    is indistinguishable from the integration having failed — and a shortcut
-    that fails without saying so is the failure mode this whole surface was
-    built to avoid.
+    It names the range it covered, and — since 0.18.0 — the country it covered
+    it in. Silence, or a bare "no stations nearby", is indistinguishable from
+    the integration having failed; and a range without a country is worse than
+    that, because it sounds like an answer. "No stations within 25 kilometres"
+    was said of Luxembourg City, meaning only that no *German* forecourt was
+    within 25 km of it, while 233 Luxembourgish ones stood under the pin. The
+    sentence was true about the pool and a lie about the place.
     """
     if not searched_km:
         return "Ingen stationer i nærheden." if danish else "No stations nearby."
     reach = int(round(searched_km))
     if danish:
-        return f"Ingen stationer inden for {reach} kilometer."
-    return f"No stations within {reach} kilometres."
+        where = f" i {country_name}" if country_name else ""
+        return f"Ingen stationer inden for {reach} kilometer{where}."
+    where = f" in {country_name}" if country_name else ""
+    return f"No stations within {reach} kilometres{where}."
+
+
+def unconfigured_here(
+    configured: Iterable[str], latitude: float, longitude: float
+) -> list[Any]:
+    """Countries whose box holds this position but which no entry covers.
+
+    The other half of an honest empty answer. A box overspills its border on
+    purpose, so a pin can land inside a country we *do* have set up while
+    standing somewhere we do not — that is how Luxembourg and northern France
+    came to be answered, confidently and emptily, by Germany and Belgium.
+
+    Sorted smallest box first: the tightest box holding a position is the best
+    guess at which country it is really in, and Luxembourg sits inside the
+    French box as well as its own.
+
+    Note what this deliberately does NOT claim. A box is not a border, so
+    "you are in France" is a guess we have no right to make — Charleville and
+    Brussels are both inside the Belgian box and only one of them is in
+    Belgium. The caller says only that these countries are not set up, which
+    is true wherever the line actually runs.
+    """
+    have = {str(code).lower() for code in configured}
+    found = [
+        country
+        for country in COUNTRIES.values()
+        if country.code not in have
+        and country.bbox is not None
+        and country.contains(latitude, longitude)
+    ]
+    found.sort(key=lambda c: (c.bbox[2] - c.bbox[0]) * (c.bbox[3] - c.bbox[1]))
+    return found
+
+
+def spoken_no_source(country_name: str, danish: bool) -> str:
+    """Asked about somewhere no configured country sells fuel.
+
+    Its own sentence rather than a shorter search, because the fix is not to
+    look harder — it is to add that country, and nothing else we could say
+    would lead anybody there.
+    """
+    if danish:
+        return f"Ingen priser her: {country_name} er ikke sat op i Tankpriser."
+    return f"No prices here: {country_name} is not set up in Tankpriser."
 
 
 def spoken_cheapest(
@@ -458,6 +509,7 @@ def spoken_cheapest(
     danish: bool,
     currency: str = "kroner",
     searched_km: float | None = None,
+    country_name: str = "",
 ) -> str:
     """The single cheapest station as a sentence.
 
@@ -470,7 +522,7 @@ def spoken_cheapest(
     still use the full figure — see the caller.
     """
     if not ranked:
-        return _nothing_found(danish, searched_km)
+        return _nothing_found(danish, searched_km, country_name)
     best = ranked[0]
     price = _number(best["price"], danish)
     distance = _number(best["distance_km"], danish, 1)
