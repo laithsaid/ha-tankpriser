@@ -413,6 +413,26 @@ check(
     no_source,
 )
 
+# Both spoken fields answer the same question, so an empty one of either must
+# be equally honest. `spoken` kept saying "No stations within 15 kilometres"
+# after `spoken_cheapest` had learned better, which is the same lie in the
+# field the Assist prompt happens to read.
+listed_empty = nearby.spoken_sentence(
+    [], danish=False, currency="euro", searched_km=15, country_name="Belgium"
+)
+check(
+    "the list sentence names the country too",
+    "Belgium" in listed_empty and "15" in listed_empty,
+    listed_empty,
+)
+check(
+    "and the two empty sentences agree about where it looked",
+    "Belgium"
+    in nearby.spoken_cheapest(
+        [], danish=False, currency="euro", searched_km=15, country_name="Belgium"
+    ),
+)
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} country-choice checks FAILED")

@@ -609,6 +609,7 @@ def spoken_sentence(
     danish: bool,
     currency: str = "kroner",
     searched_km: float | None = None,
+    country_name: str = "",
 ) -> str:
     """The cheapest few stations as a sentence, ready to be read aloud.
 
@@ -619,7 +620,7 @@ def spoken_sentence(
     Module level and pure so it can be tested without Home Assistant.
     """
     if not ranked:
-        return _nothing_found(danish, searched_km)
+        return _nothing_found(danish, searched_km, country_name)
 
     top = ranked[:SPOKEN_STATIONS]
     # A chain often prices every forecourt identically — OK does, nationally —

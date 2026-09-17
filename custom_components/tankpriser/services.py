@@ -616,11 +616,19 @@ async def nearby_answer(
         "count": len(ranked),
         # One station, said plainly — what the documented shortcut speaks.
         "spoken_cheapest": spoken_one,
-        "spoken": spoken_sentence(
-            ranked,
-            danish=danish,
-            currency=spoken_currency(lead_country),
-            searched_km=reach_km,
+        # The list sentence answers the same question as `spoken_cheapest`,
+        # so an empty one has to be as honest: a country with no source said
+        # plainly, and otherwise the country the range was searched in.
+        "spoken": (
+            spoken_no_source(missing[0].spoken_name(danish), danish)
+            if missing
+            else spoken_sentence(
+                ranked,
+                danish=danish,
+                currency=spoken_currency(lead_country),
+                searched_km=reach_km,
+                country_name=country_of(lead_country).spoken_name(danish),
+            )
         ),
         "spoken_count": min(len(ranked), SPOKEN_STATIONS),
         "stations": listed,
