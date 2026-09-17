@@ -556,6 +556,46 @@ def spoken_no_position(danish: bool) -> str:
     return "I do not know where you are."
 
 
+def nearest_km(ranked: list[dict]) -> float | None:
+    """How far away the closest station in a ranked list is, or None if empty.
+
+    Worth its own function for one reason: `ranked` is sorted **cheapest**
+    first, so `ranked[0]` is the best price and not the nearest forecourt.
+    Reading the distance off the front of the list is the obvious mistake and
+    it is wrong most of the time.
+    """
+    if not ranked:
+        return None
+    return min(station["distance_km"] for station in ranked)
+
+
+def leading_group(groups: list[dict]) -> dict | None:
+    """Which country's answer the single-value fields should describe.
+
+    Every group is spoken and mapped whatever this returns — see
+    `spoken_by_country`, which never compares across a border. This only
+    decides which one fills the flat fields a caller reads when it can hold
+    just one answer: the top-level price, and `urls[0]`, which is what a Siri
+    Shortcut hands to the navigator.
+
+    **The nearest station wins.** It used to be the nearest anchor, which was
+    a fair guess while every entry was anchored inside its own country. A
+    country whose source answers for the whole nation has no anchor of its
+    own, though — it inherits Home — so asking from Luxembourg City led with
+    France, anchored in Lyon 490 km away, over Luxembourg, anchored at a house
+    in Silkeborg 800 km away. Both were spoken correctly; `urls[0]` pointed at
+    a French forecourt 28.9 km off while a Luxembourgish one stood 1.4 km
+    away. Distance from the asker is the thing that cannot be wrong.
+
+    Ties keep the order they arrived in, which is nearest anchor first, so two
+    countries genuinely equidistant still resolve the way they always did.
+    """
+    filled = [group for group in groups if group.get("ranked")]
+    if not filled:
+        return None
+    return min(filled, key=lambda group: nearest_km(group["ranked"]))
+
+
 def spoken_by_country(
     groups: list[dict],
     danish: bool,
@@ -668,14 +708,19 @@ def countries_for_position(
 ) -> list[object]:
     """Every configured country in reach of a position, nearest anchor first.
 
-    `country_for_position` answers "which ONE country", which is what a spoken
-    sentence and a single ranked list need. Standing near a border that is the
-    wrong question: a 25 km circle north of Flensburg holds Danish and German
+    `country_for_position` answers "which ONE country", which is what a caller
+    that must name one thing needs. Standing near a border that is the wrong
+    question: a 25 km circle north of Flensburg holds Danish and German
     forecourts alike, and showing one half of them is showing the wrong map.
 
-    So this returns every box that matches, ordered exactly the way the single
-    answer picks its winner — the two share this function, so they can never
-    disagree about which country is the primary one.
+    So this returns every box that matches. The order is which country is
+    *searched* first, and the two share this function so they cannot drift.
+
+    It is NOT which country ends up leading the answer. That is
+    `leading_group`, and it is decided afterwards by how far away the nearest
+    forecourt turned out to be — a thing no box can know in advance. Anchor
+    distance is the best guess available before anything is fetched, and a
+    guess is all it is: a whole-country source has no anchor of its own.
     """
     if not candidates:
         return []

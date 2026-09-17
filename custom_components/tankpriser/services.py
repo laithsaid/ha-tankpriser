@@ -92,6 +92,7 @@ from .nearby import (
     search_plan,
     searched_km,
     should_extend,
+    leading_group,
     spoken_by_country,
     spoken_cheapest,
     spoken_no_source,
@@ -526,12 +527,15 @@ async def nearby_answer(
             }
         )
 
-    # Which group the single-country fields describe. Normally the first,
-    # but a border ask where only the far side has anything must not report
-    # the near side's emptiness: "nothing within 25 kilometres" while a
-    # German forecourt sits 6 km away is the worst kind of wrong answer.
+    # Which group the single-country fields describe: the one with the nearest
+    # forecourt to the asker. A border ask where only the far side has
+    # anything must not report the near side's emptiness — "nothing within 25
+    # kilometres" while a German forecourt sits 6 km away is the worst kind of
+    # wrong answer — and where both sides have something, the near one leads.
+    # The rule lives in `nearby.leading_group`, which explains why it is
+    # distance and no longer the nearest anchor.
     filled = [group for group in groups if group["ranked"]]
-    lead = filled[0] if filled else groups[0]
+    lead = leading_group(groups) or groups[0]
     lead_country = lead["country"]
     ranked = lead["ranked"]
     reach_km = lead["searched_km"]
@@ -558,6 +562,12 @@ async def nearby_answer(
     # Two countries in reach and both with something to show is the only
     # case that needs them named; one country keeps the exact wording the
     # documented Shortcut has always spoken.
+    # Lead first, then the rest in the order they were searched. The sentence
+    # names every country in reach either way; this only decides which one is
+    # heard first, and hearing about a forecourt 29 km away before the one
+    # 1.4 km away is the same wrong emphasis the flat fields used to have.
+    ordered = [lead] + [group for group in groups if group is not lead]
+
     if missing:
         spoken_one = spoken_no_source(missing[0].spoken_name(danish), danish)
     elif len(filled) > 1:
@@ -568,7 +578,7 @@ async def nearby_answer(
                     "ranked": group["ranked"],
                     "currency": spoken_currency(group["country"]),
                 }
-                for group in groups
+                for group in ordered
             ],
             danish=danish,
             searched_km=reach_km,
@@ -659,7 +669,7 @@ async def nearby_answer(
                 "stations": group["ranked"][:NEARBY_MAX_STATIONS],
                 "urls": _urls_for(group["ranked"][:NEARBY_MAX_STATIONS], template),
             }
-            for group in groups
+            for group in ordered
         ],
     }
 

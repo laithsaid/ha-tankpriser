@@ -519,8 +519,9 @@ you, as any map should.
 Germany are two entries, and `tankpriser.nearby` picks the one whose country
 your position falls in — so the same Siri shortcut says Danish kroner at home
 and euro on the Autobahn, with no second shortcut and nothing to switch. Near
-the border the two overlap, and the entry anchored nearer leads. Background
-sensors are unaffected either way — each entry keeps watching its own area.
+the border the two overlap, and the one with the nearest forecourt leads.
+Background sensors are unaffected either way — each entry keeps watching its
+own area.
 
 **Near a border you get both sides at once.** A 25 km circle at Kruså genuinely
 holds Danish and German forecourts, so the answer carries a block per country:
@@ -536,10 +537,20 @@ shown in its own currency, to its own country's decimals — Germany signs its
 forecourts to three, Denmark to two — and the comparison is left to you, which
 is the sum you were going to do in your head anyway.
 
-Only the country you are standing in feeds the single-station fields a Shortcut
-reads (`spoken_cheapest` still speaks both, but `stations` and `urls` stay one
-country), so an existing shortcut keeps navigating to a station priced in the
-currency it just named.
+**One country feeds the single-station fields a Shortcut reads** —
+`spoken_cheapest` still speaks both, but `stations` and `urls` stay one
+country, so an existing shortcut keeps navigating to a station priced in the
+currency it just named. **The one that leads is the one with the nearest
+forecourt**, which is also the country named first in the sentence above.
+
+Distance decides it because distance is the only thing about two countries'
+prices that *can* be compared without inventing an exchange rate. It used to be
+the entry anchored nearer, which was a fair guess while every entry sat inside
+its own country — but a country whose source answers for the whole nation has
+no anchor of its own and inherits your Home location. Asking from Luxembourg
+City, that led with France, anchored wherever you put it, over Luxembourg
+anchored at your house: both were spoken correctly and `urls[0]` pointed at a
+French forecourt 29 km away while a Luxembourgish one stood 1,4 km off.
 
 ### 15. The Netherlands, Belgium, Luxembourg and France
 
@@ -1575,7 +1586,10 @@ way the signs are written.
 one Danish — and no switching: `tankpriser.nearby` answers from the country your
 position falls in, so the same Siri shortcut or Assist prompt speaks euro on the
 way and kroner when you arrive. Near a border both sides answer, each in its own
-currency, and they are never added up or compared.
+currency, and they are never added up or compared — the one with the **nearest
+forecourt** is named first and is the one a Siri Shortcut will navigate to,
+since that is the only thing about two countries' prices that can be compared
+without inventing an exchange rate.
 
 **A trip through the Ardennes wants four**, because Luxembourg and the French
 border sit inside Belgium's box: without entries of their own they are answered

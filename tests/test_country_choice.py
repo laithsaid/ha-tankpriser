@@ -433,6 +433,109 @@ check(
     ),
 )
 
+# --- which country fills the single-value fields ---------------------------
+# Seen on his instance 2026-09-17, asking from Luxembourg City with six
+# countries configured. Both answers were spoken correctly; the flat fields --
+# the top-level price, and `urls[0]`, which is what the Siri Shortcut hands to
+# the navigator -- described France. France is anchored in Lyon, 490 km away;
+# Luxembourg, being a whole-country source, has no anchor of its own and
+# inherits Home in Silkeborg, 800 km away. So the nearest ANCHOR was France
+# while the nearest FORECOURT was Luxembourg's, 1.4 km off against 28.9.
+print()
+print("the lead country is the one with the nearest forecourt")
+
+FRANCE = {
+    "country": "fr",
+    "ranked": [
+        {"name": "TOTALENERGIES", "price": 2.25, "distance_km": 28.9},
+        {"name": "AVIA", "price": 2.31, "distance_km": 19.4},
+    ],
+}
+LUX = {
+    "country": "lu",
+    "ranked": [
+        {"name": "TOTALENERGIES", "price": 2.16, "distance_km": 1.4},
+        {"name": "ESSO", "price": 2.19, "distance_km": 3.8},
+    ],
+}
+check(
+    "Luxembourg leads although France was searched first",
+    nearby.leading_group([FRANCE, LUX]) is LUX,
+)
+check(
+    "and the order it was searched in does not change that",
+    nearby.leading_group([LUX, FRANCE]) is LUX,
+)
+
+# The trap this is built around: `ranked` is sorted CHEAPEST first, so the
+# first entry is not the nearest one. Reading the distance off the front of
+# the list would have made France lead on 28.9 vs Luxembourg's 1.4 by luck,
+# and got it wrong the moment the cheapest was not also the closest.
+check(
+    "nearest_km reads the nearest station, not the cheapest one",
+    nearby.nearest_km(FRANCE["ranked"]) == 19.4,
+    nearby.nearest_km(FRANCE["ranked"]),
+)
+check(
+    "so a country whose cheapest is far but whose nearest is close still leads",
+    nearby.leading_group(
+        [
+            {"country": "dk", "ranked": [{"price": 1.0, "distance_km": 20.0}]},
+            {"country": "de", "ranked": [
+                {"price": 0.5, "distance_km": 30.0},   # cheapest, far
+                {"price": 9.0, "distance_km": 2.0},    # nearest, dear
+            ]},
+        ]
+    )["country"] == "de",
+)
+
+check(
+    "a country with nothing to show never leads",
+    nearby.leading_group([{"country": "de", "ranked": []}, LUX]) is LUX,
+)
+check(
+    "and nothing anywhere leads to nothing, for the caller to handle",
+    nearby.leading_group([{"country": "de", "ranked": []}]) is None,
+)
+check(
+    "no groups at all is None too, not a crash",
+    nearby.leading_group([]) is None,
+)
+
+# A genuine tie falls back to the order it arrived in, which is nearest
+# anchor first -- so two equidistant countries resolve as they always did.
+tie_a = {"country": "dk", "ranked": [{"price": 1.0, "distance_km": 4.0}]}
+tie_b = {"country": "de", "ranked": [{"price": 0.5, "distance_km": 4.0}]}
+check("a tie keeps the order it arrived in", nearby.leading_group([tie_a, tie_b]) is tie_a)
+
+# The spoken sentence has to agree with the flat fields, or the answer
+# contradicts itself: hearing about a forecourt 29 km away before the one
+# 1.4 km away is the same wrong emphasis, moved into the voice.
+lead = nearby.leading_group([FRANCE, LUX])
+ordered = [lead] + [g for g in [FRANCE, LUX] if g is not lead]
+sentence = nearby.spoken_by_country(
+    [
+        {
+            "name": const.country_of(g["country"]).spoken_name(False),
+            "ranked": g["ranked"],
+            "currency": "euro",
+        }
+        for g in ordered
+    ],
+    danish=False,
+)
+check(
+    "the grouped sentence names the near country first",
+    sentence.index("Luxembourg") < sentence.index("France"),
+    sentence,
+)
+check(
+    "and still names both, each in its own currency, never compared",
+    "Luxembourg" in sentence and "France" in sentence
+    and not any(w in sentence.lower() for w in ("cheaper", "than in")),
+    sentence,
+)
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} country-choice checks FAILED")
