@@ -143,6 +143,65 @@ def angle_between(a: float, b: float) -> float:
     return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
+def usable_fix(
+    fix: dict, elapsed_s: float | None, latitude: float, longitude: float
+) -> float | None:
+    """How far this fix is from the position, or None if it cannot be it.
+
+    The same question `infer_motion` already asks about a *pair* of fixes —
+    could a car have covered this in this time — asked one step earlier, about
+    the tracker itself. Below `MAX_DERIVED_KMH` the tracker is plausibly
+    whoever is standing here; above it, they are two different devices and
+    nothing on the tracker describes this journey.
+
+    The floor matters as much as the rate. `elapsed_s` is the age of the
+    tracker's last state write and can be a second or two, and 200 km/h for two
+    seconds is 110 metres — narrower than the GPS noise between a phone's own
+    reading and the one it last reported. `MIN_FIX_DISTANCE_M` is the distance
+    this module already treats as indistinguishable from standing still, which
+    is the slack wanted here.
+    """
+    last_lat = _to_float(fix.get("latitude"))
+    last_lon = _to_float(fix.get("longitude"))
+    if last_lat is None or last_lon is None or elapsed_s is None or elapsed_s < 0:
+        # Nothing to check it against. A tracker reporting a speed but no
+        # position cannot be shown to be the caller, and believing one that was
+        # not is how this went wrong to begin with.
+        return None
+    away_m = haversine_m(last_lat, last_lon, latitude, longitude)
+    allowance_m = max(MIN_FIX_DISTANCE_M, MAX_DERIVED_KMH * 1000.0 * elapsed_s / 3600.0)
+    return away_m if away_m <= allowance_m else None
+
+
+def nearest_fix(
+    fixes: Iterable[tuple[dict, float | None]], latitude: float, longitude: float
+) -> tuple[dict, float] | None:
+    """The fix most likely to belong to whoever is standing at this position.
+
+    Every tracker any entry follows is a candidate, because the entry that
+    answers is chosen by *country* and the device in the car may belong to
+    another one. On a drive through Germany the Danish entry answers the last
+    stretch before the border while following a phone at home — and that phone,
+    compared against the caller's real position, is a 500 km jump. Every
+    announcement on the Rhenen to Silkeborg run said *parked, one circle* from
+    65 km on, for exactly that reason.
+
+    Order is the tie-break and nothing more: pass the answering entry's own
+    tracker first and it wins a draw, which is the better guess when two sit
+    the same distance away.
+    """
+    best: tuple[float, dict, float] | None = None
+    for fix, elapsed in fixes:
+        away = usable_fix(fix, elapsed, latitude, longitude)
+        if away is None:
+            continue
+        if best is None or away < best[0]:
+            best = (away, fix, float(elapsed or 0.0))
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
 def infer_motion(
     latitude: float,
     longitude: float,

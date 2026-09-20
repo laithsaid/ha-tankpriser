@@ -315,6 +315,123 @@ def test_a_thin_answer_says_so() -> None:
     )
 
 
+# --- which device is actually here -----------------------------------------
+# The caller hands in a position. Which tracker describes that journey is a
+# separate question, and answering it with "the one the answering entry
+# follows" is what collapsed the corridor on the Rhenen to Silkeborg run: past
+# the border the nearest anchor was Danish, and the Danish entry followed a
+# phone that had never left Silkeborg.
+FLENSBURG = (54.7820, 9.4360)
+SILKEBORG = (56.1697, 9.5451)
+
+
+def _fix(lat=None, lon=None, speed=None, course=None) -> dict:
+    return {"latitude": lat, "longitude": lon, "speed": speed, "course": course}
+
+
+def test_a_tracker_in_another_town_is_not_you() -> None:
+    print("the phone at home, while the car is at the border")
+    away = nb.usable_fix(_fix(*SILKEBORG), 12.0, *FLENSBURG)
+    check("155 km in 12 seconds is not a device that is here", away is None, away)
+
+    chosen = nb.nearest_fix([(_fix(*SILKEBORG), 12.0)], *FLENSBURG)
+    check("so no fix is chosen at all", chosen is None, chosen)
+
+    motion = nb.infer_motion(*FLENSBURG) if chosen is None else None
+    check("which means no heading", motion.course_deg is None, motion.course_deg)
+    check("and therefore one circle", len(nb.search_plan(*FLENSBURG, motion, 25.0)) == 1)
+
+
+def test_the_car_wins_over_the_phone_at_home() -> None:
+    print("two trackers, one of them in the car")
+    # 1.5 km up the road from the caller, reporting 130 km/h due north.
+    near = _fix(54.7950, 9.4360, speed=36.1, course=0.0)
+    far = _fix(*SILKEBORG, speed=0.0, course=90.0)
+
+    # The answering entry's own tracker is offered first and still loses.
+    chosen = nb.nearest_fix([(far, 12.0), (near, 12.0)], *FLENSBURG)
+    check("the nearer tracker is chosen", chosen is not None and chosen[0] is near, chosen)
+
+    motion = nb.infer_motion(*FLENSBURG, chosen[0], chosen[1])
+    check("its reported speed is believed", round(motion.speed_kmh) == 130, motion.speed_kmh)
+    check("and its heading is used", motion.course_deg == 0.0, motion.course_deg)
+    check("so the search is a corridor", len(nb.search_plan(*FLENSBURG, motion, 25.0)) > 1)
+
+
+def test_a_distant_reported_heading_is_refused() -> None:
+    print("the louder half: another device reporting motion")
+    # This is the dangerous one. A reported speed and course are believed
+    # outright — the device knows what it is doing — but only its own device
+    # does. A car driving east in Silkeborg must not point a corridor east out
+    # of a caller standing at Flensburg.
+    driving_elsewhere = _fix(*SILKEBORG, speed=36.1, course=90.0)
+    chosen = nb.nearest_fix([(driving_elsewhere, 12.0)], *FLENSBURG)
+    check("a reported fix from 155 km away is refused", chosen is None, chosen)
+
+    believed = nb.infer_motion(*FLENSBURG, driving_elsewhere, 12.0)
+    check(
+        "believing it directly would have pointed the corridor east",
+        believed.course_deg == 90.0 and believed.moving,
+        believed,
+    )
+
+
+def test_gps_noise_is_not_another_device() -> None:
+    print("the floor under the allowance")
+    # Two seconds at 200 km/h is 110 metres, narrower than the difference
+    # between a phone's own reading and the one it last reported.
+    away = nb.usable_fix(_fix(54.7830, 9.4360), 2.0, *FLENSBURG)
+    check("a fix 100 m off after 2 seconds is still you", away is not None, away)
+    check("and it is measured, not guessed", away is not None and away < 200, away)
+
+
+def test_a_tracker_with_no_position_is_never_chosen() -> None:
+    print("a tracker that reports a speed and no position")
+    chosen = nb.nearest_fix([(_fix(speed=36.1, course=0.0), 12.0)], *FLENSBURG)
+    check("nothing places it here, so it is not used", chosen is None, chosen)
+
+
+def test_order_is_only_a_tie_break() -> None:
+    print("two trackers the same distance away")
+    first = _fix(54.7900, 9.4360, speed=0.0, course=10.0)
+    second = _fix(54.7900, 9.4360, speed=0.0, course=200.0)
+    chosen = nb.nearest_fix([(first, 12.0), (second, 12.0)], *FLENSBURG)
+    check("the one offered first wins the draw", chosen is not None and chosen[0] is first, chosen)
+
+
+def test_the_service_actually_asks_which_device() -> None:
+    """The wiring, not the maths.
+
+    Everything above tests `nearest_fix`, and `nearest_fix` is worth nothing if
+    `services._motion` goes back to reading one tracker — which is precisely
+    the shape of the last regression that shipped past two green suites: a test
+    that went on exercising a function the caller no longer used. So this reads
+    the caller.
+    """
+    import ast
+
+    print("services._motion is wired to it")
+    tree = ast.parse(open(os.path.join(BASE, "services.py"), encoding="utf-8").read())
+    motion = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.FunctionDef) and n.name == "_motion"),
+        None,
+    )
+    check("_motion still exists", motion is not None)
+    called = {
+        n.func.id
+        for n in ast.walk(motion)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+    }
+    check("it chooses a fix rather than taking one", "nearest_fix" in called, sorted(called))
+    check("and it still infers motion from what it chose", "infer_motion" in called, sorted(called))
+    check(
+        "it considers every entry's tracker, not just the answering one",
+        "_tracker_candidates" in called,
+        sorted(called),
+    )
+
+
 if __name__ == "__main__":
     test_a_tracker_that_reports_speed_is_believed()
     test_motion_derived_from_two_positions()
@@ -329,6 +446,13 @@ if __name__ == "__main__":
     test_stations_behind_you_are_dropped_at_speed()
     test_an_empty_answer_says_how_far_it_looked()
     test_a_thin_answer_says_so()
+    test_a_tracker_in_another_town_is_not_you()
+    test_the_car_wins_over_the_phone_at_home()
+    test_a_distant_reported_heading_is_refused()
+    test_gps_noise_is_not_another_device()
+    test_a_tracker_with_no_position_is_never_chosen()
+    test_order_is_only_a_tie_break()
+    test_the_service_actually_asks_which_device()
     print()
     if FAILURES:
         print(f"{len(FAILURES)} failed: {', '.join(FAILURES)}")

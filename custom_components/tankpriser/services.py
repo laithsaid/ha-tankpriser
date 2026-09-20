@@ -88,6 +88,7 @@ from .coordinator import (
 from .nearby import (
     destination,
     infer_motion,
+    nearest_fix,
     rank_nearby,
     search_plan,
     searched_km,
@@ -305,18 +306,11 @@ def _circle_km(country: str, requested_km: float) -> float:
     return float(cap_km) if cap_km else float(requested_km)
 
 
-def _motion(hass: HomeAssistant, coordinator, latitude: float, longitude: float):
-    """How the caller is moving, from the nominated tracker plus this position.
-
-    No tracker, or one with nothing usable on it, means no heading — and a
-    search around the caller rather than ahead of them, which is the right
-    answer when we cannot tell.
-    """
-    entity_id = getattr(coordinator, "nearby_tracker", "") if coordinator else ""
+def _fix_of(hass: HomeAssistant, entity_id: str) -> tuple[dict, float] | None:
+    """One tracker's last fix, and the age of the state that carries it."""
     state = hass.states.get(entity_id) if entity_id else None
     if state is None:
-        return infer_motion(latitude, longitude)
-
+        return None
     attrs = state.attributes
     fix = {
         "latitude": attrs.get("latitude"),
@@ -326,7 +320,46 @@ def _motion(hass: HomeAssistant, coordinator, latitude: float, longitude: float)
     }
     # `last_updated` moves on any state write; the position we are comparing
     # against is as old as the last one that actually changed something.
-    elapsed = (dt_util.utcnow() - state.last_updated).total_seconds()
+    return fix, (dt_util.utcnow() - state.last_updated).total_seconds()
+
+
+def _tracker_candidates(hass: HomeAssistant, coordinator) -> list[str]:
+    """Every tracker any entry follows, the answering entry's first."""
+    own = str(getattr(coordinator, "nearby_tracker", "") or "") if coordinator else ""
+    candidates = [own] if own else []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        watched = str(entry.options.get(CONF_NEARBY_TRACKER, "") or "")
+        if watched and watched not in candidates:
+            candidates.append(watched)
+    return candidates
+
+
+def _motion(hass: HomeAssistant, coordinator, latitude: float, longitude: float):
+    """How the caller is moving, from whichever tracker is actually here.
+
+    Not the answering entry's tracker, which is what this used to read: the
+    entry that answers is chosen by country, so the device it follows may be in
+    another country entirely. `nearest_fix` holds the reasoning and the
+    measurement; this end only gathers the states.
+
+    No tracker near enough to be the caller means no fix — no heading, search
+    around — the same honest answer given for a tracker with nothing usable on
+    it. That also closes the louder half of the bug: a *reported* speed and
+    course are believed outright, deliberately, but only from the device that
+    is actually here. Another car's reported heading laid the corridor out of
+    the caller's position, and unlike the parked case it pointed confidently
+    the wrong way.
+    """
+    fixes = []
+    for entity_id in _tracker_candidates(hass, coordinator):
+        found = _fix_of(hass, entity_id)
+        if found is not None:
+            fixes.append(found)
+
+    chosen = nearest_fix(fixes, latitude, longitude)
+    if chosen is None:
+        return infer_motion(latitude, longitude)
+    fix, elapsed = chosen
     return infer_motion(latitude, longitude, fix, elapsed)
 
 
