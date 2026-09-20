@@ -42,6 +42,26 @@ One setup covers one country. Driving from Rotterdam to Silkeborg? Add
 Tankpriser once per country and the one you are standing in answers — the same
 question, in euro on the way and in kroner when you get there.
 
+### The countries, at a glance
+
+Seven, each set up as its own Tankpriser entry. "Searched around a point" means
+the source has no nationwide answer, so that entry asks for an anchor and a
+radius — there is no national map and no "cheapest in the country" sensor for
+those.
+
+| Country | Prices come from | Key? | How it searches |
+| --- | --- | --- | --- |
+| **Denmark** | OK, Q8, F24, Shell, OIL!, Circle K / INGO, Go'on | None, except a free one for Go'on | Nationwide |
+| **Germany** | [Tankerkönig](https://creativecommons.tankerkoenig.de/) (MTS-K), ~15,000 forecourts | **Free key, activated by hand** | A circle of at most 25 km — [14](#14-germany) |
+| **Netherlands** | [ANWB](https://www.anwb.nl/), ~3,900 forecourts | None | Nationwide |
+| **Belgium** | ANWB, ~1,800 forecourts | None | Nationwide |
+| **Luxembourg** | ANWB, ~230 forecourts | None | Nationwide |
+| **France** | ANWB | None | A circle around an anchor — [15](#15-the-netherlands-belgium-luxembourg-and-france) |
+| **Austria** | [E-Control](https://www.spritpreisrechner.at/) (Spritpreisrechner) | None | Ten stations per fuel, and the source picks the distance — [15b](#15b-austria) |
+
+Denmark and Germany are the only two with a law behind the feed. The rest is
+published goodwill, and ANWB's carries no price timestamps at all.
+
 Two different scopes, worth knowing up front:
 
 - The **sensors** — cheapest price, station list, notifications — cover **your
@@ -87,7 +107,7 @@ What each feature *is*. How to switch it on is in
 | 3 | [Loyalty discounts](#3-loyalty-discounts) | Every price becomes *what you actually pay* |
 | 4 | [Price-change notifications](#4-price-change-notifications) | Four rules, to any `notify.*` service |
 | 5 | [The price card](#5-the-price-card) | Bundled Lovelace card, no YAML or resource setup |
-| 6 | [The map](#6-the-map) | Every station with chain icon and price — all of Denmark by default, the viewport is the filter (Germany plots its 25 km circle) |
+| 6 | [The map](#6-the-map) | Every station with chain icon and price — all of Denmark by default, the viewport is the filter (Germany, France and Austria plot their own circle instead) |
 | 7 | [Live position and follow-me](#7-live-position-and-follow-me) | A blue dot that keeps up with you while driving |
 | 8 | [Navigate here](#8-navigate-here) | Hand a forecourt to the phone's own navigator |
 | 9 | [Exact forecourt positions](#9-exact-forecourt-positions) | Street addresses geocoded, estimates marked as estimates |
