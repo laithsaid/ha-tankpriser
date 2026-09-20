@@ -215,7 +215,8 @@
         "nl": "Holland — ANWB, kræver ingen nøgle (ingen tidsstempler på priserne)",
         "be": "Belgien — ANWB, kræver ingen nøgle (ingen tidsstempler på priserne)",
         "lu": "Luxembourg — ANWB, kræver ingen nøgle (ingen tidsstempler på priserne)",
-        "fr": "Frankrig — ANWB, kræver ingen nøgle, søger omkring dig (ingen tidsstempler på priserne)"
+        "fr": "Frankrig — ANWB, kræver ingen nøgle, søger omkring dig (ingen tidsstempler på priserne)",
+        "at": "Østrig — E-Control, kræver ingen nøgle, ti stationer pr. brændstof omkring dig (ingen tidsstempler på priserne)"
       }
     },
     "maps": {

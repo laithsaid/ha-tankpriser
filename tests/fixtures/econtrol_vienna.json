@@ -1,0 +1,486 @@
+[
+ {
+  "id": 1135,
+  "name": "NNB BRUNNENTANKSTELLE",
+  "location": {
+   "address": "Brunnengasse 4",
+   "postalCode": "1160",
+   "city": "WIEN",
+   "latitude": 48.20462,
+   "longitude": 16.334813
+  },
+  "contact": {
+   "telephone": "+4314920849 od. 0676/36 58 438",
+   "fax": "+4314920449",
+   "mail": "brunnentankstelle@gmx.at",
+   "website": "http://www.brunnentankstelle.at"
+  },
+  "openingHours": [
+   {
+    "day": "MO",
+    "label": "Montag",
+    "order": 1,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DI",
+    "label": "Dienstag",
+    "order": 2,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "MI",
+    "label": "Mittwoch",
+    "order": 3,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DO",
+    "label": "Donnerstag",
+    "order": 4,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FR",
+    "label": "Freitag",
+    "order": 5,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SA",
+    "label": "Samstag",
+    "order": 6,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SO",
+    "label": "Sonntag",
+    "order": 7,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FE",
+    "label": "Feiertag",
+    "order": 8,
+    "from": "00:00",
+    "to": "24:00"
+   }
+  ],
+  "offerInformation": {
+   "service": true,
+   "selfService": false,
+   "unattended": true
+  },
+  "paymentMethods": {
+   "cash": true,
+   "debitCard": true,
+   "creditCard": false
+  },
+  "paymentArrangements": {
+   "cooperative": false,
+   "clubCard": false
+  },
+  "otherServiceOffers": "7.00-18.00 Mit Tankwartbedinung  Montag -Samstag\n0.00.24.00  Tankautomat\nKFZ-Service\nWartung und pflege von KFZ\nReifen Service ",
+  "position": 1,
+  "open": true,
+  "distance": 2.919720889189983,
+  "prices": [
+   {
+    "fuelType": "DIE",
+    "amount": 2.195,
+    "label": "Diesel"
+   }
+  ]
+ },
+ {
+  "id": 35725,
+  "name": "BP",
+  "location": {
+   "address": "Laxenburgerstrasse 2a ",
+   "postalCode": "1100",
+   "city": "Wien",
+   "latitude": 48.183485,
+   "longitude": 16.373405
+  },
+  "contact": {
+   "telephone": "4316044132",
+   "fax": "431604413210",
+   "mail": "office@sackl.net"
+  },
+  "openingHours": [
+   {
+    "day": "MO",
+    "label": "Montag",
+    "order": 1,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DI",
+    "label": "Dienstag",
+    "order": 2,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "MI",
+    "label": "Mittwoch",
+    "order": 3,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DO",
+    "label": "Donnerstag",
+    "order": 4,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FR",
+    "label": "Freitag",
+    "order": 5,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SA",
+    "label": "Samstag",
+    "order": 6,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SO",
+    "label": "Sonntag",
+    "order": 7,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FE",
+    "label": "Feiertag",
+    "order": 8,
+    "from": "00:00",
+    "to": "24:00"
+   }
+  ],
+  "offerInformation": {
+   "service": false,
+   "selfService": true,
+   "unattended": false
+  },
+  "paymentMethods": {
+   "cash": true,
+   "debitCard": true,
+   "creditCard": true,
+   "others": "Routex"
+  },
+  "paymentArrangements": {
+   "cooperative": false,
+   "clubCard": false
+  },
+  "otherServiceOffers": "BP GAS, SHOP, CAR WASH, SB WASH, KFZ INNEN/AUSSENREINIGUNGEN",
+  "position": 2,
+  "open": true,
+  "distance": 2.7509356541883245,
+  "prices": [
+   {
+    "fuelType": "DIE",
+    "amount": 2.249,
+    "label": "Diesel"
+   }
+  ]
+ },
+ {
+  "id": 414544,
+  "name": "Shell Austria",
+  "location": {
+   "address": "TRIESTERSTRASSE 6A-8",
+   "postalCode": "1100",
+   "city": "WIEN",
+   "latitude": 48.1790148559,
+   "longitude": 16.3580035648
+  },
+  "contact": {
+   "telephone": "4316043464"
+  },
+  "openingHours": [
+   {
+    "day": "MO",
+    "label": "Montag",
+    "order": 1,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DI",
+    "label": "Dienstag",
+    "order": 2,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "MI",
+    "label": "Mittwoch",
+    "order": 3,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DO",
+    "label": "Donnerstag",
+    "order": 4,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FR",
+    "label": "Freitag",
+    "order": 5,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SA",
+    "label": "Samstag",
+    "order": 6,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SO",
+    "label": "Sonntag",
+    "order": 7,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FE",
+    "label": "Feiertag",
+    "order": 8,
+    "from": "00:00",
+    "to": "24:00"
+   }
+  ],
+  "offerInformation": {
+   "service": false,
+   "selfService": false,
+   "unattended": false
+  },
+  "paymentMethods": {
+   "cash": true,
+   "debitCard": true,
+   "creditCard": true
+  },
+  "paymentArrangements": {
+   "cooperative": false,
+   "clubCard": false
+  },
+  "position": 3,
+  "open": true,
+  "distance": 3.453343360278475,
+  "prices": [
+   {
+    "fuelType": "DIE",
+    "amount": 2.289,
+    "label": "Diesel"
+   }
+  ]
+ },
+ {
+  "id": 1474280,
+  "name": "eni",
+  "location": {
+   "address": "Oberzellergasse 2a",
+   "postalCode": "1030",
+   "city": "Wien",
+   "latitude": 48.193838,
+   "longitude": 16.396971
+  },
+  "contact": {
+   "telephone": "017136175",
+   "fax": "0171361754"
+  },
+  "openingHours": [
+   {
+    "day": "MO",
+    "label": "Montag",
+    "order": 1,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DI",
+    "label": "Dienstag",
+    "order": 2,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "MI",
+    "label": "Mittwoch",
+    "order": 3,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DO",
+    "label": "Donnerstag",
+    "order": 4,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FR",
+    "label": "Freitag",
+    "order": 5,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SA",
+    "label": "Samstag",
+    "order": 6,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SO",
+    "label": "Sonntag",
+    "order": 7,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FE",
+    "label": "Feiertag",
+    "order": 8,
+    "from": "00:00",
+    "to": "24:00"
+   }
+  ],
+  "offerInformation": {
+   "service": false,
+   "selfService": true,
+   "unattended": false
+  },
+  "paymentMethods": {
+   "cash": true,
+   "debitCard": true,
+   "creditCard": true,
+   "others": "AMEX,Maestro,Diners Club,DKV,ENIR,GUTS,LOGP,MasterCard,RMC,Routex,euroShell Card,UTA,VISA,ZENI"
+  },
+  "paymentArrangements": {
+   "cooperative": false,
+   "clubCard": false
+  },
+  "position": 4,
+  "open": true,
+  "distance": 2.3475232910136326,
+  "prices": [
+   {
+    "fuelType": "DIE",
+    "amount": 2.299,
+    "label": "Diesel"
+   }
+  ]
+ },
+ {
+  "id": 427017,
+  "name": "Shell Austria",
+  "location": {
+   "address": "AUSSTELLUNGSSTRASSE 4",
+   "postalCode": "1020",
+   "city": "WIEN",
+   "latitude": 48.21777,
+   "longitude": 16.39464
+  },
+  "contact": {
+   "telephone": "017295400"
+  },
+  "openingHours": [
+   {
+    "day": "MO",
+    "label": "Montag",
+    "order": 1,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DI",
+    "label": "Dienstag",
+    "order": 2,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "MI",
+    "label": "Mittwoch",
+    "order": 3,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "DO",
+    "label": "Donnerstag",
+    "order": 4,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FR",
+    "label": "Freitag",
+    "order": 5,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SA",
+    "label": "Samstag",
+    "order": 6,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "SO",
+    "label": "Sonntag",
+    "order": 7,
+    "from": "00:00",
+    "to": "24:00"
+   },
+   {
+    "day": "FE",
+    "label": "Feiertag",
+    "order": 8,
+    "from": "00:00",
+    "to": "24:00"
+   }
+  ],
+  "offerInformation": {
+   "service": false,
+   "selfService": false,
+   "unattended": false
+  },
+  "paymentMethods": {
+   "cash": true,
+   "debitCard": true,
+   "creditCard": true
+  },
+  "paymentArrangements": {
+   "cooperative": false,
+   "clubCard": false
+  },
+  "position": 6,
+  "open": true,
+  "distance": 1.8773199304830526,
+  "prices": []
+ }
+]

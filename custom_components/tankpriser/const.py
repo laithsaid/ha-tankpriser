@@ -49,6 +49,7 @@ COUNTRY_NL: Final = "nl"
 COUNTRY_BE: Final = "be"
 COUNTRY_LU: Final = "lu"
 COUNTRY_FR: Final = "fr"
+COUNTRY_AT: Final = "at"
 DEFAULT_COUNTRY: Final = COUNTRY_DK
 
 
@@ -212,6 +213,25 @@ COUNTRIES: Final[dict[str, Country]] = {
             bbox=(41.3, -5.2, 51.1, 9.6),
             name_da="Frankrig",
         ),
+        Country(
+            COUNTRY_AT,
+            "Austria",
+            "€/L",
+            "euro",
+            3,
+            "cent",
+            {
+                "blyfri95": "Super 95",
+                "diesel": "Diesel",
+            },
+            # Austria, and it sits inside the German box along the whole
+            # northern border — Salzburg and Passau are 120 km apart. That is
+            # the Luxembourg situation again and it resolves the same way: a
+            # country only joins an answer when it has a forecourt in reach,
+            # and the nearer forecourt leads.
+            bbox=(46.3, 9.5, 49.1, 17.2),
+            name_da="Østrig",
+        ),
     )
 }
 
@@ -345,6 +365,30 @@ ANWB_ISO3: Final[dict[str, str]] = {
 # exactly the abuse the cap exists to prevent.
 TANKERKOENIG_URL: Final = "https://creativecommons.tankerkoenig.de/json/list.php"
 TANKERKOENIG_MAX_RADIUS_KM: Final = 25
+
+# Austria: E-Control's Spritpreisrechner, the regulator's own feed and the one
+# behind the official app. No key, no registration — the price transparency
+# law (Preistransparenzverordnung) obliges every station to report and obliges
+# E-Control to publish. What it does NOT do is answer about a circle you
+# choose:
+#
+#   * one request carries ONE fuel, so a station selling three costs three
+#     requests, merged by id the way OIL! is;
+#   * every request answers with AT MOST TEN stations, cheapest first, and
+#     there is no parameter that raises it — `radius`, `limit` and
+#     `maxResults` are all accepted and all ignored (verified live);
+#   * the distance is the API's choice, not ours. It widens until it has ten,
+#     which was 2 km in Vienna, 10 km near Lienz and 52 km for CNG, where the
+#     pumps are rare.
+#
+# So the radius a user picks cannot be sent; it can only be used to discard
+# what came back. That is why `ECONTROL_MAX_RESULTS` is written down here — it
+# is the real shape of an Austrian answer, and the README says so rather than
+# letting a sparse map look like a bug.
+ECONTROL_URL: Final = (
+    "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address"
+)
+ECONTROL_MAX_RESULTS: Final = 10
 
 # Sent with every provider request. We identify honestly rather than
 # impersonating a browser: these are open JSON APIs published under the price

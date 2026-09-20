@@ -215,7 +215,8 @@
         "nl": "Netherlands — ANWB, no key needed (no price timestamps)",
         "be": "Belgium — ANWB, no key needed (no price timestamps)",
         "lu": "Luxembourg — ANWB, no key needed (no price timestamps)",
-        "fr": "France — ANWB, no key needed, searched around you (no price timestamps)"
+        "fr": "France — ANWB, no key needed, searched around you (no price timestamps)",
+        "at": "Austria — E-Control, no key needed, ten stations per fuel around you (no price timestamps)"
       }
     },
     "maps": {

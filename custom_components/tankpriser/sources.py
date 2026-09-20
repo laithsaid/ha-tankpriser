@@ -48,6 +48,7 @@ from .const import (
     ANWB_URL,
     CIRCLEK_HEADERS,
     CIRCLEK_URL,
+    COUNTRY_AT,
     COUNTRY_BE,
     COUNTRY_FR,
     COUNTRY_LU,
@@ -57,10 +58,12 @@ from .const import (
     RADIUS_OPTIONS,
     REQUEST_HEADERS,
     SHELL_URL,
+    ECONTROL_URL,
     TANKERKOENIG_MAX_RADIUS_KM,
     TANKERKOENIG_URL,
     radius_to_metres,
 )
+from .nearby import haversine_m
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -788,6 +791,135 @@ def parse_tankerkoenig(payload: dict) -> list[Station]:
     return stations
 
 
+
+# -- E-Control (Austria) ----------------------------------------------------
+# The regulator's own Spritpreisrechner feed, behind the official app. Keyless,
+# and area-scoped for a reason no radius can fix: see ECONTROL_MAX_RESULTS.
+#
+# Austria publishes exactly three fuels. There is no Super 98 and no premium
+# diesel in this feed, so neither is offered for an Austrian entry — the
+# options dialog builds its list from `Provider.fuels`, which is this map.
+_AT_PRODUCT_MAP: dict[str, str] = {
+    "SUP": "blyfri95",   # "Super 95" — the same 95 sold as E10 elsewhere
+    "DIE": "diesel",
+    "GAS": "cng",        # per kilogram, like the Dutch feed's CNG
+}
+
+
+def parse_econtrol(payload, fuel_key: str) -> list[Station]:
+    """Parse one E-Control response — one fuel's worth of stations.
+
+    About half of the ten records carry no price at all: E-Control lists the
+    forecourt whether or not it has reported for that fuel, and an unreported
+    fuel arrives as an empty ``prices`` list rather than as a zero. Those are
+    dropped here. It is not a fault and not a closure — verified live, the
+    priceless records come back open — it is simply a station that has not
+    reported, and a station with no price is nothing we can rank.
+    """
+    stations: list[Station] = []
+    for rec in payload or []:
+        if not isinstance(rec, dict):
+            continue
+        price: float | None = None
+        for entry in rec.get("prices") or []:
+            if str(entry.get("fuelType") or "").strip().upper() != fuel_key:
+                continue
+            price = _to_float(entry.get("amount"))
+            break
+        if price is None or price <= 0:
+            continue
+
+        location = rec.get("location") or {}
+        address = str(location.get("address") or "").strip()
+        # E-Control publishes no brand field, only the forecourt's own name.
+        # For the chains that is the brand already ("BP", "Shell Austria");
+        # for an independent it is all there is ("TANKEnergie Ringgarage").
+        label = str(rec.get("name") or "").strip() or "Tankstelle"
+
+        stations.append(
+            Station(
+                name=f"{label} {address}".strip() or label,
+                company=label,
+                postnummer=str(location.get("postalCode") or "").strip(),
+                city=str(location.get("city") or "").strip(),
+                address=address,
+                latitude=_to_float(location.get("latitude")),
+                longitude=_to_float(location.get("longitude")),
+                # No timestamp anywhere in the record — not per price, not per
+                # station. Same silence as ANWB; better shown as nothing than
+                # as a time we invented.
+                updated="",
+                prices={_AT_PRODUCT_MAP[fuel_key]: price},
+                station_id=str(rec.get("id") or ""),
+                is_open=rec.get("open") if isinstance(rec.get("open"), bool) else None,
+                country=COUNTRY_AT,
+            )
+        )
+    return stations
+
+
+async def fetch_econtrol(
+    session: aiohttp.ClientSession,
+    credential: str | None = None,
+    area: "Area | None" = None,
+) -> list[Station]:
+    """Fetch every Austrian fuel around one point, merged by station id.
+
+    One request per fuel, because a repeated ``fuelType`` is accepted and then
+    silently answered for the first one only — so three requests per circle,
+    against a source that costs nothing and caps itself at ten stations. The
+    shared provider cache is what keeps a corridor of three circles from
+    spending nine of them twice in the same minute.
+
+    The circle is advisory. Nothing in the request says how far to look, so
+    the radius the user chose can only be applied to what comes back, which
+    the coordinator does for every area-scoped source alike.
+    """
+    if area is None:
+        raise ValueError("E-Control can only be asked about an area")
+    merged: dict[str, Station] = {}
+    for fuel_key in _AT_PRODUCT_MAP:
+        payload = await _fetch_json(
+            session,
+            ECONTROL_URL,
+            params={
+                "latitude": f"{area.latitude:.6f}",
+                "longitude": f"{area.longitude:.6f}",
+                "fuelType": fuel_key,
+                # Open forecourts only, and this one is not a preference.
+                # With ten slots to spend, a closed station takes the place of
+                # one you could drive to: asked about Vienna at closing time,
+                # `includeClosed=true` answered with four shut forecourts and
+                # one open at 2,309, while `false` answered 2,195 — a station
+                # the first list did not mention at all. Germany can afford to
+                # carry closed stations because its circle is not rationed.
+                "includeClosed": "false",
+            },
+        )
+        if not isinstance(payload, list):
+            raise ValueError("E-Control returned an unexpected payload")
+        for station in parse_econtrol(payload, fuel_key):
+            # The one source whose answer has to be cut down afterwards. Every
+            # other area-scoped provider is told the radius and honours it, so
+            # the coordinator can take what arrives as "what is in range";
+            # E-Control is told nothing and widens until it has ten, which
+            # reaches a long way for a fuel with few pumps. Asked about Graz it
+            # offered a CNG station in Wiener Neustadt, 150 km off. Without
+            # this, a 5 km Austrian area would list it.
+            if station.latitude is None or station.longitude is None:
+                continue
+            away = haversine_m(
+                area.latitude, area.longitude, station.latitude, station.longitude
+            )
+            if away > area.radius_m:
+                continue
+            existing = merged.get(station.key)
+            if existing is None:
+                merged[station.key] = station
+                continue
+            existing.prices.update(station.prices)
+    return list(merged.values())
+
 # -- provider registry ------------------------------------------------------
 # Adding a source is meant to be a *data* change: append one Provider below and
 # write its parser. Everything else — the options dialog, the how-to text, the
@@ -1128,6 +1260,22 @@ PROVIDERS: dict[str, Provider] = {
                 "4. Paste it here once the activation mail arrives. If it is "
                 "refused, it is almost always still waiting for that."
             ),
+        ),
+        # Austria. One Country, one Provider, a parser — no other file learns
+        # that it exists, which is the whole point of the country model.
+        Provider(
+            "econtrol",
+            "E-Control (Spritpreisrechner)",
+            fetch_econtrol,
+            country=COUNTRY_AT,
+            scope=SCOPE_AREA,
+            fuels=frozenset(_AT_PRODUCT_MAP.values()),
+            # No kilometre ceiling to declare: the cap is ten stations, not a
+            # distance, so every radius the dialog offers is servable in the
+            # only sense this source understands.
+            max_radius_km=0,
+            # Vienna Mitte: somewhere Austria is guaranteed to sell fuel.
+            probe=Area(48.2082, 16.3738, 5_000),
         ),
     )
 }

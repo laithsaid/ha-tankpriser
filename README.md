@@ -30,6 +30,14 @@ changed". France is also searched around you rather than nationwide. Read
 [15. The Netherlands, Belgium, Luxembourg and France](#15-the-netherlands-belgium-luxembourg-and-france)
 before relying on them.
 
+**Austria** comes from [E-Control](https://www.spritpreisrechner.at/), the
+energy regulator's own Spritpreisrechner — the same feed behind the official
+app, published because the price transparency law obliges every station to
+report and obliges E-Control to publish. No key and no account. It answers
+differently from every other source here, though: **ten stations per fuel, and
+it chooses the distance**, so read [15b. Austria](#15b-austria) before you
+rely on it.
+
 One setup covers one country. Driving from Rotterdam to Silkeborg? Add
 Tankpriser once per country and the one you are standing in answers — the same
 question, in euro on the way and in kroner when you get there.
@@ -91,6 +99,7 @@ What each feature *is*. How to switch it on is in
 | 13 | [Sources that need an API key](#13-sources-that-need-an-api-key) | A guided page for sources that are not open — Germany's is one |
 | 14 | [Germany](#14-germany) | ~15,000 German stations, a corridor search while driving, prices to three decimals |
 | 15 | [The Netherlands, Belgium, Luxembourg and France](#15-the-netherlands-belgium-luxembourg-and-france) | ~5,900 Benelux forecourts from ANWB plus France, with LPG and CNG — and no price timestamps |
+| 15b | [Austria](#15b-austria) | The regulator's own feed, no key — but ten stations per fuel and a radius you do not choose |
 | 16 | [Testing without driving](#16-testing-the-driving-features-without-driving) | Drive a virtual car across Germany to exercise all of it from your desk |
 
 ### 1. Local price sensors
@@ -609,6 +618,51 @@ country you have not set up it says so instead: *"No prices here: Luxembourg is
 not set up in Tankpriser."* If you see that, add that country — it is one more
 Tankpriser entry and, for these four, no key.
 
+### 15b. Austria
+
+**E-Control**, the Austrian energy regulator, runs the Spritpreisrechner and
+publishes it openly under the Preistransparenzverordnung: every station must
+report, and the regulator must publish. No key, no account, no signup — add an
+Austrian entry and it works.
+
+It is the most *constrained* source Tankpriser reads, and all three limits are
+the API's, not ours:
+
+- **Ten stations per request, cheapest first.** There is no parameter that
+  raises it — `radius`, `limit` and `maxResults` are all accepted and all
+  quietly ignored. So an Austrian area sensor lists ten forecourts where a
+  German one lists fifty, and that is the whole answer rather than a truncation
+  of a longer one.
+- **One fuel per request.** Repeating `fuelType` is accepted and then answered
+  for the first one only, so Tankpriser asks three times — Super 95, Diesel,
+  CNG — and merges the answers by the station's own id. A forecourt selling two
+  of them is still one station on the map.
+- **The radius is E-Control's choice, not yours.** Nothing in the request says
+  how far to look; it widens until it has ten. Measured live, that was 2 km in
+  Vienna, 10 km near Lienz, and 52 km for CNG, where the pumps are rare. The
+  radius you set still applies — it just applies to what came back, so setting
+  it small discards stations rather than asking for nearer ones.
+
+Two smaller things worth knowing:
+
+- **Only open forecourts are listed**, unlike Germany. With ten slots to spend,
+  a closed station takes the place of one you could drive to. Asked about
+  Vienna at closing time, the closed-inclusive list offered four shut
+  forecourts and one open at 2,309 €; the open-only list answered 2,195 € — a
+  station the first list did not mention at all.
+- **No price timestamps**, the same silence as ANWB. Austrian stations show a
+  price and never a "last changed".
+
+Austria publishes **Super 95, Diesel and CNG** and nothing else — no Super 98,
+no premium diesel — so those are the only fuels offered for an Austrian entry.
+CNG is priced per kilogram and is never compared against a litre price.
+
+Like Germany and France, Austria is searched **around a point**, so an Austrian
+entry asks for an anchor. Its box overlaps Germany's along the whole northern
+border — any rectangle holding both Vorarlberg and the Czech frontier also
+holds Munich — which is the same arrangement as Luxembourg and resolves the
+same way: the country with the nearer forecourt answers.
+
 ### 16. Testing the driving features without driving
 
 The corridor, the direction filtering and the spoken answer only behave
@@ -641,6 +695,9 @@ app does — so all of it runs for real from your desk. See
   API key — see [15](#15-the-netherlands-belgium-luxembourg-and-france) for what
   that source does and does not publish, and for why France is set up with an
   anchor point and the other three are not.
+- **For Austria:** no account and no API key — see
+  [15b](#15b-austria) for the three limits E-Control puts on every answer, and
+  for why an Austrian entry is set up with an anchor point.
 - **For Germany:** a free [Tankerkönig](https://creativecommons.tankerkoenig.de/)
   API key, which you request yourself — see [14. Germany](#14-germany). Expect
   to wait: a person there activates each key by hand, and a key that has not
@@ -1619,6 +1676,37 @@ Two limits of the middle leg, neither new: Germany's Tankerkönig answers only
 about a 25 km circle, so there is no national German map, and it needs
 [its own free key](#14-germany).
 
+### 15b. Austria
+
+*([what this feature does](#15b-austria))*
+
+**Add Tankpriser again, pick Austria, and give it an anchor point and a
+radius.** No key and no account: E-Control publishes openly. Like Germany and
+France it searches around a point, so there is no nationwide Austrian map and
+no Austrian "cheapest in the country" sensor.
+
+**Set the radius to the largest you would actually drive.** It does not shape
+the request — E-Control decides how far to look and stops at ten stations per
+fuel — so the radius only filters the answer. Set it too small and a real
+station that came back is thrown away; set it generously and you keep what
+there is.
+
+Fuels offered are the three Austria publishes: **Super 95**, **Diesel** and
+**CNG**. There is no Super 98 and no premium diesel in this feed, so neither is
+on the list. CNG is priced per kilogram and is kept out of every comparison
+with a litre price.
+
+**Expect a shorter list than Germany's.** Ten per fuel is the ceiling on every
+answer, so an Austrian area sensor lists ten forecourts where a German one
+lists fifty, and a sparse Austrian map is the source being honest rather than
+something failing. Only **open** forecourts are listed, which is also
+deliberate — [15b](#15b-austria) has the measurement that decided it.
+
+**A Munich → Graz drive wants two entries**, one German and one Austrian. The
+boxes overlap along the whole border, which is intended: the country with the
+nearer forecourt answers, each in its own currency, and neither is converted
+into the other.
+
 ### 16. Simulating a drive
 
 *([what this feature does](#16-testing-the-driving-features-without-driving)).*
@@ -1816,6 +1904,13 @@ More depth — logs, installing a build by hand, running the test suite — is i
   under penalty. Oil companies, station operators and their IT suppliers are
   barred from using this data — if that is you, do not use the German half of
   this integration.
+- **Austrian prices** come from
+  [E-Control](https://www.spritpreisrechner.at/), the Austrian energy
+  regulator, published under the Preistransparenzverordnung. No key and no
+  account, and the regulator's own app makes the same requests. Each fuel is a
+  separate request and each answer is at most ten stations, so an Austrian
+  refresh costs three requests per circle rather than one — the same 10-minute
+  cache covers them.
 - **Geography** comes from [DAWA](https://dawadocs.dataforsyningen.dk/) — free,
   keyless, run by the Danish state — for postnummer/radius resolution and for
   geocoding station addresses. Geocodes are cached for 180 days. Germany needs
