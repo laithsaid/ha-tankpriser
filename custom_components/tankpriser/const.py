@@ -448,9 +448,19 @@ MAX_DISCOUNT_ORE: Final = 200
 CONF_NEARBY_TRACKER: Final = "nearby_tracker"
 CONF_NEARBY_RADIUS_KM: Final = "nearby_radius_km"
 DEFAULT_NEARBY_RADIUS_KM: Final = 15
-# How many stations the nearby sensor lists. Enough to choose from out loud,
+# How many stations an answer lists by default. Enough to choose from out loud,
 # few enough that an attribute stays small.
-NEARBY_MAX_STATIONS: Final = 8
+#
+# It was 8, sized for a sentence in a car, and the map pin reused the same call
+# — so a pin dropped on Berlin found 343 forecourts, was sent the eight
+# *cheapest* of them, and plotted a scatter reaching 22 km out to Brandenburg
+# while a station 400 m away went unmentioned. The count is now a field on the
+# service (`limit`), and the map asks for far more than it speaks.
+NEARBY_MAX_STATIONS: Final = 15
+# The most one answer will ever carry. A map can use all of these; the ceiling
+# exists because the list goes into a response and, for the sensor, into a
+# recorded attribute — see STATION_ATTR_BUDGET for what happens without one.
+NEARBY_LIMIT_MAX: Final = 100
 # How many of those the `spoken` sentence names. Three is what a driver can hold
 # in their head long enough to answer "number two".
 SPOKEN_STATIONS: Final = 3

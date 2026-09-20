@@ -546,11 +546,30 @@ const clusterIcons = (card) =>
     // --- a pick puts the stations ON the map, not just in the bubble --------
     // Listing them inside the pin answered "what does it cost there" and not
     // "where is it", which is half of what a map is for.
+    // What the pick ASKS for matters as much as what it draws. The service
+    // answers with 15 stations by default — a list to read aloud — and a pin
+    // dropped on a city finds hundreds. A map given the fifteen cheapest of
+    // those shows the cheap edge of town and nothing you could walk to, which
+    // is what "the stations are far from the pin" turned out to mean.
+    let asked = null;
     card._hass = {
       ...card._hass,
-      callService: async () => ({ response: answer }),
+      callService: async (domain, service, data) => {
+        asked = { domain, service, data };
+        return { response: answer };
+      },
     };
     await card._askAt(window.L, 54.84, 9.40);
+    assert.strictEqual(asked.service, "nearby", "a pick calls tankpriser.nearby");
+    assert.ok(
+      asked.data.limit > 15,
+      `a pick must ask for more than the spoken default, got ${asked.data.limit}`
+    );
+    assert.ok(
+      asked.data.limit <= 100,
+      `and no more than the service will allow, got ${asked.data.limit}`
+    );
+    console.log("pick    -> asks for", asked.data.limit, "stations, not the default 15");
     const pins = card._pickLayer.getLayers();
     // One pin per station, plus the 📍 itself.
     assert.strictEqual(pins.length, 3, "both stations plotted alongside the pin");

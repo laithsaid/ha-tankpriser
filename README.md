@@ -239,6 +239,12 @@ itself is only a summary — which country's cheapest is what, how many stations
 were plotted and how far was searched — because the detail belongs on the
 forecourts, where you can see which way they are and how far apart.
 
+A pick deliberately asks for **far more stations than a spoken answer does**.
+`tankpriser.nearby` returns 15 by default, which is a list to read out; a pin
+dropped on a city finds hundreds, and a map given only the fifteen *cheapest*
+of those shows you the cheap edge of town and nothing you could walk to. The
+pick asks for 60.
+
 Picked stations sit in their own layer, so the area prices go on refreshing
 underneath them and a refresh never wipes your pick; the next pick replaces it.
 Near a border both countries are plotted, each price in its own currency, and
@@ -1815,7 +1821,7 @@ names can trim it below 50 — `listed_count` says what actually went in.
 
 | Attribute | Meaning |
 | --- | --- |
-| `stations` | Up to 8, cheapest first, each with `distance_km` |
+| `stations` | Up to 15, cheapest first, each with `distance_km` |
 | `spoken_cheapest` | The **single** cheapest as a ready-to-speak sentence, in HA's language — the same sentence `tankpriser.nearby` returns to the Siri shortcut |
 | `spoken` | The three cheapest as a ready-to-speak sentence, for a shortcut that lets you choose |
 | `cheapest_station`, `cheapest_price`, `distance_km` | The winner |
@@ -1852,7 +1858,7 @@ names can trim it below 50 — `listed_count` says what actually went in.
 
 | Service | What it does |
 | --- | --- |
-| `tankpriser.nearby` | The cheapest stations around a position **you supply**, returned directly to the caller — a spoken sentence, the ranked stations, and one navigation URL per station. No entity, no device tracker, nothing that can be stale in between. Fields: `latitude`, `longitude` (both required), `fuel`, `radius_km`, `maps`. Returns `spoken_cheapest`, `spoken`, `stations` and `urls`, plus what was
+| `tankpriser.nearby` | The cheapest stations around a position **you supply**, returned directly to the caller — a spoken sentence, the ranked stations, and one navigation URL per station. No entity, no device tracker, nothing that can be stale in between. Fields: `latitude`, `longitude` (both required), `fuel`, `radius_km`, `maps`, `limit`. Returns `spoken_cheapest`, `spoken`, `stations` and `urls`, plus what was
 actually searched: `searched_km`, `circles`, `moving`, `speed_kmh`, `course_deg`
 and `motion_source`. `radius_km` is the *parked* radius and is ignored where the
 source imposes its own ceiling or where you are moving — the shape of the search
@@ -1860,7 +1866,11 @@ is worked out, not asked for. The *position* is the one you hand in; how fast
 you are moving is read from whichever configured tracker is standing at that
 position, whatever entry it belongs to. If none of them is there, the answer is
 a circle rather than a corridor, which is the honest reading of "we cannot tell
-which way you are going". This is what the Siri shortcut in [11b](#11b-the-shortcut--eight-actions) calls, through the companion app's *Perform action*; Apple's *Get contents of URL* with a long-lived token reaches it without the app at all. Also for automations that announce prices unprompted. |
+which way you are going". `limit` is how many stations come back, cheapest
+first — 15 by default, up to 100. The spoken sentence names three whatever it
+says, so raise it when you want a map full of forecourts rather than something
+to read aloud; `count` is always the real total found, however few are
+returned. This is what the Siri shortcut in [11b](#11b-the-shortcut--eight-actions) calls, through the companion app's *Perform action*; Apple's *Get contents of URL* with a long-lived token reaches it without the app at all. Also for automations that announce prices unprompted. |
 | `tankpriser.seed_demo_history` | Injects synthetic tanks into a car so the prediction shows a number immediately. For testing and demos — **it overwrites learned history**. Fields: `car` (blank = all), `tanks`, `litres_per_day`, `days_per_tank` |
 | `tankpriser.reset_history` | Clears a car's learned history, returning it to `learning`. Use after changing the tank size, or to undo a demo seed. Field: `car` (blank = all) |
 | `tankpriser.simulate_drive` | Drives a virtual car along a route, writing positions, speed and heading onto a tracker entity so the corridor search and the spoken answer can be tested without driving. Fields: `route` **or** `waypoints`, `speed_kmh`, `interval`, `tracker`, `announce`, `loop`, `fuel`. See [16. Simulating a drive](#16-simulating-a-drive) |

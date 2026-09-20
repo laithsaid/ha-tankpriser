@@ -279,6 +279,16 @@ const FOLLOW_MAX_AGE_MS = 5 * 60 * 1000;
 const FOLLOW_MIN_MOVE_KM = 5;
 const FOLLOW_CRAWL_KM = 0.5;
 
+// How many stations a 📍 pick asks for. The service answers with 15 by
+// default, which is a list to read; this is a map, where the question is
+// "what is around here" and every forecourt is one more pin you can judge for
+// yourself. Sent as a number rather than left to the default because the two
+// callers want genuinely different answers from the same call: dropping a pin
+// on Berlin finds well over three hundred forecourts, and a map that plots the
+// fifteen cheapest of those shows you the cheap edge of the city and nothing
+// you could walk to.
+const PICK_STATION_LIMIT = 60;
+
 // Company → brand colour + short code + favicon domain. Matched loosely against
 // the station's `company` string. Colour/code are only shown as an icon
 // fallback and for tinting clusters.
@@ -2090,7 +2100,7 @@ class TankpriserCard extends HTMLElement {
       const res = await this._hass.callService(
         "tankpriser",
         "nearby",
-        { latitude: lat, longitude: lon },
+        { latitude: lat, longitude: lon, limit: PICK_STATION_LIMIT },
         undefined,
         false,
         true

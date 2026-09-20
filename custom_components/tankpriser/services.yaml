@@ -68,6 +68,19 @@ nearby:
             - google
             - apple
             - osm
+    limit:
+      name: How many stations
+      description: >-
+        How many stations to return, cheapest first. The spoken sentence names
+        three whatever this says, so raise it when you want a map full of
+        forecourts rather than an answer to read out.
+      required: false
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: box
 
 seed_demo_history:
   name: Seed demo prediction history

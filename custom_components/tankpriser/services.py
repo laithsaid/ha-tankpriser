@@ -72,6 +72,7 @@ from .const import (
     price_decimals,
     price_unit,
     spoken_currency,
+    NEARBY_LIMIT_MAX,
     NEARBY_MAX_STATIONS,
     SPOKEN_STATIONS,
 )
@@ -136,6 +137,7 @@ ATTR_LONGITUDE = "longitude"
 ATTR_FUEL = "fuel"
 ATTR_RADIUS_KM = "radius_km"
 ATTR_MAPS = "maps"
+ATTR_LIMIT = "limit"
 
 # Navigation links are built here rather than left to the caller: a Shortcut can
 # read a string out of a response, but assembling one per station from a nested
@@ -152,6 +154,13 @@ _NEARBY_SCHEMA = vol.Schema(
             vol.Coerce(float), vol.Range(min=1, max=100)
         ),
         vol.Optional(ATTR_MAPS, default="google"): vol.In(list(_MAPS_URL)),
+        # How many stations come back. The spoken sentence names three
+        # whatever this says, so a caller that wants a map full of
+        # forecourts and a caller that wants one sentence are the same
+        # request with a different number.
+        vol.Optional(ATTR_LIMIT, default=NEARBY_MAX_STATIONS): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=NEARBY_LIMIT_MAX)
+        ),
     }
 )
 
@@ -496,6 +505,7 @@ async def nearby_answer(
     fuel: str | None = None,
     radius_km: float = float(DEFAULT_NEARBY_RADIUS_KM),
     maps: str = "google",
+    limit: int = NEARBY_MAX_STATIONS,
 ) -> dict:
     """The cheapest stations around a point, the way the `nearby` service says it.
 
@@ -572,7 +582,7 @@ async def nearby_answer(
     lead_country = lead["country"]
     ranked = lead["ranked"]
     reach_km = lead["searched_km"]
-    listed = ranked[:NEARBY_MAX_STATIONS]
+    listed = ranked[:limit]
 
     # Nothing anywhere. Before saying "no stations within N kilometres" —
     # true of the pool we searched, a lie about the place — ask whether the
@@ -699,8 +709,8 @@ async def nearby_answer(
                 "searched_km": group["searched_km"],
                 "circles": group["circles"],
                 "count": len(group["ranked"]),
-                "stations": group["ranked"][:NEARBY_MAX_STATIONS],
-                "urls": _urls_for(group["ranked"][:NEARBY_MAX_STATIONS], template),
+                "stations": group["ranked"][:limit],
+                "urls": _urls_for(group["ranked"][:limit], template),
             }
             for group in ordered
         ],
@@ -720,6 +730,7 @@ def async_register_services(hass: HomeAssistant) -> None:
             call.data[ATTR_LONGITUDE],
             fuel=call.data.get(ATTR_FUEL),
             radius_km=call.data[ATTR_RADIUS_KM],
+            limit=call.data[ATTR_LIMIT],
             maps=call.data[ATTR_MAPS],
         )
 

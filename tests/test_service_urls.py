@@ -97,4 +97,53 @@ check(
     "estimated-only results offer no navigation at all",
 )
 
+
+# --- how many stations come back -------------------------------------------
+# `NEARBY_MAX_STATIONS` was 8, sized for a sentence in a car, and the map pin
+# reused the same call: a pin on Berlin found 343 forecourts, was handed the
+# eight *cheapest* of them, and plotted a scatter reaching 22 km out while a
+# station 400 m away went unmentioned. The count is a field now. These read
+# services.py rather than re-implementing it, because a copy of the rule here
+# would go on passing after the caller stopped using it — which is how 0.19.1
+# shipped.
+src = ast.parse(open(os.path.join(BASE, "services.py"), encoding="utf-8").read())
+
+schema = next(
+    node for node in ast.walk(src)
+    if isinstance(node, ast.Assign)
+    and any(getattr(t, "id", "") == "_NEARBY_SCHEMA" for t in node.targets)
+)
+schema_src = ast.dump(schema)
+check("ATTR_LIMIT" in schema_src, "the service takes no limit field")
+check(
+    "NEARBY_MAX_STATIONS" in schema_src,
+    "the limit's default drifted away from the listed-count constant",
+)
+check(
+    "NEARBY_LIMIT_MAX" in schema_src,
+    "the limit has no ceiling, and the list goes into a recorded attribute",
+)
+
+answer = next(
+    node for node in ast.walk(src)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    and node.name == "nearby_answer"
+)
+args = [a.arg for a in answer.args.args + answer.args.kwonlyargs]
+check("limit" in args, f"nearby_answer does not accept a limit: {args}")
+
+# Every truncation of the ranked list must use the argument. One left behind
+# on the constant is a limit that works for the map and not for the border, or
+# the other way round, and nothing would say so.
+sliced = [
+    ast.dump(node)
+    for node in ast.walk(answer)
+    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice)
+]
+check(any("'limit'" in d for d in sliced), "the answer is not cut to the limit")
+check(
+    not any("NEARBY_MAX_STATIONS" in d for d in sliced),
+    "a truncation was left on the constant instead of the limit",
+)
+
 print(f"service url tests passed ({checks} assertions)")
