@@ -1086,23 +1086,40 @@ has no *Perform action*, or it hands back nothing, use the sensor-based build in
    Without this pause the map opens over her and clips it. One second of silence
    lets her finish.
 8. **Add action** → **Get dictionary value** again, this time for key `urls`,
-   from the same *Perform action* result. Then **Add action** → search `list` →
-   **Get item from list**, set to **First Item**.
+   from the same *Perform action* result.
+
+   Check that **in** really points at *Perform action* and not at the dictionary
+   value from step 5 — Shortcuts offers the nearest output first, and here the
+   nearest one is the wrong one.
+9. **Add action** → search `list` → **Get item from list**, set to **First
+   Item**.
 
    `urls` is index-aligned with `stations`, so its first entry is the route to
    the station she just named.
-9. **Add action** → search `Open URLs` → **Open URLs**.
+10. **Add action** → search `Open URLs` → **Open URLs**.
 
-   Take Apple's plain **Open URLs**, *not* "Open URLs in Chrome" or any other
-   app's version — a browser would open the link as a **web page**, and browsers
-   are not CarPlay apps, so nothing would reach the car screen.
+    Take Apple's plain **Open URLs**, *not* "Open URLs in Chrome" or any other
+    app's version — a browser would open the link as a **web page**, and browsers
+    are not CarPlay apps, so nothing would reach the car screen.
 
-   Its input must be the **Item from List**. Already showing that chip? Leave
-   it — Shortcuts fills in the action directly above, which is the right one.
-   Empty, or offering a **"Select Variable"** list? Pick **Item from List**.
-10. **Done.** The finished order is: Get current location → Perform action → Get
-    dictionary value (`spoken_cheapest`) → Speak Text → Wait → Get dictionary
-    value (`urls`) → Get item from list → Open URLs.
+    Its input must be the **Item from List** chip, and it often arrives holding
+    the wrong one: a **Dictionary Value**, which is the whole `urls` list and
+    would fire off every route at once. To change it, tap the field, **backspace
+    the chip away**, and tap **Item from List** in the strip above the keyboard —
+    or **Select Variable** if the strip does not offer it. It is a chip you tap,
+    never words you type: that field takes a URL, so typing the name is refused
+    at the space.
+
+    > Nothing named *Item from List* on offer? Then step 9 is not above this
+    > action — add it, or drag it up. A variable only appears to actions that
+    > come after the one producing it.
+
+    Easiest fix of all when a field will not let go: delete **Open URLs** and
+    add it again. Landing directly under *Get item from list*, it fills itself
+    in correctly.
+11. **Done.** The finished order is eight actions: Get current location →
+    Perform action → Get dictionary value (`spoken_cheapest`) → Speak Text →
+    Wait → Get dictionary value (`urls`) → Get item from list → Open URLs.
 
 **Test it parked, on the phone.** Say *"Hey Siri, Billigste benzin"* with the
 engine off: it should name one station and open Google Maps to it.
@@ -1210,8 +1227,10 @@ edit, no second entity to find:
 
 **Verified in a car, 2026-07-26** — on the sensor-based build above. The
 service-based shortcut in 11b is the same exchange with that stale position
-designed out, but it is new here: **test it parked before trusting it on a
-motorway.**
+designed out; it was **built and run on an iPhone on 2026-09-20**, spoke its
+sentence and opened the route, on a companion app that returned the reply
+**bare** — no `service_response` prefix needed. In a car it is still new:
+**test it parked before trusting it on a motorway.**
 
 #### 11f. Ask on the car's own screen — no Shortcut, no token
 
