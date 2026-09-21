@@ -28,6 +28,7 @@ from .sources import (
     default_radius,
     fuel_types_for,
     invalidate_cache,
+    providers_for,
     providers_needing_credential,
     radius_options,
     validate_credential,
@@ -140,6 +141,21 @@ ENTITY_SELECT = selector.EntitySelector()
 def _keyed_providers(country: str) -> list:
     """Sources for a country that will not answer without a personal key."""
     return [p for p in providers_needing_credential() if p.country == country]
+
+
+def _key_is_required(country: str) -> bool:
+    """Whether this country cannot be set up at all without a key.
+
+    True for Germany, whose only source is Tankerkoenig: an entry with no key
+    there has nothing to fetch and would never finish setting up. False for
+    Denmark, where six chains publish openly and a key only adds a seventh —
+    and where insisting would hold setup hostage to Uno-X, which a human
+    approves and which can take days. Asked of the *sources* rather than listed
+    per country, so the answer stays right as chains open and close.
+    """
+    if not _keyed_providers(country):
+        return False
+    return not any(not p.needs_credential for p in providers_for(country))
 
 
 def _guides(providers: list) -> str:
@@ -288,6 +304,7 @@ class TankpriserConfigFlow(ConfigFlow, domain=DOMAIN):
         a key that is merely waiting to be activated.
         """
         providers = _keyed_providers(self._country)
+        required = _key_is_required(self._country)
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -295,7 +312,12 @@ class TankpriserConfigFlow(ConfigFlow, domain=DOMAIN):
             for provider in providers:
                 credential = str(user_input.get(provider.key, "")).strip()
                 if not credential:
-                    errors[provider.key] = "key_required"
+                    # Blank is a real answer wherever the country can be read
+                    # without it: that chain is simply absent until a key is
+                    # added later under Configure. Only a country with no open
+                    # source of its own has to insist.
+                    if required:
+                        errors[provider.key] = "key_required"
                     continue
                 try:
                     found = await validate_credential(
@@ -319,9 +341,10 @@ class TankpriserConfigFlow(ConfigFlow, domain=DOMAIN):
             if not errors:
                 return await self.async_step_area()
 
+        field = vol.Required if required else vol.Optional
         schema = vol.Schema(
             {
-                vol.Required(
+                field(
                     provider.key,
                     description={
                         "suggested_value": self._credentials.get(provider.key, "")

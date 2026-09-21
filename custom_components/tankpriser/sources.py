@@ -17,6 +17,7 @@ Providers come in two shapes, because the sources do:
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import logging
 import re
@@ -61,6 +62,9 @@ from .const import (
     ECONTROL_URL,
     TANKERKOENIG_MAX_RADIUS_KM,
     TANKERKOENIG_URL,
+    UNOX_TOKEN_MARGIN_S,
+    UNOX_TOKEN_URL,
+    UNOX_URL,
     radius_to_metres,
 )
 from .nearby import haversine_m
@@ -160,6 +164,38 @@ _GOON_PRODUCT_MAP: dict[str, str] = {
     "Blyfri 92": "blyfri92",
     "Blyfri 95": "blyfri95",
     "Diesel": "diesel",
+}
+# Uno-X names its products the way the pump does. Matched case-insensitively
+# with the spacing collapsed. Verified against the live feed 2026-09-21: four
+# product names across 279 forecourts, and these are all of them.
+_UNOX_PRODUCT_MAP: dict[str, str] = {
+    "blyfri 95 e10": "blyfri95",
+    "blyfri 95": "blyfri95",
+    # One station sells it — Terndrup, 9575 — and it is 3 øre under the 95 at
+    # the same pumps, so folded into `blyfri95` it would win that forecourt's
+    # ranking outright. See `blyfri92` in FUEL_TYPES; Go'on was not the only
+    # chain selling it after all.
+    "blyfri 92": "blyfri92",
+    "blyfri 100 e5": "oktan100",
+    "blyfri 100": "oktan100",
+    "diesel": "diesel",
+    "diesel b7": "diesel",
+    "hvo100": "hvo100",
+    "hvo 100": "hvo100",
+}
+# Fallback for petrol only. Uno-X publishes `octane` as its own field for every
+# benzin product — the documentation lists it among the four things the API is
+# there to deliver — so a pump renamed on the forecourt still lands on the right
+# fuel instead of vanishing. That is not hypothetical: the first live run found
+# a product the documentation never mentions, "Blyfri 92", and this is what
+# placed it correctly. There is no equivalent for diesel: "Diesel" and a premium
+# diesel share a fuelType and nothing else tells them apart, so folding the two
+# together would have one silently overwrite the other where both are sold.
+_UNOX_OCTANE_MAP: dict[str, str] = {
+    "92": "blyfri92",
+    "95": "blyfri95",
+    "98": "blyfri98",
+    "100": "oktan100",
 }
 _CIRCLEK_PRODUCT_MAP: dict[str, str] = {
     "1030921": "blyfri95",      # miles 95 (Circle K)
@@ -262,10 +298,16 @@ def _to_float(value) -> float | None:
 
 
 def _short_date(iso: str | None) -> str:
-    """Trim an ISO timestamp to its date part for display."""
+    """Trim a timestamp to its date part for display.
+
+    The separator is not always a ``T``: Uno-X writes ``2025-11-26 11:21:13``
+    with a space, which splitting on ``T`` alone would leave whole — and a
+    station's `updated` is compared with ``max()`` against its siblings, so one
+    stray clock time would sort as the newest thing on the forecourt.
+    """
     if not iso:
         return ""
-    return str(iso).split("T", 1)[0]
+    return str(iso).strip().replace("T", " ").split(" ", 1)[0]
 
 
 def _extract_postnummer(text: str) -> str:
@@ -587,6 +629,182 @@ def parse_goon(payload: dict) -> list[Station]:
             )
         )
     return stations
+
+
+# -- Uno-X ------------------------------------------------------------------
+# The only source that will not take a credential at all: Uno-X wants OAuth 2.0
+# client credentials, so the key is exchanged for a 900-second JWT before every
+# fetch and the JWT is what the data call carries. See `fetch_unox`.
+def parse_unox(payload: dict) -> list[Station]:
+    """Parse the Uno-X pump-price payload (ships exact coordinates).
+
+    Two shapes here are unique among our sources and both would fail quietly:
+
+    * the coordinates are **strings with a Danish decimal comma** —
+      ``"55,568269773969"`` — which ``float()`` rejects outright, so every
+      station would fall back to its postnummer instead of standing where it is;
+    * ``lastUpdated`` separates date from time with a **space**, not a ``T``.
+      Handled in `_short_date`, which every source now shares.
+    """
+    # The live feed answers `{success, data, dataCount, metaData}` — lowercase
+    # `data`, although the documentation's table calls it `Data`. Both are read,
+    # since one letter's case is not worth an empty chain either way.
+    records = (payload or {}).get("data")
+    if records is None:
+        records = (payload or {}).get("Data")
+    stations: list[Station] = []
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        address = rec.get("address") or {}
+        postnummer = str(address.get("postalCode") or "").strip()
+        if not postnummer:
+            continue
+
+        coords = address.get("coordinates") or {}
+        lat = _to_float(coords.get("latitude"))
+        lon = _to_float(coords.get("longitude"))
+
+        prices: dict[str, float] = {}
+        newest = ""
+        for product in rec.get("products") or []:
+            if not isinstance(product, dict):
+                continue
+            name = " ".join(str(product.get("productName") or "").split()).lower()
+            key = _UNOX_PRODUCT_MAP.get(name)
+            if key is None and str(product.get("fuelType") or "").strip().lower() in (
+                "benzin",
+                "petrol",
+            ):
+                key = _UNOX_OCTANE_MAP.get(str(product.get("octane") or "").strip())
+            if key is None:
+                continue
+            price = _to_float(product.get("price"))
+            # A product listed without a price is a pump that has not reported,
+            # not a free litre.
+            if price is None or price <= 0:
+                continue
+            prices[key] = price
+            newest = max(newest, _short_date(product.get("lastUpdated")))
+
+        if not prices:
+            continue
+
+        brand = str(rec.get("brand") or "").strip() or "Uno-X"
+        # `stationName` is the forecourt's own name ("Fredericia Vejlevej") and
+        # says more than the street line does; the address is the fallback.
+        label = str(rec.get("stationName") or "").strip()
+        # `fullAddress` live, `addressHouseNumber` in the documentation. Reading
+        # only the documented name cost every station its street line, and
+        # silently: `stationName` covers the label, so the names looked right
+        # while `address` — what the card prints under the name, and what a
+        # navigator is handed — was empty at all 279 forecourts.
+        location = str(
+            address.get("fullAddress") or address.get("addressHouseNumber") or ""
+        ).strip()
+        stations.append(
+            Station(
+                name=f"{brand} {label or location}".strip(),
+                company=brand,
+                postnummer=postnummer,
+                city=str(address.get("city") or "").strip(),
+                address=location,
+                latitude=lat,
+                longitude=lon,
+                updated=newest,
+                prices=prices,
+                station_id=str(rec.get("stationId") or "").strip(),
+            )
+        )
+    return stations
+
+
+# One live token per credential, shared by every fetch. Keyed by fingerprint,
+# so the secret is not held a second time — see `_fingerprint`.
+# fingerprint -> (token, valid_until_monotonic)
+_UNOX_TOKENS: dict[str, tuple[str, float]] = {}
+
+
+def _unox_basic(credential: str) -> str:
+    """Turn a stored "client_id:client_secret" into a Basic auth header.
+
+    One field holding both halves, written exactly as the official
+    documentation writes it for ``curl -u``. A pair with a half missing is a
+    credential error and not a transport one: telling someone who pasted only
+    the client id that we "cannot connect" would send them to their router.
+    """
+    client_id, separator, client_secret = str(credential or "").strip().partition(":")
+    if not separator or not client_id.strip() or not client_secret.strip():
+        raise ProviderAuthError(
+            "Uno-X needs both halves of the key, written as client_id:client_secret"
+        )
+    pair = f"{client_id.strip()}:{client_secret.strip()}".encode()
+    return "Basic " + base64.b64encode(pair).decode()
+
+
+async def _unox_token(session: aiohttp.ClientSession, credential: str) -> str:
+    """Return a live bearer token, fetching one only when the last has aged out.
+
+    Worth caching for more than politeness: Uno-X allows **one request per key
+    per 30 seconds**, and a token fetched per refresh would spend half of that
+    budget re-asking for a token that was still good.
+    """
+    fingerprint = _fingerprint(credential)
+    cached = _UNOX_TOKENS.get(fingerprint)
+    if cached and time.monotonic() < cached[1]:
+        return cached[0]
+    _UNOX_TOKENS.pop(fingerprint, None)
+
+    async with session.post(
+        UNOX_TOKEN_URL,
+        data={"grant_type": "client_credentials"},
+        headers={**REQUEST_HEADERS, "Authorization": _unox_basic(credential)},
+        timeout=_TIMEOUT,
+    ) as resp:
+        # Keycloak answers an unknown client_id with 401 and a wrong secret with
+        # 400 `invalid_client`. Both mean the same thing to whoever is looking
+        # at the dialog, and neither is something a retry will fix.
+        if resp.status in (400, 401, 403):
+            raise ProviderAuthError(
+                f"Uno-X refused the client credentials (HTTP {resp.status})"
+            )
+        resp.raise_for_status()
+        payload = await resp.json(content_type=None)
+
+    token = str((payload or {}).get("access_token") or "").strip()
+    if not token:
+        raise ProviderAuthError("Uno-X returned no access token")
+    lifetime = _to_float((payload or {}).get("expires_in")) or 900.0
+    _UNOX_TOKENS[fingerprint] = (
+        token,
+        time.monotonic() + max(lifetime - UNOX_TOKEN_MARGIN_S, 0.0),
+    )
+    return token
+
+
+async def fetch_unox(
+    session: aiohttp.ClientSession,
+    credential: str | None = None,
+    area: "Area | None" = None,
+) -> list[Station]:
+    """Fetch every Uno-X station: a token first, then the one data call."""
+    if not credential:
+        raise ProviderAuthError("Uno-X needs a client_id:client_secret key")
+    token = await _unox_token(session, credential)
+    try:
+        payload = await _fetch_json(
+            session, UNOX_URL, extra_headers={"Authorization": f"Bearer {token}"}
+        )
+    except aiohttp.ClientResponseError as err:
+        if getattr(err, "status", None) in (401, 403):
+            # Refused although our clock says it is still good: the key was
+            # revoked, or the two clocks disagree. Drop it, so the next refresh
+            # asks for a new token instead of replaying this one every ten
+            # minutes until somebody notices.
+            _UNOX_TOKENS.pop(_fingerprint(credential), None)
+            raise ProviderAuthError("Uno-X refused the access token") from err
+        raise
+    return parse_unox(payload)
 
 
 # -- Circle K / INGO --------------------------------------------------------
@@ -934,6 +1152,12 @@ AUTH_KEY: Final = "key"
 # nowhere else (Tankerkoenig). Everything logged on this path must go through
 # `redact` first — see `_fetch_provider`.
 AUTH_QUERY: Final = "query"
+# The credential is never sent at all: it is a client_id/secret pair traded for
+# a short-lived token first, and the token is what travels (Uno-X). `headers`
+# and `params` stay empty for this mode — the provider's own fetcher does the
+# exchange, because only it knows the token endpoint. Declared as a mode all
+# the same, so `needs_credential` is true and the dialog still asks.
+AUTH_OAUTH: Final = "oauth"
 
 # How much of a country one fetch covers.
 SCOPE_NATIONAL: Final = "national"   # one response holds every station
@@ -1012,6 +1236,8 @@ AUTH_TANKERKOENIG: Final = Auth(AUTH_QUERY, param="apikey")
 # 401 without a header and 403 with a key it does not know; the options dialog
 # reads both as "that key is wrong", which is exactly right.
 AUTH_GOON: Final = Auth(AUTH_KEY)
+# Uno-X: OAuth 2.0 client credentials — see `fetch_unox`.
+AUTH_UNOX: Final = Auth(AUTH_OAUTH)
 
 
 def redact(text: object, credential: str | None) -> str:
@@ -1022,8 +1248,15 @@ def redact(text: object, credential: str | None) -> str:
     user's key into the Home Assistant log the first time the network hiccups.
     """
     out = str(text)
-    if credential and len(credential) >= 8:
-        out = out.replace(credential, "***")
+    if not credential:
+        return out
+    # Also each colon-separated part: a client-credentials pair is stored as
+    # "client_id:client_secret", and a token endpoint that rejects it reports
+    # the id and the secret separately — the joined form it would match on
+    # never appears in the error at all.
+    for secret in (credential, *credential.split(":")):
+        if len(secret) >= 8:
+            out = out.replace(secret, "***")
     return out
 
 
@@ -1187,19 +1420,38 @@ PROVIDERS: dict[str, Provider] = {
                 "that limit even when the key is perfectly good."
             ),
         ),
-        # Denmark, still missing (rechecked live 2026-09-16):
-        #
-        # * Circle K / INGO needs NO credential any more. The 2026 law made it
-        #   open: GET https://api.circlek.com/eu/prices/v1/fuel/countries/DK
-        #   with the header `X-App-Name: PRICES` (without it, 400 "App not
-        #   allowed"). 402 sites, prices inline, no coordinates — postnummer
-        #   geocoding like Q8. Not built yet; this is a parser, not a request.
-        # * Go'on issues a key from a two-field form at
-        #   goon.nu/faa-adgang-til-api/, by return e-mail.
-        # * Uno-X is OAuth 2.0 client credentials (token at
-        #   auth.unoxmobility.net, data at api.unoxmobility.net), one request
-        #   per 30 s, and the client_id/secret are applied for by e-mail.
-        #   `Auth` has no client-credentials mode yet; that is the work.
+        Provider(
+            "unox",
+            "Uno-X",
+            fetch_unox,
+            auth=AUTH_UNOX,
+            # What the live feed actually prices, counted 2026-09-21 over 279
+            # forecourts: blyfri95 279, diesel 279, oktan100 259, blyfri92 1.
+            # Not the documented set — the documentation never mentions 92 —
+            # and not the whole octane map either, because a fuel in the picker
+            # that no price ever arrives for is a sensor that sits unavailable
+            # for ever.
+            fuels=frozenset({"blyfri92", "blyfri95", "oktan100", "diesel"}),
+            signup_url="https://unoxmobility.dk/privat/braendstofpriser#pris-api",
+            guide=(
+                "1. Apply on the signup page, or write to info@unox.dk with "
+                "the subject *Adgang til pris-API* (phone +45 70 12 56 78, "
+                "weekdays 08-16).\n"
+                "2. A human at Uno-X has to approve it, so this one does not "
+                "arrive by return mail the way Go'on's does.\n"
+                "3. What arrives is a **pair**: a client id and a client "
+                "secret. Paste them here as one line, joined by a colon — "
+                "`client_id:client_secret` — exactly as the Uno-X "
+                "documentation writes it for `curl -u`.\n"
+                "4. If saving says it cannot connect, wait half a minute and "
+                "try once more: Uno-X allows one request per key per 30 "
+                "seconds, and testing a key twice in quick succession trips "
+                "that limit even when the key is perfectly good."
+            ),
+        ),
+        # Denmark is complete: OK, Q8/F24, Shell, OIL! and Circle K / INGO are
+        # open, Go'on and Uno-X are keyed, and every chain the 2026 price
+        # transparency law covers is read.
         Provider(
             "anwb_nl",
             "ANWB (Netherlands)",

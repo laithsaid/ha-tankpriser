@@ -1,0 +1,202 @@
+{
+ "success": true,
+ "data": [
+  {
+   "stationId": 2,
+   "stationName": "Fredericia Vejlevej",
+   "brand": "Uno-X",
+   "owner": "Uno-X Mobility Danmark A/S",
+   "address": {
+    "fullAddress": "Vejlevej 141",
+    "postalCode": "7000",
+    "city": "Fredericia",
+    "coordinates": {
+     "latitude": "55,568269773969",
+     "longitude": "9,707150459289"
+    }
+   },
+   "products": [
+    {
+     "fuelType": "Benzin",
+     "octane": "95",
+     "productName": "Blyfri 95 E10",
+     "price": 17.69,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:15:38.063000"
+    },
+    {
+     "fuelType": "Diesel",
+     "productName": "Diesel",
+     "price": 19.19,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:15:38.080000"
+    },
+    {
+     "fuelType": "Benzin",
+     "octane": "100",
+     "productName": "Blyfri 100 E5",
+     "price": 19.89,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:15:38.080000"
+    }
+   ]
+  },
+  {
+   "stationId": 1832,
+   "stationName": "Terndrup",
+   "brand": "Uno-X",
+   "owner": "Uno-X Mobility Danmark A/S",
+   "address": {
+    "fullAddress": "Hadsundvej 43",
+    "postalCode": "9575",
+    "city": "Terndrup",
+    "coordinates": {
+     "latitude": "56,80926",
+     "longitude": "10,05704"
+    }
+   },
+   "products": [
+    {
+     "fuelType": "Benzin",
+     "octane": "95",
+     "productName": "Blyfri 95 E10",
+     "price": 17.69,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:16:01.107000"
+    },
+    {
+     "fuelType": "Diesel",
+     "productName": "Diesel",
+     "price": 19.19,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:16:01.120000"
+    },
+    {
+     "fuelType": "Benzin",
+     "octane": "92",
+     "productName": "Blyfri 92",
+     "price": 17.66,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:16:01.120000"
+    }
+   ]
+  },
+  {
+   "stationId": 68,
+   "stationName": "Vejers",
+   "brand": "Uno-X",
+   "owner": "Uno-X Mobility Danmark A/S",
+   "address": {
+    "fullAddress": "Vejers Havvej 7",
+    "postalCode": "6853",
+    "city": "Vejers Strand",
+    "coordinates": {
+     "latitude": "55,619060695487",
+     "longitude": "8,141813278198"
+    }
+   },
+   "products": [
+    {
+     "fuelType": "Benzin",
+     "octane": "95",
+     "productName": "Blyfri 95 E10",
+     "price": 17.69,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:10:50.357000"
+    },
+    {
+     "fuelType": "Diesel",
+     "productName": "Diesel",
+     "price": 19.19,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:10:50.373000"
+    }
+   ]
+  },
+  {
+   "stationId": 9001,
+   "stationName": "Kun AdBlue",
+   "brand": "Uno-X",
+   "owner": "Uno-X Mobility Danmark A/S",
+   "address": {
+    "fullAddress": "Vejlevej 2",
+    "postalCode": "6000",
+    "city": "Kolding",
+    "coordinates": {
+     "latitude": "55,489012773969",
+     "longitude": "9,472150459289"
+    }
+   },
+   "products": [
+    {
+     "fuelType": "AdBlue",
+     "productName": "AdBlue",
+     "price": 9.95,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:15:38.063000"
+    }
+   ]
+  },
+  {
+   "stationId": 9002,
+   "stationName": "Uden postnummer",
+   "brand": "Uno-X",
+   "owner": "Uno-X Mobility Danmark A/S",
+   "address": {
+    "fullAddress": "Ukendt vej 1",
+    "postalCode": "",
+    "city": "",
+    "coordinates": {
+     "latitude": "55,000000000000",
+     "longitude": "10,000000000000"
+    }
+   },
+   "products": [
+    {
+     "fuelType": "Benzin",
+     "octane": "95",
+     "productName": "Blyfri 95 E10",
+     "price": 17.69,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 11:15:38.063000"
+    }
+   ]
+  },
+  {
+   "stationId": 9003,
+   "stationName": "Omdoebt pumpe og en stum diesel",
+   "brand": "Uno-X",
+   "owner": "Uno-X Mobility Danmark A/S",
+   "address": {
+    "fullAddress": "Silkeborgvej 88",
+    "postalCode": "7400",
+    "city": "Herning",
+    "coordinates": {
+     "latitude": "56,139902117338",
+     "longitude": "8,999184773992"
+    }
+   },
+   "products": [
+    {
+     "fuelType": "Benzin",
+     "octane": "95",
+     "productName": "Blyfri E10",
+     "price": 17.95,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 04:30:00.000000"
+    },
+    {
+     "fuelType": "Diesel",
+     "productName": "Diesel",
+     "price": 0,
+     "currency": "DKK",
+     "lastUpdated": "2026-09-21 04:30:00.000000"
+    }
+   ]
+  }
+ ],
+ "dataCount": 6,
+ "metaData": {
+  "pricesLastSynced": "2026-09-21 23:05:00.0"
+ }
+}

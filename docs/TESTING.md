@@ -36,8 +36,16 @@ a browser — a large JSON body means it's healthy.
 **Go'on** needs a personal key — free, from a two-field form at
 goon.nu/faa-adgang-til-api, issued by return mail. Paste it under *Configure →
 Chains & API keys*. It is the only source selling **Blyfri 92**, so that fuel
-stays empty until the key is in. **Uno-X** is still **not wired in** (OAuth
-client credentials, requested 2026-09-16) — see "Outstanding" at the bottom.
+stays empty until the key is in.
+
+**Uno-X** needs one too, and it is the odd one out: OAuth 2.0 client
+credentials, so the field takes a **pair** written `client_id:client_secret`,
+which is traded for a 15-minute token before each fetch. It is 279 stations,
+all with exact coordinates, and one of them (Terndrup) is the only Blyfri 92
+outside Go'on. Both chains allow one request per key per 30 seconds, so a
+dialog that says "cannot connect" right after a save usually just needs half a
+minute. Neither is required: a Danish entry sets up with both fields left
+blank.
 
 **Health check:** just install and add an area (section 2). If the sensor's
 `stations` attribute fills, the whole pipeline works.
@@ -832,10 +840,49 @@ Tracked here and in the project notes so nothing is lost while testing:
       appear. If saving says "cannot connect", wait 30 s and save again — one
       request per key per 30 seconds is their limit, and the dialog had just
       spent one testing it.
-- [ ] **More chains (need your credential):**
-  - Uno-X — OAuth 2.0 client credentials, requested by e-mail (sent
-    2026-09-16). It needs a token fetch and refresh, which `sources.Auth`
-    cannot do yet, as well as the credential.
+- [x] **Uno-X** — built and **verified against the live feed** 2026-09-21,
+      the day the credentials arrived. **279 stations, every one with exact
+      coordinates and a timestamp.** It is the only source that will not take a
+      key as a key: `Auth` gained an `AUTH_OAUTH` mode where nothing is sent at
+      all, and `fetch_unox` trades the `client_id:client_secret` pair for a
+      900-second JWT which it caches per credential (minus a 60 s margin, so no
+      request leaves with a token that dies in flight).
+
+      **The official PDF (v1.0, 01.01.2026) is wrong in two places, and the
+      live run is what found them.** Both are in `tests/test_unox.py`, and both
+      are read either way:
+      - the top-level key is **`data`**, not `Data`. The real envelope is
+        `{success, data, dataCount, metaData:{pricesLastSynced}}`.
+      - the street line is **`address.fullAddress`**, not
+        `address.addressHouseNumber`. This one was silent: `stationName` still
+        filled each label, so the station list looked perfectly normal while
+        `address` — the line under the name, and what a navigator is handed —
+        was empty at all 279 forecourts.
+
+      **And a product the documentation never mentions:** one forecourt
+      (Terndrup, 9575) sells **Blyfri 92**, 3 øre under the 95 beside it. The
+      petrol-only fallback onto the `octane` field caught it before its name
+      was in the map — which is the whole reason that fallback exists. Go'on is
+      no longer the only chain selling 92.
+
+      Two more shapes would have failed quietly and are covered too:
+      coordinates arrive as **strings with a Danish decimal comma**
+      (`"55,568269773969"`), and `lastUpdated` uses a **space** instead of a
+      `T`. The second was a bug in shared code — `_short_date` split on `T`
+      only, and `updated` is a `max()` across a station's products, so a clock
+      time would have sorted above a plain date.
+
+      Fixture: `tests/fixtures/unox_dk.json`, three real stations plus three
+      hand-written edge cases. Re-probe any time with
+      `scratchpad/probe_unox.py`. With this, every chain the Danish 2026 law
+      covers is read.
+- [x] **Setting up Denmark must not wait on a key** — found while adding Uno-X.
+      The setup flow made every keyed chain `vol.Required`, so a new Danish
+      entry could not be created without a Go'on key, and would have needed a
+      Uno-X one too — which takes days, because a person approves it.
+      `_key_is_required()` now asks the *sources* whether a country has any
+      open chain, and only Germany, whose single source is Tankerkönig, still
+      insists.
 - [x] **Real donate link** — `https://paypal.me/tankpriser`, in `const.py` and
       `www/tankpriser-card.js` (two copies, keep them in step). Ko-fi and the
       other tip platforms were ruled out: none of them price in DKK.

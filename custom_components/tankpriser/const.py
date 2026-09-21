@@ -315,6 +315,22 @@ CIRCLEK_HEADERS: Final = {"X-App-Name": "PRICES"}
 # provider cache is already well inside — except right after a key is saved,
 # when the dialog has just tested it. That trap is in the provider's guide.
 GOON_URL: Final = "https://goon.nu/wp-json/goon/v1/pump-prices"
+# Uno-X: the last Danish chain behind a credential, and the only source anywhere
+# that will not take one as a header. It wants OAuth 2.0 *client credentials* —
+# a client_id and client_secret posted to a token endpoint, traded for a JWT
+# good for 900 seconds, which then rides on the data call as a bearer token. We
+# store the pair the way the official documentation writes it for `curl -u`:
+# one "client_id:client_secret" string in one field.
+UNOX_TOKEN_URL: Final = (
+    "https://auth.unoxmobility.net/realms/production-api-gateway"
+    "/protocol/openid-connect/token"
+)
+UNOX_URL: Final = "https://api.unoxmobility.net/gasstations/v1/getStationsAndPrices"
+# Seconds of a token's life we refuse to spend. Refreshed this far ahead of
+# expiry, a request can never leave carrying a token that dies in flight — and
+# a 401 recovered from would cost a second request against a budget of one per
+# 30 seconds, the same limit Go'on sets.
+UNOX_TOKEN_MARGIN_S: Final = 60.0
 
 # The Netherlands, Belgium, Luxembourg and France: ANWB's points-of-interest
 # service, which is how their own app draws fuel prices. No key, no
@@ -594,10 +610,11 @@ DEFAULT_NOTIFY_RULE: Final = RULE_CHEAPEST
 # the common denominators present at nearly every station, so they are the
 # sensible defaults everywhere.
 FUEL_TYPES: Final = {
-    # 92 octane is sold by Go'on and nobody else we read, so it only appears
-    # once that key is configured. It is kept apart from Blyfri 95 rather than
-    # folded into it: it is cheaper, so it would win every ranking, and plenty
-    # of cars must not be filled with it.
+    # 92 octane is sold by Go'on, and by exactly one Uno-X forecourt
+    # (Terndrup, 9575) — both behind a key, so it stays empty until one is
+    # configured. It is kept apart from Blyfri 95 rather than folded into it:
+    # it is cheaper, so it would win every ranking, and plenty of cars must not
+    # be filled with it.
     "blyfri92": "Blyfri 92",
     "blyfri95": "Blyfri 95 (E10)",
     "blyfri98": "Blyfri 98",

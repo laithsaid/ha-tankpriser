@@ -22,9 +22,11 @@
       },
       "credentials": {
         "title": "API key",
-        "description": "This country's prices come from a source that only answers with a personal API key. It is free, and it is yours — Home Assistant sends it straight to the source and nowhere else.\n\n{guides}",
+        "description": "Some of this country's prices come from sources that need a personal API key. They are free, and they are yours — Home Assistant sends each one straight to its own source and nowhere else.\n\nLeave a field blank unless the form marks it required: that chain is simply absent until you add its key later under Configure → Chains & API keys.\n\n{guides}",
         "data": {
-          "tankerkoenig": "Tankerkönig API key"
+          "tankerkoenig": "Tankerkönig API key",
+          "goon": "Go'on API key",
+          "unox": "Uno-X key, as client_id:client_secret"
         }
       }
     },

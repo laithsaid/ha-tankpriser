@@ -22,9 +22,11 @@
       },
       "credentials": {
         "title": "API-nøgle",
-        "description": "Priserne for dette land kommer fra en kilde, der kun svarer med en personlig API-nøgle. Den er gratis, og den er din — Home Assistant sender den kun til kilden selv.\n\n{guides}",
+        "description": "Nogle af priserne for dette land kommer fra kilder, der kræver en personlig API-nøgle. De er gratis, og de er dine — Home Assistant sender hver enkelt direkte til kilden selv og ingen andre steder.\n\nDu kan lade et felt stå tomt, medmindre formularen kræver det: kæden er så bare ikke med, indtil du tilføjer nøglen senere under Konfigurer → Kæder og API-nøgler.\n\n{guides}",
         "data": {
-          "tankerkoenig": "Tankerkönig API-nøgle"
+          "tankerkoenig": "Tankerkönig API-nøgle",
+          "goon": "Go'on API-nøgle",
+          "unox": "Uno-X-nøgle, som client_id:client_secret"
         }
       }
     },

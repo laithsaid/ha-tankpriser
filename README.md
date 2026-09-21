@@ -9,8 +9,8 @@ your Home Assistant dashboard, on a map, in your car and in Siri.
 
 **Denmark** comes straight from the **official per-station price APIs** that
 Danish fuel chains are required to publish — OK, Q8, F24, Shell, OIL! and
-Circle K / INGO with no key at all, and Go'on with a free one anyone can
-request —
+Circle K / INGO with no key at all, and Go'on and Uno-X with free ones you
+ask them for —
 with no scraping, no account and no API key. Geographic filtering uses the free
 [DAWA](https://dawadocs.dataforsyningen.dk/) address API.
 
@@ -51,7 +51,7 @@ those.
 
 | Country | Prices come from | Key? | How it searches |
 | --- | --- | --- | --- |
-| **Denmark** | OK, Q8, F24, Shell, OIL!, Circle K / INGO, Go'on | None, except a free one for Go'on | Nationwide |
+| **Denmark** | OK, Q8, F24, Shell, OIL!, Circle K / INGO, Go'on, Uno-X | None, except free ones for Go'on and Uno-X | Nationwide |
 | **Germany** | [Tankerkönig](https://creativecommons.tankerkoenig.de/) (MTS-K), ~15,000 forecourts | **Free key, activated by hand** | A circle of at most 25 km — [14](#14-germany) |
 | **Netherlands** | [ANWB](https://www.anwb.nl/), ~3,900 forecourts | None | Nationwide |
 | **Belgium** | ANWB, ~1,800 forecourts | None | Nationwide |
@@ -132,12 +132,12 @@ coordinates and when the chain last changed that price, plus `average_price`,
 Eight fuels are modelled: **Blyfri 92**, **Blyfri 95 (E10)**, **Blyfri 98**,
 **Blyfri 95 Extra (E5)**, **Oktan 100**, **Diesel (B7)**, **Diesel Extra** and
 **HVO100** — plus **LPG** and **CNG** where a country sells them. Blyfri 92
-comes only from Go'on, which needs
-[a free key](#13-sources-that-need-an-api-key); it is kept apart from Blyfri 95
-rather than folded into it, because it is cheaper — so it would win every
-ranking — and plenty of cars must not be filled with it. Which
-ones exist near you depends on the chains around you — OK sells Oktan 100, Q8
-and F24 sell HVO100, and so on.
+comes from Go'on, and from a single Uno-X forecourt in Terndrup — both of which
+need [a free key](#13-sources-that-need-an-api-key); it is kept apart from
+Blyfri 95 rather than folded into it, because it is cheaper — so it would win
+every ranking — and plenty of cars must not be filled with it. Which
+ones exist near you depends on the chains around you — OK and Uno-X sell Oktan
+100, Q8 and F24 sell HVO100, and so on.
 
 The area is your **Home location** and a radius of 5–50 km. Prices refresh every
 30 minutes by default (minimum 15). A chain that stops answering keeps serving
@@ -497,16 +497,27 @@ own data, rather than asking you to take it on trust.
 Most chains publish openly and need no setup at all. A source that only answers
 with a personal key appears under **Chains & API keys** with a step-by-step
 guide to requesting one; the key is validated immediately, stored in the config
-entry, sent only to that source as a header — never in a URL — and redacted from
-diagnostics. Two sources are like this today:
+entry, sent only to that source — never in a URL — and redacted from
+diagnostics. Three sources are like this today:
 
 - **Go'on** (Denmark, ~200 stations). The key comes from a two-field form and
   arrives by return mail within minutes, automatically. Optional: everything
   else Danish works without it, and Go'on is simply absent until you add it.
   It is the only source selling **Blyfri 92**, so that fuel appears in the
   picker but stays empty until the key is in.
+- **Uno-X** (Denmark, 279 stations, all with exact coordinates). Also
+  optional, and the only source that will not take a key as a key: it wants
+  **OAuth 2.0 client credentials**, so what you paste is a *pair* —
+  `client_id:client_secret` on one line — which Home Assistant trades for a
+  token that lives 15 minutes and renews itself. Applying for it needs a human
+  at Uno-X to approve, so it is the one key that can take days.
 - **Tankerkönig** (Germany) — required there, since it is the only German
   source. See [14. Germany](#14-germany).
+
+Only Germany insists. Everywhere with chains that publish openly, the setup
+dialog offers the key fields and accepts a blank: the rest of the country works
+without them, and you can add a key later under **Chains & API keys** whenever
+it arrives.
 
 ### 14. Germany
 
@@ -715,8 +726,9 @@ app does — so all of it runs for real from your desk. See
   national map still works, since it does not use the radius).
 - Internet access from Home Assistant (the sources' APIs, and DAWA for
   Denmark). No `configuration.yaml` entry, ever.
-- **For Denmark:** no account and no API key. One chain, **Go'on**, is optional
-  and does need a free key — see [13](#13-sources-that-need-an-api-key).
+- **For Denmark:** no account and no API key. Two chains, **Go'on** and
+  **Uno-X**, are optional and do need a free key — see
+  [13](#13-sources-that-need-an-api-key).
 - **For the Netherlands, Belgium, Luxembourg and France:** no account and no
   API key — see [15](#15-the-netherlands-belgium-luxembourg-and-france) for what
   that source does and does not publish, and for why France is set up with an
@@ -1623,6 +1635,23 @@ knowing: Go'on allows **one request per key per 30 seconds**, so testing a key
 twice in quick succession is refused and the dialog says it cannot connect even
 though the key is fine. Wait half a minute and save again.
 
+For **Uno-X**, apply at
+[unoxmobility.dk/privat/braendstofpriser](https://unoxmobility.dk/privat/braendstofpriser#pris-api)
+or write to info@unox.dk with the subject *Adgang til pris-API*. A person there
+approves it, so unlike Go'on's it does not arrive by return mail. What arrives is
+**two** values, a client id and a client secret; paste them into the one field
+joined by a colon —
+
+```
+client_id:client_secret
+```
+
+— exactly as the Uno-X documentation writes it for `curl -u`. Home Assistant
+exchanges them for a 15-minute token before each fetch and holds the token until
+it is nearly spent, so the secret itself is sent to one place only. Uno-X has the
+same **one request per key per 30 seconds** limit as Go'on, with the same
+consequence for saving twice in quick succession.
+
 ### 14. Germany
 
 *([what this feature does](#14-germany))*
@@ -1902,7 +1931,7 @@ report as-is.
 | Germany: the map only shows a small area | That is the whole map there is. Tankerkönig answers only about a circle of at most 25 km, so there is no nationwide list to plot and none can be built. |
 | Siri says *parked* while you are clearly driving | Nothing configured is following the device you are asking from. Motion is worked out by comparing the position you hand in against a tracker standing in the same place; with no tracker there, the search is a circle around you and says so. Nominate the phone under *Configure → Area & fuel types → Rank stations near this device* on any one entry — it does not have to be the entry for the country you are in. |
 | A simulated drive changes nothing | The area is not following the simulated car. *Configure → Area & fuel types → Rank stations near this device* → `device_tracker.tankpriser_sim`. The log warns about this when the drive starts. |
-| A chain you expect is missing | OK, Q8, F24, Shell, OIL! and Circle K / INGO publish openly; **Go'on needs a free key** you paste under *Chains & API keys*. Uno-X is not wired up yet. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
+| A chain you expect is missing | OK, Q8, F24, Shell, OIL! and Circle K / INGO publish openly; **Go'on and Uno-X each need a free key** you paste under *Chains & API keys* — Uno-X's is a `client_id:client_secret` pair. A chain that fails for more than 6 hours also drops out on purpose rather than showing stale prices. |
 | Every Tankpriser card is a small red error box on one device, and fine on the others | That device is not loading the card script. Fully close and reopen the HA app there (on iPhone/iPad: *Settings → Companion app → Debugging → Reset frontend cache*), or hard-refresh the browser. If it comes back, check *Settings → Dashboards → ⋮ → Resources* lists `/tankpriser/tankpriser-card.js` — if it does not, the integration logs a warning saying so at startup, and adding it by hand as a **JavaScript Module** is the fix. On an iPad, one build of the companion app refused to load any custom card while Safari on the same iPad loaded them all; if you meet that, open the dashboard in Safari and add it to the Home Screen. |
 | The card says "Configuration error" | Same cause as the row above: a browser holding an old `index.html`. |
 | The map is blank/grey but markers show | The background tiles are blocked (no internet, or a DNS/ad blocker). The prices are unaffected; `show_map: false` removes the dependency. |
@@ -1922,7 +1951,7 @@ More depth — logs, installing a build by hand, running the test suite — is i
 ## Privacy and data sources
 
 - **Prices** come from each chain's own public API: OK, Q8/F24, Shell, OIL!,
-  Circle K / INGO and — once you add its key — Go'on. The Netherlands, Belgium
+  Circle K / INGO and — once you add their keys — Go'on and Uno-X. The Netherlands, Belgium
   and Luxembourg come from ANWB's own service, and so does France — one circle
   at a time, since no single request covers it.
   Each is fetched nationwide, cached for 10 minutes and shared by everything in
