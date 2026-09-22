@@ -23,7 +23,6 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .sources import (
     PROVIDERS,
     ProviderAuthError,
-    country_needs_area,
     default_fuel_types,
     default_radius,
     fuel_types_for,
@@ -35,6 +34,7 @@ from .sources import (
 )
 from .const import (
     CHAINS,
+    country_needs_anchor,
     country_of,
     CONF_ACCURACY_ENABLED,
     CONF_ANCHOR,
@@ -408,10 +408,15 @@ class TankpriserConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_FUEL_TYPES, default=default_fuel_types(country)
             ): _fuel_select(country),
         }
-        if country_needs_area(country):
+        if country_needs_anchor(country):
             # Asked here rather than left to Options because without it the
             # very first refresh searches wherever Home is, which for this kind
             # of entry is quite often the wrong country entirely.
+            #
+            # Every country but Denmark: the circle-only sources need a centre
+            # to query, and the whole-country sources outside Denmark need one
+            # to cut their answer down with. Denmark cuts by postnummer and
+            # asks for nothing here.
             fields[vol.Required(CONF_ANCHOR, default=self._home())] = (
                 selector.LocationSelector()
             )
@@ -595,7 +600,7 @@ class TankpriserOptionsFlow(OptionsFlow):
                     )
                 ),
         }
-        if country_needs_area(country):
+        if country_needs_anchor(country):
             schema_fields[
                 vol.Required(CONF_ANCHOR, default=self._anchor_default())
             ] = selector.LocationSelector()

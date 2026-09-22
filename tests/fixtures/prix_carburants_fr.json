@@ -1,0 +1,62 @@
+[
+ {
+  "id": 89100001,
+  "cp": "89100",
+  "ville": "Sens",
+  "adresse": "84 ROUTE DE MAILLOT",
+  "pop": "R",
+  "geom": {
+   "lon": 3.309,
+   "lat": 48.183
+  },
+  "latitude": "4818300",
+  "longitude": "330900",
+  "gazole_prix": 2.469,
+  "gazole_maj": "2026-09-18T09:07:28+00:00",
+  "sp95_prix": null,
+  "sp98_prix": 2.319,
+  "e10_prix": 2.259,
+  "e85_prix": 0.859,
+  "gplc_prix": null
+ },
+ {
+  "id": 38230003,
+  "cp": "38230",
+  "ville": "Tignieu-Jameyzieu",
+  "adresse": "Rue des Ardennes",
+  "pop": "R",
+  "geom": {
+   "lon": 5.183,
+   "lat": 45.745
+  },
+  "latitude": "4574500",
+  "longitude": "518300",
+  "gazole_prix": 2.43,
+  "gazole_maj": "2026-09-22T09:26:00+00:00",
+  "sp95_prix": 2.22,
+  "sp98_prix": 2.245,
+  "e10_prix": 2.17,
+  "e85_prix": 0.834,
+  "gplc_prix": 0.998
+ },
+ {
+  "id": 58240003,
+  "cp": "58240",
+  "ville": "Chantenay-Saint-Imbert",
+  "adresse": "ROUTE NATIONALE 7 - LES BOULAISES",
+  "pop": "R",
+  "geom": {
+   "lon": 3.1406912128899998,
+   "lat": 46.7535171497
+  },
+  "latitude": "4675351.71497",
+  "longitude": "314069.121289",
+  "gazole_prix": null,
+  "gazole_maj": null,
+  "sp95_prix": null,
+  "sp98_prix": null,
+  "e10_prix": null,
+  "e85_prix": null,
+  "gplc_prix": null
+ }
+]

@@ -303,6 +303,7 @@ const FUEL_LABELS = {
   diesel: "Diesel (B7)",
   dieselplus: "Diesel Extra",
   hvo100: "HVO100",
+  e85: "E85",
   lpg: "LPG",
   cng: "CNG",
 };

@@ -21,9 +21,9 @@ import base64
 import hashlib
 import logging
 import re
+import ssl
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from math import cos, radians
 from dataclasses import dataclass, field, replace
 from typing import Final
 
@@ -42,18 +42,22 @@ from .const import (
     OIL_URL,
     OK_URL,
     PROVIDER_CACHE_TTL,
-    ANWB_AREA_MAX_RADIUS_KM,
     ANWB_BOXES,
     ANWB_ISO3,
-    ANWB_MAX_BOX_DEG,
     ANWB_URL,
     CIRCLEK_HEADERS,
     CIRCLEK_URL,
     COUNTRY_AT,
     COUNTRY_BE,
+    COUNTRY_ES,
     COUNTRY_FR,
     COUNTRY_LU,
     COUNTRY_NL,
+    MITECO_CIPHERS,
+    MITECO_TIMEOUT_S,
+    MITECO_URL,
+    PRIX_CARBURANTS_FIELDS,
+    PRIX_CARBURANTS_URL,
     GOON_URL,
     Q8_URL,
     RADIUS_OPTIONS,
@@ -70,6 +74,28 @@ from .const import (
 from .nearby import haversine_m
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _ssl_with_ciphers(ciphers: str) -> "ssl.SSLContext | None":
+    """A verifying TLS context offering one particular cipher list.
+
+    Built here, at import, rather than per request: creating a context reads
+    the system trust store from disk, which is exactly the blocking call that
+    does not belong in Home Assistant's event loop. `None` on failure, which
+    the caller reads as "use the default" — a server we cannot reach is a
+    better outcome than an integration that will not load.
+    """
+    try:
+        context = ssl.create_default_context()
+        context.set_ciphers(ciphers)
+        return context
+    except (ssl.SSLError, OSError):  # pragma: no cover - environment-specific
+        _LOGGER.warning("Could not build a TLS context for ciphers %s", ciphers)
+        return None
+
+
+# See MITECO_CIPHERS: the Spanish register resets OpenSSL's default hello.
+_MITECO_SSL = _ssl_with_ciphers(MITECO_CIPHERS)
 
 _TIMEOUT = aiohttp.ClientTimeout(total=30)
 _POSTNR_RE = re.compile(r"\b(\d{4})\b")
@@ -457,7 +483,7 @@ def parse_ok(payload: dict) -> list[Station]:
     return stations
 
 
-# -- ANWB (Netherlands, Belgium) --------------------------------------------
+# -- ANWB (Netherlands, Belgium, Luxembourg) --------------------------------------------
 def parse_anwb(payload: dict, country: str) -> list[Station]:
     """Parse one ANWB bounding-box answer, keeping only `country`'s stations.
 
@@ -523,51 +549,27 @@ def parse_anwb(payload: dict, country: str) -> list[Station]:
     return stations
 
 
-def anwb_box_around(area: "Area | None") -> tuple[float, float, float, float]:
-    """The box to ask about when a country is too big to ask for whole.
-
-    Drawn around the circle the caller is interested in, then clamped to
-    ``ANWB_MAX_BOX_DEG`` — over that line the service returns an empty list
-    rather than an error, so an unclamped box would report an empty France.
-    """
-    if area is None:
-        raise ValueError("This country can only be asked about an area")
-    radius_km = min(area.radius_km, ANWB_AREA_MAX_RADIUS_KM)
-    lat_span = radius_km / 111.0
-    # A degree of longitude shortens towards the poles; the floor keeps this
-    # finite, as it does in `nearby.bounding_box`.
-    lon_span = lat_span / max(cos(radians(area.latitude)), 0.01)
-    half = ANWB_MAX_BOX_DEG / 2.0
-    lat_span, lon_span = min(lat_span, half), min(lon_span, half)
-    return (
-        area.latitude - lat_span,
-        area.longitude - lon_span,
-        area.latitude + lat_span,
-        area.longitude + lon_span,
-    )
-
-
 def anwb_fetcher(country: str):
-    """Fetcher for one country: its own box, or a box drawn around an area.
+    """Fetcher for one country: one box, asked for whole and cached.
 
-    A country small enough to fit inside ANWB's box limit is asked for whole,
-    once, and cached. France is not — see ``ANWB_MAX_BOX_DEG`` — so it is asked
-    about the place the caller is standing, the way Tankerkoenig is.
+    Every country still read from ANWB fits inside one box — see
+    ``ANWB_MAX_BOX_DEG`` for the limit and what happens above it. France did
+    not fit and used to be asked about a circle here instead; it now has its
+    own national source and this fetcher has one shape again.
     """
-    box = ANWB_BOXES.get(country)
+    box = ANWB_BOXES[country]
 
     async def _fetch(
         session: aiohttp.ClientSession,
         credential: str | None = None,
         area: "Area | None" = None,
     ) -> list[Station]:
-        window = box or anwb_box_around(area)
         payload = await _fetch_json(
             session,
             ANWB_URL,
             params={
                 "type-filter": "FUEL_STATION",
-                "bounding-box-filter": ",".join(f"{v:g}" for v in window),
+                "bounding-box-filter": ",".join(f"{v:g}" for v in box),
             },
         )
         return parse_anwb(payload, country)
@@ -890,19 +892,30 @@ async def _fetch_json(
     url: str,
     extra_headers: Mapping[str, str] | None = None,
     params: Mapping[str, str] | None = None,
+    timeout_s: float | None = None,
+    ssl_context: "ssl.SSLContext | None" = None,
 ) -> object:
     """GET one JSON document.
 
     Query parameters are passed separately rather than formatted into `url`, so
     a credential among them is escaped correctly and stays out of any string we
     build ourselves. It still reaches aiohttp's exception text — see `redact`.
+
+    `timeout_s` is for the one source that needs longer than the shared 30
+    seconds: Spain answers with 12 MB and does not gzip it, which is about ten
+    seconds on a good line and several times that on a bad one.
     """
     headers = {**REQUEST_HEADERS, **(extra_headers or {})}
+    timeout = _TIMEOUT if timeout_s is None else aiohttp.ClientTimeout(total=timeout_s)
+    # Only passed when a source needs its own — see `_ssl_with_ciphers`. The
+    # default is aiohttp's, which is what every other source uses.
+    extra = {"ssl": ssl_context} if ssl_context is not None else {}
     async with session.get(
-        url, headers=headers, params=dict(params or {}), timeout=_TIMEOUT
+        url, headers=headers, params=dict(params or {}), timeout=timeout, **extra
     ) as resp:
         resp.raise_for_status()
         return await resp.json(content_type=None)
+
 
 
 async def fetch_oil(
@@ -1138,6 +1151,168 @@ async def fetch_econtrol(
             existing.prices.update(station.prices)
     return list(merged.values())
 
+# -- prix-carburants (France) -----------------------------------------------
+# The French government's own instantaneous feed: every forecourt open to the
+# public, nationwide, in one request. See PRIX_CARBURANTS_URL for why the
+# export endpoint and why the column list.
+#
+# The columns are flat — one price and one timestamp per fuel — which is the
+# opposite of every other source here and much easier to read. What it costs is
+# that a fuel is a *column name*, so this map is read against the record rather
+# than against a list of products.
+_FR_PRODUCT_MAP: dict[str, str] = {
+    # The everyday French 95 is the E10, sold at about 6,800 forecourts; the
+    # older E5 blend is still beside it at 2,800 and is the dearer of the two,
+    # which is why it takes the "plus" key rather than the plain one.
+    "e10": "blyfri95",
+    "sp95": "blyfri95plus",
+    "sp98": "blyfri98",
+    "gazole": "diesel",
+    "e85": "e85",
+    "gplc": "lpg",
+}
+
+
+def parse_prix_carburants(payload: list) -> list[Station]:
+    """Parse the French national export into stations.
+
+    Three things worth knowing, each of which would fail quietly:
+
+    * **Read `geom`, not `latitude`.** The `latitude` column is an integer in
+      hundred-thousandths of a degree — 48.183 arrives as ``4818300`` — so a
+      parser that trusted the name would put every French forecourt several
+      thousand degrees north of the pole. `geom` is the same position as a
+      proper ``{lat, lon}`` pair.
+    * **There is no brand.** The dataset has no enseigne column and no second
+      dataset carries one, so `company` is left empty rather than guessed at
+      from the address. The card shows such a station in grey with no chain
+      icon, which is honest; inventing "TOTAL" from a street name is not.
+    * **A price of zero is a missing price**, as it is everywhere else.
+    """
+    stations: list[Station] = []
+    for rec in payload or []:
+        if not isinstance(rec, dict):
+            continue
+        geom = rec.get("geom") or {}
+        lat = _to_float(geom.get("lat"))
+        lon = _to_float(geom.get("lon"))
+        if lat is None or lon is None:
+            continue
+
+        prices: dict[str, float] = {}
+        newest = ""
+        for column, key in _FR_PRODUCT_MAP.items():
+            price = _to_float(rec.get(f"{column}_prix"))
+            if price is None or price <= 0:
+                continue
+            prices[key] = price
+            newest = max(newest, _short_date(rec.get(f"{column}_maj")))
+
+        if not prices:
+            continue
+
+        address = str(rec.get("adresse") or "").strip()
+        city = str(rec.get("ville") or "").strip()
+        stations.append(
+            # The street and the town, because that is all France publishes to
+            # name a forecourt with. Both, not just the street: "84 route de
+            # Maillot" is a dozen different places and "84 route de Maillot,
+            # Sens" is one.
+            Station(
+                name=", ".join(part for part in (address, city) if part),
+                company="",
+                postnummer=str(rec.get("cp") or "").strip(),
+                city=city,
+                address=address,
+                latitude=lat,
+                longitude=lon,
+                updated=newest,
+                prices=prices,
+                station_id=str(rec.get("id") or "").strip(),
+                country=COUNTRY_FR,
+            )
+        )
+    return stations
+
+
+# -- MITECO (Spain) ---------------------------------------------------------
+# The Spanish register of retail fuel prices, kept by the Ministry for the
+# Ecological Transition and reported to by every forecourt selling to the
+# public. Keyless, and the whole country in one response — see MITECO_URL for
+# the two things about that response that bite.
+#
+# Keyed by the column name, which is a Spanish sentence with an accent in it.
+# Spain publishes more products than anyone: the ones left out are AdBlue and
+# hydrogen (not motor fuel we model), Gasoleo B (agricultural red diesel, which
+# it is an offence to burn on the road), and the biofuel blends sold at a few
+# dozen forecourts, none of which is the same thing as the HVO we do model.
+_ES_PRODUCT_MAP: dict[str, str] = {
+    "Precio Gasolina 95 E5": "blyfri95",
+    "Precio Gasolina 95 E5 Premium": "blyfri95plus",
+    "Precio Gasolina 98 E5": "blyfri98",
+    "Precio Gasoleo A": "diesel",
+    "Precio Gasoleo Premium": "dieselplus",
+    "Precio Diésel Renovable": "hvo100",
+    "Precio Gases licuados del petróleo": "lpg",
+    # Per kilogram, like the Dutch and Austrian CNG — see FUEL_QUANTITY.
+    "Precio Gas Natural Comprimido": "cng",
+}
+
+
+def parse_miteco(payload: dict) -> list[Station]:
+    """Parse the Spanish national price register into stations.
+
+    Everything numeric here is a string with a decimal comma, coordinates
+    included, which `_to_float` already handles. Everything absent is an empty
+    string rather than null, which it also handles: a station that does not
+    sell a fuel has ``""`` in that column, not a zero.
+    """
+    stations: list[Station] = []
+    for rec in (payload or {}).get("ListaEESSPrecio", []) or []:
+        if not isinstance(rec, dict):
+            continue
+        lat = _to_float(rec.get("Latitud"))
+        lon = _to_float(rec.get("Longitud (WGS84)"))
+        if lat is None or lon is None:
+            continue
+
+        prices: dict[str, float] = {}
+        for column, key in _ES_PRODUCT_MAP.items():
+            price = _to_float(rec.get(column))
+            if price is None or price <= 0:
+                continue
+            prices[key] = price
+
+        if not prices:
+            continue
+
+        # `Rótulo` is the sign over the forecourt — REPSOL, CEPSA, BALLENOIL —
+        # and an unbranded station signs itself with its own licence number,
+        # which is as much of a name as it has.
+        brand = " ".join(str(rec.get("Rótulo") or "").split()).strip()
+        address = str(rec.get("Dirección") or "").strip()
+        city = str(rec.get("Municipio") or "").strip()
+        stations.append(
+            Station(
+                name=f"{brand} {address}".strip() or address or brand,
+                company=brand,
+                postnummer=str(rec.get("C.P.") or "").strip(),
+                city=city,
+                address=address,
+                latitude=lat,
+                longitude=lon,
+                # One `Fecha` covers the whole extract and says when the list
+                # was built, not when a price moved. Shown as nothing rather
+                # than as today's date on a price that may be a week old.
+                updated="",
+                prices=prices,
+                station_id=str(rec.get("IDEESS") or "").strip(),
+                country=COUNTRY_ES,
+            )
+        )
+    return stations
+
+
 # -- provider registry ------------------------------------------------------
 # Adding a source is meant to be a *data* change: append one Provider below and
 # write its parser. Everything else — the options dialog, the how-to text, the
@@ -1309,12 +1484,17 @@ def _one_shot(
     parser,
     auth: Auth = AUTH_OPEN,
     headers: dict[str, str] | None = None,
+    params: dict[str, str] | None = None,
+    timeout_s: float | None = None,
+    ssl_context: "ssl.SSLContext | None" = None,
 ):
     """Fetcher: one GET returning a payload the parser turns into Stations.
 
     `headers` are constant and public — Circle K wants `X-App-Name: PRICES` from
-    everyone and refuses the request without it. A credential goes through
-    `auth` instead, which knows never to put it in a URL.
+    everyone and refuses the request without it. `params` are the same kind of
+    thing: France's feed wants the list of columns to return, which is not a
+    choice a caller makes. A credential goes through `auth` instead, which
+    knows never to put it in a URL.
     """
     async def _fetch(
         session: aiohttp.ClientSession,
@@ -1326,7 +1506,9 @@ def _one_shot(
                 session,
                 url,
                 extra_headers={**(headers or {}), **auth.headers(credential)},
-                params=auth.params(credential),
+                params={**(params or {}), **auth.params(credential)},
+                timeout_s=timeout_s,
+                ssl_context=ssl_context,
             )
         )
     return _fetch
@@ -1473,21 +1655,20 @@ PROVIDERS: dict[str, Provider] = {
             country=COUNTRY_LU,
             fuels=frozenset(_ANWB_PRODUCT_MAP.values()),
         ),
-        # France answers the same feed, but no single box covers it: see
-        # ANWB_MAX_BOX_DEG. Area-scoped like Germany, so the same machinery
-        # that caps and caches a German circle caps and caches a French one —
-        # and, as with Germany, there is no nationwide pool to rank, so the
-        # "cheapest in the country" sensors do not exist here.
+        # France answered from ANWB until 0.23.0, a circle at a time, because
+        # no single ANWB box covers the country. It has its own national feed
+        # now — keyless, the whole country in one request, and the only French
+        # source of the two with a timestamp on each price.
         Provider(
-            "anwb_fr",
-            "ANWB (France)",
-            anwb_fetcher(COUNTRY_FR),
+            "prix_carburants",
+            "Prix des carburants (France)",
+            _one_shot(
+                PRIX_CARBURANTS_URL,
+                parse_prix_carburants,
+                params={"select": PRIX_CARBURANTS_FIELDS},
+            ),
             country=COUNTRY_FR,
-            scope=SCOPE_AREA,
-            fuels=frozenset(_ANWB_PRODUCT_MAP.values()),
-            max_radius_km=ANWB_AREA_MAX_RADIUS_KM,
-            # Porte de la Chapelle: somewhere France is guaranteed to sell fuel.
-            probe=Area(48.8987, 2.3595, 5_000),
+            fuels=frozenset(_FR_PRODUCT_MAP.values()),
         ),
         Provider(
             "tankerkoenig",
@@ -1528,6 +1709,20 @@ PROVIDERS: dict[str, Provider] = {
             max_radius_km=0,
             # Vienna Mitte: somewhere Austria is guaranteed to sell fuel.
             probe=Area(48.2082, 16.3738, 5_000),
+        ),
+        # Spain: the widest single answer we ask anyone for — 11,500 forecourts
+        # and 12 MB of them, which is why this one carries a timeout of its own.
+        Provider(
+            "miteco",
+            "MITECO (Spain)",
+            _one_shot(
+                MITECO_URL,
+                parse_miteco,
+                timeout_s=MITECO_TIMEOUT_S,
+                ssl_context=_MITECO_SSL,
+            ),
+            country=COUNTRY_ES,
+            fuels=frozenset(_ES_PRODUCT_MAP.values()),
         ),
     )
 }
@@ -1618,6 +1813,29 @@ def area_for(country: str, latitude: float, longitude: float, radius_m: int) -> 
     if cap_km:
         radius_m = min(radius_m, cap_km * 1000)
     return Area(latitude, longitude, radius_m)
+
+
+def stations_within(stations: list[Station], area: "Area") -> list[Station]:
+    """The stations that really are inside a circle.
+
+    How a whole-country source is cut down to an area everywhere except
+    Denmark, which cuts by postnummer instead — see ``Country.postal_areas``.
+
+    A station the source could not place is dropped rather than kept: it can be
+    neither mapped nor ranked by distance, so there is no sense in which it is
+    "within" anything, and keeping it would put a station of unknown position
+    into a list whose whole claim is that everything in it is in range.
+    """
+    return [
+        station
+        for station in stations
+        if station.latitude is not None
+        and station.longitude is not None
+        and haversine_m(
+            area.latitude, area.longitude, station.latitude, station.longitude
+        )
+        <= area.radius_m
+    ]
 
 
 # "provider@area" -> (fetched_at_monotonic, stations, credential_fingerprint).

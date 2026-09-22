@@ -5,7 +5,10 @@ its stations depends on what that country's sources can answer:
 
 * Denmark's chains publish the whole country, so we fetch it once (shared with
   every other reader) and cut it down to the configured postnummer + radius
-  using DAWA — see ``geo.py``.
+  using DAWA — see ``geo.py``. Denmark alone, because DAWA is a Danish
+  register: everywhere else a whole-country source is cut down by DISTANCE
+  from the entry's anchor, which those sources can support because they ship
+  exact coordinates. See ``Country.postal_areas``.
 * Germany's Tankerkoenig only answers about a circle, so the circle *is* the
   query. It is anchored at a fixed point rather than at whatever the phone is
   doing, because notifications and history compare one refresh with the next
@@ -62,6 +65,7 @@ from .sources import (
     area_for,
     country_needs_area,
     fetch_all,
+    stations_within,
     without_hidden,
 )
 
@@ -637,11 +641,21 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         return without_hidden(apply_discounts(all_stations, self.discounts), hidden)
 
     async def _national_country_stations(self) -> tuple[list[Station], list[Station]]:
-        """Denmark: fetch the country once, then cut it to the postnumre in range."""
-        area = await self._resolve_area()
+        """A source that publishes the whole country, cut down to the area.
+
+        Two ways to cut, and which one applies is a property of the country
+        rather than of this entry — see ``Country.postal_areas``. Denmark's is
+        a set of postnumre from DAWA, because Danish chains publish no
+        coordinates and the postnummer is all a station has until it has been
+        geocoded. Everywhere else it is the distance from the anchor.
+        """
         priced = self._priced(
             await fetch_all(self._session, self.credentials, self.country)
         )
+        if not country_of(self.country).postal_areas:
+            return self._cut_by_distance(priced)
+
+        area = await self._resolve_area()
         stations = [s for s in priced if s.postnummer in area]
 
         # The nearby sensors rank against every station in the country: they
@@ -657,6 +671,30 @@ class TankpriserCoordinator(DataUpdateCoordinator[TankpriserData]):
         # centre of their postnummer so they can still appear on a map. The
         # area stations are members of `nationwide`, so filling that fills both.
         await self._fill_coordinates(nationwide or stations)
+        return stations, nationwide
+
+    def _cut_by_distance(
+        self, priced: list[Station]
+    ) -> tuple[list[Station], list[Station]]:
+        """The stations within the radius of this entry's anchor.
+
+        For every whole-country source outside Denmark. It needs no geocoding
+        and no postal register — these sources ship coordinates, which is also
+        why the national pool behind the "nearby" sensors is a real pool here
+        rather than the empty list an area-scoped country has to make do with.
+
+        A station the source could not place is dropped from the area rather
+        than kept: it cannot be shown on a map, ranked by distance, or honestly
+        claimed to be within the radius.
+        """
+        area = self.search_area
+        if area is None:
+            raise UpdateFailed(
+                "No search location set; give this area an anchor under "
+                "Options, or set Home Assistant's Home location."
+            )
+        stations = stations_within(priced, area)
+        nationwide = priced if (self.nearby_tracker or self.fillup_enabled) else []
         return stations, nationwide
 
     async def _area_country_stations(self) -> tuple[list[Station], list[Station]]:

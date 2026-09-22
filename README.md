@@ -20,15 +20,28 @@ in the country, updated within five minutes of a price change by law. It needs
 a free personal API key, and it works differently enough in a few places to be
 worth reading [its own section](#14-germany) before setting it up.
 
-**The Netherlands, Belgium, Luxembourg and France** come from
+**The Netherlands, Belgium and Luxembourg** come from
 [ANWB](https://www.anwb.nl/)'s own service — around 3,900 Dutch, 1,800 Belgian
-and 230 Luxembourgish forecourts, plus France nationwide, with no key and LPG
-and CNG included. None of the four mandates an open price API the way Denmark
-and Germany do, so this one is undocumented goodwill rather than law, and **it
-publishes no timestamps**: those stations show a price but never a "last
-changed". France is also searched around you rather than nationwide. Read
-[15. The Netherlands, Belgium, Luxembourg and France](#15-the-netherlands-belgium-luxembourg-and-france)
+and 230 Luxembourgish forecourts, with no key and LPG and CNG included. None of
+the three mandates an open price API the way Denmark and Germany do, so this
+one is undocumented goodwill rather than law, and **it publishes no
+timestamps**: those stations show a price but never a "last changed". Read
+[15. The Netherlands, Belgium and Luxembourg](#15-the-netherlands-belgium-and-luxembourg)
 before relying on them.
+
+**France** comes from the government's own
+[prix des carburants](https://data.economie.gouv.fr/explore/dataset/prix-des-carburants-en-france-flux-instantane-v2/)
+feed — every forecourt open to the public, about 9,800 of them, reported under
+the price transparency decree and published with a timestamp on each price. No
+key. Since 0.23.0 it is the whole country in one request, where it used to be a
+50 km circle from ANWB. See [15a. France](#15a-france).
+
+**Spain** comes from [MITECO](https://geoportalgasolineras.es/), the register
+the Ministry for the Ecological Transition keeps and every forecourt selling to
+the public must report to — around **11,500 stations**, no key, and more
+products than anywhere else we read: two 95s, two diesels, renewable diesel,
+LPG and CNG. See [15c. Spain](#15c-spain), which is also where the one cost of
+that register is written down.
 
 **Austria** comes from [E-Control](https://www.spritpreisrechner.at/), the
 energy regulator's own Spritpreisrechner — the same feed behind the official
@@ -44,10 +57,10 @@ question, in euro on the way and in kroner when you get there.
 
 ### The countries, at a glance
 
-Seven, each set up as its own Tankpriser entry. "Searched around a point" means
-the source has no nationwide answer, so that entry asks for an anchor and a
-radius — there is no national map and no "cheapest in the country" sensor for
-those.
+Eight, each set up as its own Tankpriser entry. "A circle" means the source has
+no nationwide answer, so that entry can show no national map and no "cheapest
+in the country" sensor. Every country except Denmark asks you for a point to
+search from; Denmark measures from your postnummer or from Home.
 
 | Country | Prices come from | Key? | How it searches |
 | --- | --- | --- | --- |
@@ -56,10 +69,11 @@ those.
 | **Netherlands** | [ANWB](https://www.anwb.nl/), ~3,900 forecourts | None | Nationwide |
 | **Belgium** | ANWB, ~1,800 forecourts | None | Nationwide |
 | **Luxembourg** | ANWB, ~230 forecourts | None | Nationwide |
-| **France** | ANWB | None | A circle around an anchor — [15](#15-the-netherlands-belgium-luxembourg-and-france) |
+| **France** | [prix des carburants](https://data.economie.gouv.fr/explore/dataset/prix-des-carburants-en-france-flux-instantane-v2/), the government's own feed, ~9,800 forecourts | None | Nationwide — [15a](#15a-france) |
+| **Spain** | [MITECO](https://geoportalgasolineras.es/), the government's own register, ~11,500 forecourts | None | Nationwide — [15c](#15c-spain) |
 | **Austria** | [E-Control](https://www.spritpreisrechner.at/) (Spritpreisrechner) | None | Ten stations per fuel, and the source picks the distance — [15b](#15b-austria) |
 
-Denmark and Germany are the only two with a law behind the feed. The rest is
+Denmark, Germany, France and Spain have a law behind the feed. The rest is
 published goodwill, and ANWB's carries no price timestamps at all.
 
 Two different scopes, worth knowing up front:
@@ -107,7 +121,7 @@ What each feature *is*. How to switch it on is in
 | 3 | [Loyalty discounts](#3-loyalty-discounts) | Every price becomes *what you actually pay* |
 | 4 | [Price-change notifications](#4-price-change-notifications) | Four rules, to any `notify.*` service |
 | 5 | [The price card](#5-the-price-card) | Bundled Lovelace card, no YAML or resource setup |
-| 6 | [The map](#6-the-map) | Every station with chain icon and price — all of Denmark by default, the viewport is the filter (Germany, France and Austria plot their own circle instead) |
+| 6 | [The map](#6-the-map) | Every station with chain icon and price — all of Denmark by default, the viewport is the filter (Germany and Austria plot their own circle instead) |
 | 7 | [Live position and follow-me](#7-live-position-and-follow-me) | A blue dot that keeps up with you while driving |
 | 8 | [Navigate here](#8-navigate-here) | Hand a forecourt to the phone's own navigator |
 | 9 | [Exact forecourt positions](#9-exact-forecourt-positions) | Street addresses geocoded, estimates marked as estimates |
@@ -118,8 +132,10 @@ What each feature *is*. How to switch it on is in
 | 12c | [Self-correcting predictions](#12c-self-correcting-predictions) | Each refuel grades the last prediction, and a repeated lean is corrected |
 | 13 | [Sources that need an API key](#13-sources-that-need-an-api-key) | A guided page for sources that are not open — Germany's is one |
 | 14 | [Germany](#14-germany) | ~15,000 German stations, a corridor search while driving, prices to three decimals |
-| 15 | [The Netherlands, Belgium, Luxembourg and France](#15-the-netherlands-belgium-luxembourg-and-france) | ~5,900 Benelux forecourts from ANWB plus France, with LPG and CNG — and no price timestamps |
+| 15 | [The Netherlands, Belgium and Luxembourg](#15-the-netherlands-belgium-and-luxembourg) | ~5,900 Benelux forecourts from ANWB, with LPG and CNG — and no price timestamps |
+| 15a | [France](#15a-france) | ~9,800 forecourts from the government's own feed, nationwide, with E85 and a timestamp on every price |
 | 15b | [Austria](#15b-austria) | The regulator's own feed, no key — but ten stations per fuel and a radius you do not choose |
+| 15c | [Spain](#15c-spain) | ~11,500 forecourts from the government's own register, nationwide — and 12 MB per refresh |
 | 16 | [Testing without driving](#16-testing-the-driving-features-without-driving) | Drive a virtual car across Germany to exercise all of it from your desk |
 
 ### 1. Local price sensors
@@ -597,26 +613,19 @@ City, that led with France, anchored wherever you put it, over Luxembourg
 anchored at your house: both were spoken correctly and `urls[0]` pointed at a
 French forecourt 29 km away while a Luxembourgish one stood 1,4 km off.
 
-### 15. The Netherlands, Belgium, Luxembourg and France
+### 15. The Netherlands, Belgium and Luxembourg
 
-Four countries from one source: **ANWB**, the Dutch motoring club, whose own app
+Three countries from one source: **ANWB**, the Dutch motoring club, whose own app
 draws its prices from it. No key, no signup — around **3,900 Dutch**, **1,800
-Belgian** and **230 Luxembourgish** forecourts with exact coordinates, plus
-**France nationwide**, including **LPG** at about a quarter of them and **CNG**
-at a handful.
+Belgian** and **230 Luxembourgish** forecourts with exact coordinates, including
+**LPG** at about a quarter of them and **CNG** at a handful.
 
-They are set up exactly like Germany: one Tankpriser per country, and the one
+They are set up like every other country: one Tankpriser per country, and the one
 you are standing in answers. Rotterdam → Hamburg → Silkeborg is three entries
 and one question.
 
-**France is the exception, and it is set up like Germany rather than like the
-others.** The service answers a bounding box, and it refuses one bigger than
-about 6° square — by returning an empty list, not an error — so no single
-request can cover France. France therefore asks about a **50 km circle around
-you**, which means it needs an anchor point when you add it, and that there is
-no nationwide French map and no "cheapest in the country" sensor. Everything you
-actually ask while driving — `tankpriser.nearby`, the Siri shortcut, the Assist
-prompt, the 📍 pin on the map — works exactly as it does everywhere else.
+France used to be read from here too and no longer is — see
+[15a. France](#15a-france).
 
 Three things are different here, and they are worth knowing before you trust a
 number:
@@ -626,15 +635,22 @@ number:
   these two countries there is simply nothing to print, so the popup shows no
   time rather than the moment we happened to fetch, which is not the same thing
   and would be read as one.
-- **No law behind it.** Denmark and Germany oblige their chains to publish;
-  none of these four does. The official figures — the Dutch CBS monthly
-  averages, the Belgian federal *maximum* price, the French *prix-carburants*
-  extract — are national or daily rather than per forecourt, so they cannot
-  answer "which station". ANWB works and is clean, but it can change or stop
-  without notice.
+- **No law behind it.** Denmark, Germany, France and Spain oblige their
+  forecourts to publish; none of these three does. The official figures — the
+  Dutch CBS monthly averages, the Belgian federal *maximum* price — are
+  national or monthly rather than per forecourt, so they cannot answer "which
+  station". ANWB works and is clean, but it can change or stop without notice.
 - **Prices of zero get dropped.** The feed carries a couple of hundred of them.
   A zero is a missing price, not a cheap one, and left in it would win every
   ranking and send you to a pump that is not selling.
+
+**In Luxembourg there is almost nothing to choose between.** Prices are
+regulated, and measured across the live feed on 2026-09-22 there were **five
+distinct petrol prices in the whole country**, with 93% of forecourts on the
+same one and 2,5 cents between the cheapest and the dearest. A flat
+Luxembourgish map is the country, not a fault. Belgium is the opposite: its
+official *maximum* price is a real ceiling, 60% of forecourts sit exactly on it
+and the rest go as low as 38 cents under — which is the whole reason to look.
 
 **CNG is priced per kilogram**, not per litre, and is kept out of every
 comparison with a litre price for that reason — on the card, in the
@@ -653,7 +669,41 @@ under the pin. Now an empty answer says **where it looked** (*"no stations
 within 25 kilometres in Germany"*), and where the position is covered only by a
 country you have not set up it says so instead: *"No prices here: Luxembourg is
 not set up in Tankpriser."* If you see that, add that country — it is one more
-Tankpriser entry and, for these four, no key.
+Tankpriser entry and, for these three, no key.
+
+### 15a. France
+
+**The French government publishes the prices itself.** Every forecourt open to
+the public must report a price change the same day, and the
+[instantaneous feed](https://data.economie.gouv.fr/explore/dataset/prix-des-carburants-en-france-flux-instantane-v2/)
+carries all of them — about **9,800 stations**, with exact coordinates, **a
+timestamp on every price**, and **SP95-E10, SP95 (E5), SP98, Gazole,
+Superéthanol E85 and GPL**. No key, no account.
+
+**This replaced ANWB in 0.23.0, and it is an upgrade in three ways.** France
+used to be the one country asked about a 50 km circle, because ANWB answers a
+bounding box and silently returns *nothing* for a box bigger than about 6°
+square, which no single French request could stay under. Now:
+
+- the **whole country arrives in one request** (about 0.9 MB, two seconds), so
+  France has a national map and "cheapest in the country" sensors like Denmark;
+- every price says **when it was last reported**, where ANWB said nothing at all;
+- **E85** appears, sold at roughly two French forecourts in five. It is kept as
+  its own fuel and never folded into petrol: it costs about a third as much and
+  would win every ranking, and a car not converted for it must not be filled
+  with it.
+
+**What you lose is the brand name.** The French data has no *enseigne* column
+— not in this dataset and not in any other the ministry publishes — so a French
+station is named by its street and town ("84 ROUTE DE MAILLOT, Sens") and shows
+no chain icon on the map. Inventing "TotalEnergies" from a street name is the
+one thing that would be worse.
+
+**Nothing to do if you already have a French entry.** It keeps its name, its
+radius and its fuels; the prices simply start arriving from the ministry. Two
+fuels change: premium diesel disappears, because this feed does not price one,
+and SP95 (E5) appears beside SP95-E10. If you had picked premium diesel, pick
+something else under Options — its sensor has nothing left to report.
 
 ### 15b. Austria
 
@@ -694,11 +744,49 @@ Austria publishes **Super 95, Diesel and CNG** and nothing else — no Super 98,
 no premium diesel — so those are the only fuels offered for an Austrian entry.
 CNG is priced per kilogram and is never compared against a litre price.
 
-Like Germany and France, Austria is searched **around a point**, so an Austrian
-entry asks for an anchor. Its box overlaps Germany's along the whole northern
+Austria is searched **around a point** the way Germany is — and like every
+country but Denmark, an Austrian entry asks where to search from. Its box overlaps Germany's along the whole northern
 border — any rectangle holding both Vorarlberg and the Czech frontier also
 holds Munich — which is the same arrangement as Luxembourg and resolves the
 same way: the country with the nearer forecourt answers.
+
+### 15c. Spain
+
+**The Spanish state keeps the register itself**, and every forecourt selling to
+the public has to report to it. [MITECO](https://geoportalgasolineras.es/)
+publishes the lot openly: **about 11,500 stations** with exact coordinates, the
+brand over the forecourt, and more products than anywhere else we read — two
+95s, a 98, two diesels, renewable diesel, LPG and CNG. No key, no account.
+
+It answers for the whole country at once, like Denmark, so a Spanish entry gets
+the national map and the "cheapest in the country" sensors.
+
+Three things are worth knowing before you trust a number:
+
+- **Gasóleo B is never quoted.** It is agricultural red diesel: usually the
+  cheapest price on a Spanish forecourt, and an offence to burn on the road.
+  Reading it as diesel would put the cheapest station in Spain at the top of
+  every ranking and send you to a pump you may not legally use.
+- **The everyday petrol is the E5 blend**, not the E10 that a few dozen
+  forecourts sell. It keeps the ordinary "95" slot here, which is why a Spanish
+  entry's default fuels find a price everywhere rather than at 28 stations.
+- **No price timestamps.** The register stamps the extract rather than the
+  price, so a Spanish station shows a price and never a "last changed" — the
+  same silence as ANWB and Austria.
+
+**And one cost.** The response is **12 MB and the server does not compress it**,
+so a Spanish entry moves about 0.6 GB a day at the default 30-minute interval —
+ten times what all eight Danish chains together cost. It has a longer timeout of
+its own so a slow line still finishes, and raising the update interval halves it.
+
+The national map is the other end of the same fact: it plots all 11,500
+forecourts, which is ~3.6 MB the browser has to be sent (Denmark is ~0.4 MB,
+France ~2.9 MB). It is cached for a minute on the server, and on a phone over
+remote access it is worth setting `coverage: area` on the card so the map stays
+inside your radius.
+
+**CNG is priced per kilogram** here as everywhere, and is kept out of every
+comparison with a litre price.
 
 ### 16. Testing the driving features without driving
 
@@ -729,10 +817,13 @@ app does — so all of it runs for real from your desk. See
 - **For Denmark:** no account and no API key. Two chains, **Go'on** and
   **Uno-X**, are optional and do need a free key — see
   [13](#13-sources-that-need-an-api-key).
-- **For the Netherlands, Belgium, Luxembourg and France:** no account and no
-  API key — see [15](#15-the-netherlands-belgium-luxembourg-and-france) for what
-  that source does and does not publish, and for why France is set up with an
-  anchor point and the other three are not.
+- **For the Netherlands, Belgium and Luxembourg:** no account and no API key —
+  see [15](#15-the-netherlands-belgium-and-luxembourg) for what that source
+  does and does not publish.
+- **For France and Spain:** no account and no API key; both governments publish
+  the prices themselves — see [15a](#15a-france) and [15c](#15c-spain), the
+  second of which is also where the 12 MB a Spanish refresh moves is written
+  down.
 - **For Austria:** no account and no API key — see
   [15b](#15b-austria) for the three limits E-Control puts on every answer, and
   for why an Austrian entry is set up with an anchor point.
@@ -1690,27 +1781,23 @@ spoken sentence rounds to two — nobody reads out the 9/10 of a cent.
 price, and are ignored for German stations rather than quietly subtracted from a
 euro price.
 
-### 15. The Netherlands, Belgium, Luxembourg and France
+### 15. The Netherlands, Belgium and Luxembourg
 
-*([what this feature does](#15-the-netherlands-belgium-luxembourg-and-france))*
+*([what this feature does](#15-the-netherlands-belgium-and-luxembourg))*
 
-**Add Tankpriser again and pick the country.** For **the Netherlands, Belgium
-and Luxembourg** that is all of it: no key, no anchor point to choose — these
-three answer for the whole country at once, so the map and the nationwide
-"cheapest near me" work the same way they do in Denmark.
+**Add Tankpriser again and pick the country.** No key. You are asked for a
+**point to search from and a radius**, as every country but Denmark is: the
+source answers for the whole country at once, and the radius is what cuts that
+down to the area your sensors cover. Leave the point on Home unless you are
+watching somewhere else — someone in Aachen watching Dutch prices wants it over
+the border, not on their house.
 
-**France also asks for an anchor point and a radius**, like Germany, because no
-single request can cover it — see
-[what this feature does](#15-the-netherlands-belgium-luxembourg-and-france).
-Pick the 50 km radius it offers; a smaller circle costs the same one request and
-finds less. There is no nationwide French map, and no French "cheapest in the
-country" sensor.
+The map and the nationwide "cheapest near me" work the same way they do in
+Denmark, because the whole country is there to draw from.
 
-Fuels offered there are the ones those forecourts actually sell: **Euro 95
-(E10)**, **Super 98 (E5)**, **Diesel (B7)**, **Premium diesel**, **LPG** and
-**CNG** — named the local way, so France offers **SP95-E10**, **SP98-E5**,
-**Gazole (B7)** and **GPL**. Prices are in euro and shown to three decimals, the
-way the signs are written.
+Fuels offered are the ones those forecourts actually sell: **Euro 95 (E10)**,
+**Super 98 (E5)**, **Diesel (B7)**, **Premium diesel**, **LPG** and **CNG**.
+Prices are in euro and shown to three decimals, the way the signs are written.
 
 **Driving Rotterdam → Silkeborg** takes three entries — one Dutch, one German,
 one Danish — and no switching: `tankpriser.nearby` answers from the country your
@@ -1731,14 +1818,37 @@ Two limits of the middle leg, neither new: Germany's Tankerkönig answers only
 about a 25 km circle, so there is no national German map, and it needs
 [its own free key](#14-germany).
 
+### 15a. France
+
+*([what this feature does](#15a-france))*
+
+**Add Tankpriser again, pick France, and give it a point and a radius.** No key
+and no account: the ministry publishes openly. Since 0.23.0 the whole country
+arrives in one request, so there **is** a national French map and a French
+"cheapest in the country" sensor — France used to have neither.
+
+Fuels offered are the six the feed prices: **SP95-E10**, **SP95 (E5)**,
+**SP98-E5**, **Gazole (B7)**, **Superéthanol E85** and **GPL**. E85 is its own
+fuel, never folded into petrol — it costs about a third as much, so it would win
+every ranking, and a car not converted for it must not be filled with it.
+
+**French stations have no brand name.** The government data publishes none, so
+the map shows them by street and town with no chain icon. Everything else —
+prices, timestamps, navigation, the spoken answer — works as it does anywhere.
+
+**If you had a French entry before 0.23.0** there is nothing to do; it keeps its
+settings and starts being priced from the ministry instead of ANWB. One
+exception: premium diesel is not in this feed, so if you had picked it, pick
+another fuel under Options.
+
 ### 15b. Austria
 
 *([what this feature does](#15b-austria))*
 
 **Add Tankpriser again, pick Austria, and give it an anchor point and a
-radius.** No key and no account: E-Control publishes openly. Like Germany and
-France it searches around a point, so there is no nationwide Austrian map and
-no Austrian "cheapest in the country" sensor.
+radius.** No key and no account: E-Control publishes openly. It searches around
+a point the way Germany does, so there is no nationwide Austrian map and no
+Austrian "cheapest in the country" sensor.
 
 **Set the radius to the largest you would actually drive.** It does not shape
 the request — E-Control decides how far to look and stops at ten stations per
@@ -1761,6 +1871,37 @@ deliberate — [15b](#15b-austria) has the measurement that decided it.
 boxes overlap along the whole border, which is intended: the country with the
 nearer forecourt answers, each in its own currency, and neither is converted
 into the other.
+
+### 15c. Spain
+
+*([what this feature does](#15c-spain))*
+
+**Add Tankpriser again, pick Spain, and give it a point and a radius.** No key,
+no account, no signup: the register is open. The whole country answers at once,
+so the national map and the "cheapest in the country" sensors both work.
+
+Fuels offered are the eight the register prices: **Gasolina 95 E5**, **Gasolina
+95 E5 Premium**, **Gasolina 98 E5**, **Gasóleo A**, **Gasóleo Premium**,
+**Diésel renovable**, **GLP** and **GNC**. Two notes on that list:
+
+- **The everyday Spanish petrol is the E5**, not the E10 that 28 forecourts in
+  the country sell. It is the one a default Spanish entry tracks.
+- **Gasóleo B is not offered at all.** It is agricultural red diesel — usually
+  the cheapest price on the forecourt, and an offence to burn on the road — so
+  it is never read, never ranked and never quoted.
+
+**One Spanish refresh moves about 12 MB.** The register answers with all 11,500
+forecourts and does not compress the response, so a Spanish entry costs roughly
+0.6 GB a day at the default 30-minute interval — by far the heaviest source here
+(Denmark's eight chains together are a tenth of it). Nothing breaks on a slow
+line; the request simply has a longer timeout of its own. If your connection is
+metered, raise the update interval under *Configure → Settings*: at 60 minutes
+it is half that, and Spanish prices do not move faster than that anyway.
+
+**No price timestamps.** The register stamps the extract, not the price, so a
+Spanish station shows a price and no "last changed" — the same silence as ANWB
+and Austria, and for the same reason: printing the moment we fetched would be
+read as the moment the price moved.
 
 ### 16. Simulating a drive
 
@@ -1951,13 +2092,25 @@ More depth — logs, installing a build by hand, running the test suite — is i
 ## Privacy and data sources
 
 - **Prices** come from each chain's own public API: OK, Q8/F24, Shell, OIL!,
-  Circle K / INGO and — once you add their keys — Go'on and Uno-X. The Netherlands, Belgium
-  and Luxembourg come from ANWB's own service, and so does France — one circle
-  at a time, since no single request covers it.
+  Circle K / INGO and — once you add their keys — Go'on and Uno-X. The
+  Netherlands, Belgium and Luxembourg come from ANWB's own service.
   Each is fetched nationwide, cached for 10 minutes and shared by everything in
   the integration, so a shorter poll interval does not multiply requests. The
   User-Agent identifies this integration honestly, with a link, rather than
   impersonating a browser.
+- **French prices** come from the Ministry of the Economy's
+  [prix des carburants](https://data.economie.gouv.fr/explore/dataset/prix-des-carburants-en-france-flux-instantane-v2/)
+  instantaneous feed, published as open data under
+  [Licence Ouverte 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/)
+  — attribution, which is this paragraph. No key and no account. One request
+  carries the whole country and asks only for the columns we read.
+- **Spanish prices** come from
+  [MITECO](https://geoportalgasolineras.es/)'s register of retail fuel prices,
+  which every forecourt selling to the public reports to and the ministry
+  publishes openly. No key and no account. One request carries the whole
+  country — about **12 MB**, uncompressed by the server, which is far more than
+  any other source here moves; the same 10-minute cache covers it, and raising
+  the update interval halves it.
 - **German prices** come from
   [Tankerkönig](https://creativecommons.tankerkoenig.de/), the free consumer
   feed of the Bundeskartellamt's Markttransparenzstelle für Kraftstoffe

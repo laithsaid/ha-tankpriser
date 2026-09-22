@@ -180,7 +180,9 @@ def test_the_required_header_is_sent() -> None:
     """
     sent: dict = {}
 
-    async def fake_fetch_json(session, url, extra_headers=None, params=None):
+    async def fake_fetch_json(
+        session, url, extra_headers=None, params=None, timeout_s=None, ssl_context=None
+    ):
         sent["url"] = url
         sent["headers"] = extra_headers or {}
         return PAYLOAD

@@ -263,7 +263,9 @@ def _fake_session(token_payload, data_payload, log: dict):
 
 
 def _run_fetch(token_payload, data_payload, log, credential=CREDENTIAL):
-    async def fake_fetch_json(session, url, extra_headers=None, params=None):
+    async def fake_fetch_json(
+        session, url, extra_headers=None, params=None, timeout_s=None, ssl_context=None
+    ):
         log["data_url"] = url
         log["data_headers"] = extra_headers or {}
         log["data_params"] = params or {}
@@ -323,7 +325,9 @@ def test_a_live_token_is_reused_rather_than_bought_again() -> None:
     inside a token's 900-second life must cost one token, not two."""
     log: dict = {}
 
-    async def fake_fetch_json(session, url, extra_headers=None, params=None):
+    async def fake_fetch_json(
+        session, url, extra_headers=None, params=None, timeout_s=None, ssl_context=None
+    ):
         log["data_calls"] = log.get("data_calls", 0) + 1
         return PAYLOAD
 
@@ -348,7 +352,9 @@ def test_an_expiring_token_is_replaced_before_it_dies_in_flight() -> None:
     log: dict = {}
     short = {**TOKEN_OK, "expires_in": const.UNOX_TOKEN_MARGIN_S}
 
-    async def fake_fetch_json(session, url, extra_headers=None, params=None):
+    async def fake_fetch_json(
+        session, url, extra_headers=None, params=None, timeout_s=None, ssl_context=None
+    ):
         return PAYLOAD
 
     session = _fake_session(short, PAYLOAD, log)

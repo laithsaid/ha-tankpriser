@@ -41,6 +41,9 @@ jobs:
           python tests/test_spoken.py
           python tests/test_nearby.py
           python tests/test_service_urls.py
+          python tests/test_spain.py
+          python tests/test_france.py
+          python tests/test_translations.py
       - name: Byte-compile the integration
         run: python -m compileall -q custom_components/tankpriser
 

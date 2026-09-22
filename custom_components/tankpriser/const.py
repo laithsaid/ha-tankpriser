@@ -50,6 +50,7 @@ COUNTRY_BE: Final = "be"
 COUNTRY_LU: Final = "lu"
 COUNTRY_FR: Final = "fr"
 COUNTRY_AT: Final = "at"
+COUNTRY_ES: Final = "es"
 DEFAULT_COUNTRY: Final = COUNTRY_DK
 
 
@@ -91,6 +92,19 @@ class Country:
     # wrong the moment a road bends. Where two match, the entry anchored
     # nearer wins, which is the answer the person who configured both wants.
     bbox: tuple[float, float, float, float] | None = None
+    # Whether "within N km of here" can be answered as a set of POSTAL CODES.
+    # True for Denmark alone, because DAWA answers exactly that question for
+    # free — and Denmark needs it: its chains publish no coordinates, so the
+    # postnummer is the only thing a Danish station can be placed by before it
+    # has been geocoded.
+    #
+    # Everywhere else it is False and the area is cut by distance from the
+    # entry's anchor, which every other source can support because every other
+    # source ships exact coordinates. It was False in effect long before it was
+    # a field: a Dutch entry asked DAWA for the postnumre around Amsterdam, got
+    # the empty answer a Danish register owes a Dutch question, and listed no
+    # stations at all.
+    postal_areas: bool = False
     # The country's name inside a Danish sentence ("i Tyskland"). `name` is what
     # the UI shows and is English; this exists only for the spoken answer, which
     # is the one place a country is ever said out loud — and only once a second
@@ -121,6 +135,8 @@ COUNTRIES: Final[dict[str, Country]] = {
             2,
             "øre",
             bbox=(54.4, 7.7, 57.9, 15.3),
+            # The one country whose area is a set of postnumre — see the field.
+            postal_areas=True,
             name_da="Danmark",
         ),
         Country(
@@ -199,10 +215,15 @@ COUNTRIES: Final[dict[str, Country]] = {
             3,
             "cent",
             {
+                # What the official feed publishes, and all it publishes: the
+                # everyday 95 is the E10, the older E5 blend is still sold
+                # beside it at about a third of forecourts, and there is no
+                # premium diesel column at all.
                 "blyfri95": "SP95-E10",
+                "blyfri95plus": "SP95 (E5)",
                 "blyfri98": "SP98-E5",
                 "diesel": "Gazole (B7)",
-                "dieselplus": "Gazole premium",
+                "e85": "Superéthanol E85",
                 "lpg": "GPL",
             },
             # Metropolitan France including Corsica. This box swallows the
@@ -232,6 +253,43 @@ COUNTRIES: Final[dict[str, Country]] = {
             bbox=(46.3, 9.5, 49.1, 17.2),
             name_da="Østrig",
         ),
+        Country(
+            COUNTRY_ES,
+            "Spain",
+            "€/L",
+            "euro",
+            3,
+            "cent",
+            {
+                # Spain's everyday petrol is the E5 blend, not the E10 — 10,928
+                # forecourts sell 95 E5 and 28 sell 95 E10. So the ordinary 95
+                # keeps the ordinary key here, as it does everywhere, and the
+                # label says which blend it is. Reading "95 E5" as the premium
+                # grade because Germany's E5 is premium would have left a
+                # Spanish entry's default fuel priced at 28 stations.
+                "blyfri95": "Gasolina 95 E5",
+                "blyfri95plus": "Gasolina 95 E5 Premium",
+                "blyfri98": "Gasolina 98 E5",
+                "diesel": "Gasóleo A",
+                "dieselplus": "Gasóleo Premium",
+                "hvo100": "Diésel renovable",
+                "lpg": "GLP",
+                "cng": "GNC",
+            },
+            # Mainland Spain, the Balearics, Ceuta and Melilla — and the Canary
+            # Islands, 1,800 km out in the Atlantic, which is what pulls the
+            # box this far west and south. The price feed covers them, they
+            # are the cheapest fuel in the country, and somebody lives there.
+            #
+            # The cost is the widest box we draw: it swallows Portugal whole
+            # and reaches into Morocco. That is the France arrangement again —
+            # a box is not a border, and a country only joins an answer when it
+            # has a forecourt within reach, so a pin on Lisbon is answered
+            # honestly with the nearest Spanish forecourt and how far away it
+            # is, rather than with silence.
+            bbox=(27.5, -18.3, 43.9, 4.4),
+            name_da="Spanien",
+        ),
     )
 }
 
@@ -244,6 +302,18 @@ def country_of(code: str) -> Country:
     entry written in that window would otherwise silently become Danish.
     """
     return COUNTRIES.get(str(code or "").lower()) or COUNTRIES[DEFAULT_COUNTRY]
+
+
+def country_needs_anchor(country: str) -> bool:
+    """Whether this entry must be told a point to search from.
+
+    Denmark is the exception: it searches from a postnummer or from Home and
+    cuts by postal code. Every other country cuts by distance from a point, so
+    the setup dialog asks for one — without it the first refresh searches
+    wherever Home happens to be, which for this kind of entry is quite often
+    the wrong country entirely.
+    """
+    return not country_of(country).postal_areas
 
 
 def price_unit(country: str, fuel: str | None = None) -> str:
@@ -332,13 +402,17 @@ UNOX_URL: Final = "https://api.unoxmobility.net/gasstations/v1/getStationsAndPri
 # 30 seconds, the same limit Go'on sets.
 UNOX_TOKEN_MARGIN_S: Final = 60.0
 
-# The Netherlands, Belgium, Luxembourg and France: ANWB's points-of-interest
-# service, which is how their own app draws fuel prices. No key, no
-# documentation and no law behind it — none of these four mandates an open
-# price API the way Denmark and Germany do, and the official statistics (CBS
-# monthly averages, the Belgian federal maximum price, the French
-# prix-carburants extract) are not per-station and cannot answer "which
-# forecourt".
+# The Netherlands, Belgium and Luxembourg: ANWB's points-of-interest service,
+# which is how their own app draws fuel prices. No key, no documentation and no
+# law behind it — none of these three mandates an open price API the way
+# Denmark, Germany, France and Spain do, and the official statistics (CBS
+# monthly averages, the Belgian federal maximum price) are not per-station and
+# cannot answer "which forecourt".
+#
+# France used to be read from here too, and is not any more: it has an official
+# national feed of its own — see PRIX_CARBURANTS_URL — which is the whole
+# country in one 0.9 MB request, with the per-fuel timestamps ANWB has never
+# published.
 #
 # It takes a bounding box rather than a circle and answers with every station
 # inside it, whatever country it is in, so each country asks for its own box
@@ -351,16 +425,13 @@ ANWB_URL: Final = "https://api.anwb.nl/routing/points-of-interest/v3/all"
 # A box wider or taller than this answers HTTP 200 with an EMPTY LIST — no
 # error, no status, nothing to catch. Measured 2026-09-17 by growing a box
 # around Paris: 6.0 x 6.0 returned 8,550 stations, 7.0 x 7.0 returned none.
-# That is why France is asked about an area instead of a country box, and why
-# `anwb_fetcher` clamps: a country whose box crept over the line would look
-# exactly like a country with no fuel in it.
+# It is why France could never be asked for whole here, and why every box
+# below is checked against it: a country whose box crept over the line would
+# look exactly like a country with no fuel in it.
 ANWB_MAX_BOX_DEG: Final = 6.0
-# The circle France is asked about, in km. 50 is the largest radius the options
-# dialog offers, and at these latitudes it draws a box of roughly 0.9 x 1.4
-# degrees — comfortably inside the limit above, and about 700 stations.
-ANWB_AREA_MAX_RADIUS_KM: Final = 50
-# (lat_min, lon_min, lat_max, lon_max), as ANWB wants them. A country is in
-# here when the whole of it fits one box; France does not and is area-scoped.
+# (lat_min, lon_min, lat_max, lon_max), as ANWB wants them. Every country read
+# from ANWB is small enough to fit one box, which is the only reason these
+# three are still here and France is not.
 ANWB_BOXES: Final[dict[str, tuple[float, float, float, float]]] = {
     COUNTRY_NL: (50.70, 3.30, 53.60, 7.30),
     COUNTRY_BE: (49.45, 2.50, 51.55, 6.45),
@@ -371,7 +442,6 @@ ANWB_ISO3: Final[dict[str, str]] = {
     COUNTRY_NL: "NLD",
     COUNTRY_BE: "BEL",
     COUNTRY_LU: "LUX",
-    COUNTRY_FR: "FRA",
 }
 
 # Germany: Tankerkoenig, the free consumer feed of the Bundeskartellamt's
@@ -405,6 +475,74 @@ ECONTROL_URL: Final = (
     "https://api.e-control.at/sprit/1.0/search/gas-stations/by-address"
 )
 ECONTROL_MAX_RESULTS: Final = 10
+
+# France: the official instantaneous feed, published by the Ministry of the
+# Economy under the price transparency decree — every forecourt selling to the
+# public must report a price change the same day, and 9,800 of them do. This
+# replaced ANWB for France in 0.23.0, for three reasons that all point the same
+# way: one request carries the WHOLE country (0.9 MB, about two seconds), each
+# price carries its own timestamp, and there is no 6-degree box to trip over.
+#
+# The export endpoint rather than the paginated one: `records` caps at 100 per
+# request, so the whole country would be 99 more requests than it needs to be.
+# `select` is not tidiness either — without it every station also carries its
+# opening hours, its services list and its outage history, which is 9 MB of
+# things we do not read.
+#
+# What it does NOT publish is a BRAND. There is no enseigne field in the
+# dataset and no second dataset carrying one, so a French station is named by
+# its street and town. That is the one thing ANWB did better.
+PRIX_CARBURANTS_URL: Final = (
+    "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets"
+    "/prix-des-carburants-en-france-flux-instantane-v2/exports/json"
+)
+PRIX_CARBURANTS_FIELDS: Final = (
+    "id,cp,ville,adresse,geom,"
+    "gazole_prix,gazole_maj,sp95_prix,sp95_maj,sp98_prix,sp98_maj,"
+    "e10_prix,e10_maj,e85_prix,e85_maj,gplc_prix,gplc_maj"
+)
+
+# Spain: the Ministry for the Ecological Transition's own price register, which
+# every forecourt selling to the public must report to. No key, no account, no
+# documentation to accept — and the whole country in one response, 11,500
+# forecourts with exact coordinates.
+#
+# Two things about that response are worth knowing before it surprises anyone:
+#
+#   * it is 12 MB and the server does NOT gzip it, so a refresh really does
+#     move 12 MB and takes about ten seconds on a good line. That is why it has
+#     a timeout of its own below — the shared 30 seconds is not enough on a
+#     slow connection, and a timeout here loses the whole country;
+#   * numbers arrive as strings with a DECIMAL COMMA, coordinates included:
+#     "1,879" and "39,211417". `_to_float` already reads those, which is the
+#     only reason this parser is as short as it is.
+#
+# There is no per-station timestamp. The payload carries one `Fecha` for the
+# whole extract, which says when the list was built and not when any price
+# moved, so these stations show no time rather than today's date on a price
+# that may be a week old.
+MITECO_URL: Final = (
+    "https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes"
+    "/PreciosCarburantes/EstacionesTerrestres/"
+)
+MITECO_TIMEOUT_S: Final = 90
+# The cipher list this one host will talk to, and the reason it needs one.
+#
+# On 2026-09-22 the register began RESETTING the TLS handshake for OpenSSL 3's
+# default ClientHello — connection established, then closed mid-handshake, with
+# no HTTP status to read and nothing to retry into. It had answered the same
+# client that afternoon, and `curl` on the same machine kept working
+# throughout, which is what a server-side change looks like from outside.
+# Measured 12 attempts per configuration, same server address, no randomness:
+# the default context failed 12/12 and this list succeeded 12/12, negotiating
+# TLS 1.2 with AES256-GCM-SHA384.
+#
+# What this does NOT do is weaken who we trust: the certificate is verified
+# exactly as before, hostname included, and no security level is lowered. It
+# offers a different set of cipher suites, and the server picks from it. If the
+# host goes back to accepting the default hello, this list still works — it is
+# a superset, not a substitute.
+MITECO_CIPHERS: Final = "HIGH:!aNULL:!eNULL"
 
 # Sent with every provider request. We identify honestly rather than
 # impersonating a browser: these are open JSON APIs published under the price
@@ -623,6 +761,11 @@ FUEL_TYPES: Final = {
     "diesel": "Diesel (B7)",
     "dieselplus": "Diesel Extra",
     "hvo100": "HVO100",
+    # Ethanol, sold by the litre at about 3,800 French forecourts — roughly
+    # two in five — and at half the price of petrol, which is the reason it
+    # cannot be folded into Blyfri 95: it would win every ranking outright, and
+    # a car not converted for it must not be filled with it.
+    "e85": "E85",
     # Sold by the litre like the rest. Common in the Netherlands and Belgium,
     # where roughly a third of forecourts have a pump.
     "lpg": "LPG",

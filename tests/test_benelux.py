@@ -203,7 +203,9 @@ def test_the_providers_are_registered_open_and_national() -> None:
 def test_each_country_asks_for_its_own_box() -> None:
     sent: dict = {}
 
-    async def fake_fetch_json(session, url, extra_headers=None, params=None):
+    async def fake_fetch_json(
+        session, url, extra_headers=None, params=None, timeout_s=None, ssl_context=None
+    ):
         sent["url"] = url
         sent["params"] = dict(params or {})
         return PAYLOAD
@@ -222,7 +224,7 @@ def test_each_country_asks_for_its_own_box() -> None:
     check(len(stations) == 1, f"and only Belgian stations come back: {len(stations)}")
 
 
-def test_luxembourg_and_france_are_registered() -> None:
+def test_luxembourg_is_registered_and_france_has_left() -> None:
     """The hole this closed: a pin near southern Belgium found nothing.
 
     Luxembourg sits wholly inside both the Belgian and the German box, and
@@ -232,24 +234,27 @@ def test_luxembourg_and_france_are_registered() -> None:
     of forecourts under the pin. ANWB had been returning them all along: one
     Belgian box carried 480 French and 211 Luxembourgish stations that were
     parsed and thrown away.
+
+    France has since moved to its own national source (see tests/test_france.py)
+    and must not be served from here again: ANWB can only answer about a box,
+    no box covers France, and asking for one silently returns nothing.
     """
     lux = sources.PROVIDERS["anwb_lu"]
     check(lux.country == "lu", f"anwb_lu: {lux.country}")
     check(not lux.needs_credential, "Luxembourg should need no key")
     check(not lux.needs_area, "Luxembourg fits one box, so it is asked for whole")
 
-    fra = sources.PROVIDERS["anwb_fr"]
-    check(fra.country == "fr", f"anwb_fr: {fra.country}")
-    check(not fra.needs_credential, "France should need no key")
-    # The one that matters: France cannot be fetched as a country box.
-    check(fra.needs_area, "France is too big for one box, so it is area-scoped")
+    check("anwb_fr" not in sources.PROVIDERS, "France should no longer be an ANWB box")
+    french = [p.key for p in sources.providers_for("fr")]
+    check(french == ["prix_carburants"], f"France is priced nationally now: {french}")
     check(
-        fra.max_radius_km == const.ANWB_AREA_MAX_RADIUS_KM,
-        f"France should cap its circle: {fra.max_radius_km}",
+        const.COUNTRY_FR not in const.ANWB_ISO3
+        and const.COUNTRY_FR not in const.ANWB_BOXES,
+        "and no French geography is left behind in the ANWB tables",
     )
     check(
-        sources.country_needs_area("fr") and not sources.country_needs_area("lu"),
-        "France needs an area, Luxembourg does not",
+        not sources.country_needs_area("fr") and not sources.country_needs_area("lu"),
+        "neither country is asked about a circle any more",
     )
 
 
@@ -273,63 +278,6 @@ def test_no_country_box_can_exceed_the_silent_limit() -> None:
             f"{country} box is {lon_max - lon_min:.1f} deg wide",
         )
         check(lat_min < lat_max and lon_min < lon_max, f"{country} box is inside out")
-
-
-def test_an_area_box_is_centred_and_clamped() -> None:
-    """France asks about where you are, and never about more than ANWB serves."""
-    area = sources.Area(48.8566, 2.3522, 50_000)  # Paris, 50 km
-    lat_min, lon_min, lat_max, lon_max = sources.anwb_box_around(area)
-    check(lat_min < 48.8566 < lat_max, "the position is inside its own box")
-    check(lon_min < 2.3522 < lon_max, "on both axes")
-    check(
-        abs((lat_min + lat_max) / 2 - 48.8566) < 1e-9,
-        "and the box is centred on it",
-    )
-    height = lat_max - lat_min
-    check(0.7 < height < 1.1, f"50 km is about 0.9 degrees tall: {height:.2f}")
-    # Longitude degrees are shorter this far north, so the box is wider.
-    check(lon_max - lon_min > height, "the box is wider than it is tall at 49N")
-
-    # A radius nobody should be able to ask for still cannot break the limit.
-    huge = sources.anwb_box_around(sources.Area(48.8566, 2.3522, 5_000_000))
-    check(
-        huge[2] - huge[0] <= const.ANWB_MAX_BOX_DEG
-        and huge[3] - huge[1] <= const.ANWB_MAX_BOX_DEG,
-        f"clamped to the limit: {huge}",
-    )
-    try:
-        sources.anwb_box_around(None)
-    except ValueError:
-        check(True, "and an area-scoped country refuses to be asked without one")
-    else:
-        check(False, "asking France for no area should raise")
-
-
-def test_france_asks_about_the_caller_not_the_country() -> None:
-    sent: dict = {}
-
-    async def fake_fetch_json(session, url, extra_headers=None, params=None):
-        sent["params"] = dict(params or {})
-        return PAYLOAD
-
-    original = sources._fetch_json
-    sources._fetch_json = fake_fetch_json
-    try:
-        asyncio.run(
-            sources.PROVIDERS["anwb_fr"].fetch(
-                None, None, sources.Area(45.7640, 4.8357, 50_000)  # Lyon
-            )
-        )
-    finally:
-        sources._fetch_json = original
-
-    box = [float(v) for v in sent["params"]["bounding-box-filter"].split(",")]
-    check(box[0] < 45.7640 < box[2], f"Lyon is inside the box asked for: {box}")
-    check(box[1] < 4.8357 < box[3], f"on both axes: {box}")
-    check(
-        box[2] - box[0] <= const.ANWB_MAX_BOX_DEG,
-        "and the box stays inside the limit",
-    )
 
 
 def test_the_new_boxes_hold_their_own_countries() -> None:
