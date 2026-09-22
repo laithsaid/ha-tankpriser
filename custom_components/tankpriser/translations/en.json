@@ -219,6 +219,7 @@
         "lu": "Luxembourg — ANWB, no key needed (no price timestamps)",
         "fr": "France — the government's own national feed, no key needed, nationwide",
         "es": "Spain — the government's own price register, no key needed, nationwide (no price timestamps)",
+        "it": "Italy — the government's own register, no key needed, nationwide (prices are a daily snapshot)",
         "at": "Austria — E-Control, no key needed, ten stations per fuel around you (no price timestamps)"
       }
     },

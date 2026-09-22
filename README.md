@@ -36,6 +36,14 @@ the price transparency decree and published with a timestamp on each price. No
 key. Since 0.23.0 it is the whole country in one request, where it used to be a
 50 km circle from ANWB. See [15a. France](#15a-france).
 
+**Italy** comes from
+[Osservaprezzi carburanti](https://carburanti.mise.gov.it/), the register every
+Italian forecourt open to the public must communicate a price change to —
+around **21,600 stations**, no key, and the widest product list anywhere: two
+petrols, two diesels, HVO, GPL and Metano. Its prices are a **daily snapshot**
+rather than a live feed, which is the one thing to know before relying on it;
+see [15d. Italy](#15d-italy).
+
 **Spain** comes from [MITECO](https://geoportalgasolineras.es/), the register
 the Ministry for the Ecological Transition keeps and every forecourt selling to
 the public must report to — around **11,500 stations**, no key, and more
@@ -57,7 +65,7 @@ question, in euro on the way and in kroner when you get there.
 
 ### The countries, at a glance
 
-Eight, each set up as its own Tankpriser entry. "A circle" means the source has
+Nine, each set up as its own Tankpriser entry. "A circle" means the source has
 no nationwide answer, so that entry can show no national map and no "cheapest
 in the country" sensor. Every country except Denmark asks you for a point to
 search from; Denmark measures from your postnummer or from Home.
@@ -71,9 +79,10 @@ search from; Denmark measures from your postnummer or from Home.
 | **Luxembourg** | ANWB, ~230 forecourts | None | Nationwide |
 | **France** | [prix des carburants](https://data.economie.gouv.fr/explore/dataset/prix-des-carburants-en-france-flux-instantane-v2/), the government's own feed, ~9,800 forecourts | None | Nationwide — [15a](#15a-france) |
 | **Spain** | [MITECO](https://geoportalgasolineras.es/), the government's own register, ~11,500 forecourts | None | Nationwide — [15c](#15c-spain) |
+| **Italy** | [Osservaprezzi carburanti](https://carburanti.mise.gov.it/), the government's own register, ~21,600 forecourts | None | Nationwide, from a daily snapshot — [15d](#15d-italy) |
 | **Austria** | [E-Control](https://www.spritpreisrechner.at/) (Spritpreisrechner) | None | Ten stations per fuel, and the source picks the distance — [15b](#15b-austria) |
 
-Denmark, Germany, France and Spain have a law behind the feed. The rest is
+Denmark, Germany, France, Spain and Italy have a law behind the feed. The rest is
 published goodwill, and ANWB's carries no price timestamps at all.
 
 Two different scopes, worth knowing up front:
@@ -136,6 +145,7 @@ What each feature *is*. How to switch it on is in
 | 15a | [France](#15a-france) | ~9,800 forecourts from the government's own feed, nationwide, with E85 and a timestamp on every price |
 | 15b | [Austria](#15b-austria) | The regulator's own feed, no key — but ten stations per fuel and a radius you do not choose |
 | 15c | [Spain](#15c-spain) | ~11,500 forecourts from the government's own register, nationwide — and 12 MB per refresh |
+| 15d | [Italy](#15d-italy) | ~21,600 forecourts from the government's own register — self-service prices, from a daily snapshot |
 | 16 | [Testing without driving](#16-testing-the-driving-features-without-driving) | Drive a virtual car across Germany to exercise all of it from your desk |
 
 ### 1. Local price sensors
@@ -787,6 +797,47 @@ inside your radius.
 
 **CNG is priced per kilogram** here as everywhere, and is kept out of every
 comparison with a litre price.
+
+### 15d. Italy
+
+**Italy keeps the register itself**, and every forecourt open to the public has
+to communicate a price change to it. The Ministry of Enterprises publishes the
+lot as open data: **about 21,600 priced stations**, exact coordinates, the sign
+over the forecourt, and the longest product list we read anywhere — **Benzina**,
+**Benzina 98 and 100 ottani**, **Gasolio**, **Gasolio premium**, **HVO**,
+**GPL** and **Metano**. No key, no account.
+
+It answers for the whole country, so an Italian entry gets the national map and
+the "cheapest in the country" sensors.
+
+Four things are worth knowing before you trust a number:
+
+- **Prices are a daily snapshot, not a live feed.** The file is extracted at
+  08:00 and published the next morning, so an Italian price is up to a day and
+  a half old before it even reaches you. No other source here works that way.
+- **But every station says when its own price was last reported.** The card
+  prints that date, and it is worth reading: 43% of prices were communicated
+  within a day, 99% within a week, and the rest go back months — a forecourt in
+  Palermo is showing a price it last changed in July, and says so.
+- **You are quoted the self-service price** where the forecourt has one, which
+  is what most drivers pay and is about 20 cents under the served price. The
+  1,267 forecourts with no self-service show their served price, because that is
+  the only price they have.
+- **Italy prices two things we never quote.** *Gasolio artico* — winter diesel
+  sold in the mountains — is read as ordinary diesel, because the file shows it
+  costs the same and at seven forecourts it is the only diesel there is. Placeholder
+  prices are dropped: some operators type 0,100 or 8,888 to mean "no price", and
+  a 0,100 would win every ranking in the country.
+
+**A handful of forecourts communicate a number that looks like a typo** — three
+diesels a euro under everything around them, each exactly one digit short of a
+plausible price. They are published, so they are shown, with the date attached:
+this integration does not quietly second-guess a price the operator filed with
+the ministry.
+
+**Two requests and 7.5 MB per refresh**, because the prices and the forecourts
+are separate files joined on the ministry's own id. That is heavier than France
+and lighter than Spain.
 
 ### 16. Testing the driving features without driving
 
@@ -1903,6 +1954,28 @@ Spanish station shows a price and no "last changed" — the same silence as ANWB
 and Austria, and for the same reason: printing the moment we fetched would be
 read as the moment the price moved.
 
+### 15d. Italy
+
+*([what this feature does](#15d-italy))*
+
+**Add Tankpriser again, pick Italy, and give it a point and a radius.** No key
+and no account. The whole country answers at once, so the national map and the
+"cheapest in the country" sensors both work.
+
+Fuels offered are the eight the register prices: **Benzina**, **Benzina 98
+ottani**, **Benzina 100 ottani**, **Gasolio**, **Gasolio premium**, **HVO**,
+**GPL** and **Metano**. Metano is priced per kilogram and is kept out of every
+comparison with a litre price.
+
+**Read the dates on an Italian price.** This is the one source that publishes a
+daily snapshot rather than a live feed, and on top of that an operator only has
+to report when the price changes — so the card's "last changed" is the whole
+truth about how fresh a number is. Most are a day or two old; a few are months
+old and look it.
+
+**Prices are the self-service ones** where a forecourt has both, which is what
+most drivers pay.
+
 ### 16. Simulating a drive
 
 *([what this feature does](#16-testing-the-driving-features-without-driving)).*
@@ -2104,6 +2177,12 @@ More depth — logs, installing a build by hand, running the test suite — is i
   [Licence Ouverte 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence/)
   — attribution, which is this paragraph. No key and no account. One request
   carries the whole country and asks only for the columns we read.
+- **Italian prices** come from the Ministry of Enterprises'
+  [Osservaprezzi carburanti](https://carburanti.mise.gov.it/), the register
+  every forecourt open to the public must communicate to, published as open
+  data. No key and no account. Two CSV files per refresh, 7.5 MB between them,
+  joined on the ministry's own id — and a daily snapshot rather than a live
+  feed, which the station's own timestamp makes visible.
 - **Spanish prices** come from
   [MITECO](https://geoportalgasolineras.es/)'s register of retail fuel prices,
   which every forecourt selling to the public reports to and the ministry

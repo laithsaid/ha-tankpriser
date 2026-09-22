@@ -219,6 +219,7 @@
         "lu": "Luxembourg — ANWB, kræver ingen nøgle (ingen tidsstempler på priserne)",
         "fr": "Frankrig — statens eget prisregister, kræver ingen nøgle, hele landet",
         "es": "Spanien — statens eget prisregister, kræver ingen nøgle, hele landet (ingen tidsstempler på priserne)",
+        "it": "Italien — statens eget prisregister, kræver ingen nøgle, hele landet (priserne er et døgnligt øjebliksbillede)",
         "at": "Østrig — E-Control, kræver ingen nøgle, ti stationer pr. brændstof omkring dig (ingen tidsstempler på priserne)"
       }
     },

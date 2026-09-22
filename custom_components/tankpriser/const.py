@@ -51,6 +51,7 @@ COUNTRY_LU: Final = "lu"
 COUNTRY_FR: Final = "fr"
 COUNTRY_AT: Final = "at"
 COUNTRY_ES: Final = "es"
+COUNTRY_IT: Final = "it"
 DEFAULT_COUNTRY: Final = COUNTRY_DK
 
 
@@ -289,6 +290,33 @@ COUNTRIES: Final[dict[str, Country]] = {
             # is, rather than with silence.
             bbox=(27.5, -18.3, 43.9, 4.4),
             name_da="Spanien",
+        ),
+        Country(
+            COUNTRY_IT,
+            "Italy",
+            "€/L",
+            "euro",
+            3,
+            "cent",
+            {
+                # Italy names a fuel in free text, so these are the names the
+                # forecourts themselves use — see `_IT_PRODUCT_MAP` for the
+                # 59 spellings they arrive in.
+                "blyfri95": "Benzina",
+                "blyfri98": "Benzina 98 ottani",
+                "oktan100": "Benzina 100 ottani",
+                "diesel": "Gasolio",
+                "dieselplus": "Gasolio premium",
+                "hvo100": "HVO",
+                "lpg": "GPL",
+                "cng": "Metano",
+            },
+            # The peninsula, Sicily, Sardinia and Lampedusa. Like every box
+            # here it is wider than the country: it holds Corsica, Malta,
+            # Ticino and the Istrian coast, none of which has a source of its
+            # own to be confused with.
+            bbox=(35.4, 6.5, 47.2, 18.6),
+            name_da="Italien",
         ),
     )
 }
@@ -543,6 +571,46 @@ MITECO_TIMEOUT_S: Final = 90
 # host goes back to accepting the default hello, this list still works — it is
 # a superset, not a substitute.
 MITECO_CIPHERS: Final = "HIGH:!aNULL:!eNULL"
+
+# Italy: the Osservaprezzi carburanti register of the Ministry of Enterprises,
+# which every forecourt open to the public must communicate a price change to.
+# Keyless, and published as two CSV files that have to be joined on
+# `idImpianto` — one carries the prices, the other the forecourts.
+#
+# Four things about these files, each of which has cost somebody a parser:
+#
+#   * **They are not really CSV.** Fields are pipe-separated, the FIRST line is
+#     `Estrazione del <date>` and the header is the second. One registry row
+#     has an unbalanced double quote, so a real CSV reader treats it as an open
+#     quoted field and swallows the next 30-odd rows whole. Split on the pipe.
+#   * **113 registry rows carry an extra field**, an address typed into the
+#     name with a pipe in it, which shifts every column after it. So the
+#     coordinates are read from the END of the row and the fixed columns from
+#     the front — that alone is the difference between placing 23,965 stations
+#     and placing 23,852.
+#   * **Two prices per fuel**, self-service and served (`isSelf`). Self is
+#     cheaper at 23,263 forecourts, dearer at 19, and 1,267 forecourts have no
+#     self-service at all — so the lower of the two is taken, which is both the
+#     price most drivers pay and the only one that can never be a promise the
+#     pump does not keep.
+#   * **A price is a daily snapshot**, extracted at 08:00 and published the
+#     next morning, so an Italian price is up to a day and a half old. Each
+#     row carries its own `dtComu` — when the operator last communicated it —
+#     and that is what a station's timestamp shows: 99% inside a week, 43%
+#     inside a day, and the handful from 2023 look as old as they are.
+MIMIT_PRICES_URL: Final = "https://www.mimit.gov.it/images/exportCSV/prezzo_alle_8.csv"
+MIMIT_STATIONS_URL: Final = (
+    "https://www.mimit.gov.it/images/exportCSV/anagrafica_impianti_attivi.csv"
+)
+# 7.5 MB across the two files, and neither is small enough for the shared 30 s.
+MIMIT_TIMEOUT_S: Final = 90
+# The band a real Italian pump price falls in. Operators use 0,100 and 8,888 as
+# "no price" placeholders — eleven rows of them today — and a placeholder is
+# not a cheap forecourt: 0,100 would win every ranking in the country and send
+# somebody to a pump that is not selling. The floor sits under the cheapest
+# real fuel Italy sells (GPL bottoms out at 0,549) so nothing genuine is cut.
+MIMIT_MIN_PRICE: Final = 0.30
+MIMIT_MAX_PRICE: Final = 5.00
 
 # Sent with every provider request. We identify honestly rather than
 # impersonating a browser: these are open JSON APIs published under the price

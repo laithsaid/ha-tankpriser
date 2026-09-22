@@ -51,8 +51,14 @@ from .const import (
     COUNTRY_BE,
     COUNTRY_ES,
     COUNTRY_FR,
+    COUNTRY_IT,
     COUNTRY_LU,
     COUNTRY_NL,
+    MIMIT_MAX_PRICE,
+    MIMIT_MIN_PRICE,
+    MIMIT_PRICES_URL,
+    MIMIT_STATIONS_URL,
+    MIMIT_TIMEOUT_S,
     MITECO_CIPHERS,
     MITECO_TIMEOUT_S,
     MITECO_URL,
@@ -917,6 +923,27 @@ async def _fetch_json(
         return await resp.json(content_type=None)
 
 
+async def _fetch_text(
+    session: aiohttp.ClientSession,
+    url: str,
+    params: Mapping[str, str] | None = None,
+    timeout_s: float | None = None,
+) -> str:
+    """GET one text document.
+
+    For the one country that publishes CSV rather than JSON. Kept apart from
+    `_fetch_json` rather than folded into it with a flag, because the two
+    differ in what they return and in nothing else worth sharing.
+    """
+    async with session.get(
+        url,
+        headers=dict(REQUEST_HEADERS),
+        params=dict(params or {}),
+        timeout=_TIMEOUT if timeout_s is None else aiohttp.ClientTimeout(total=timeout_s),
+    ) as resp:
+        resp.raise_for_status()
+        return await resp.text()
+
 
 async def fetch_oil(
     session: aiohttp.ClientSession,
@@ -1311,6 +1338,227 @@ def parse_miteco(payload: dict) -> list[Station]:
             )
         )
     return stations
+
+
+# -- Osservaprezzi (Italy) --------------------------------------------------
+# Italy names a fuel in free text, so this map is 59 spellings of eight
+# products rather than a catalogue of codes. Matched case-insensitively with
+# the spacing collapsed, because the same product arrives as "Gasolio artico"
+# at one forecourt and "Gasolio Artico" at the next.
+#
+# What is deliberately NOT here: GNL (liquefied natural gas, a different
+# product from the compressed sort and sold to trucks), and F101, a name 48
+# forecourts use for something this parser cannot identify. A fuel we cannot
+# name is left out rather than filed under the nearest guess.
+_IT_PRODUCT_MAP: dict[str, str] = {
+    # The everyday four. Plain "Benzina" and plain "Gasolio" are 68,000 of the
+    # 93,000 priced rows; everything else in this map is a variant sold beside
+    # them.
+    "benzina": "blyfri95",
+    "gasolio": "diesel",
+    "gpl": "lpg",
+    "metano": "cng",
+    # Compressed natural gas from a liquefied supply: the same kilogram of gas
+    # at the same pump, and priced like it (median 1,699 against Metano's
+    # 1,889).
+    "l-gnc": "cng",
+    # Winter diesel, sold in the mountains. It is ordinary diesel rather than a
+    # premium grade, and the file says so: where a forecourt sells both, the
+    # median difference between them is zero, and at seven forecourts the
+    # arctic grade is the only diesel there is.
+    "gasolio artico": "diesel",
+    "gasolio artico igloo": "diesel",
+    "gasolio alpino": "diesel",
+    "gasolio gelo": "diesel",
+    # HVO100 under its many brand names.
+    "hvo": "hvo100",
+    "hvo100": "hvo100",
+    "hvolution": "hvo100",
+    "hvovolution": "hvo100",
+    "hvo future": "hvo100",
+    "hvo eco diesel": "hvo100",
+    "hvo energy diesel": "hvo100",
+    "diesel hvo": "hvo100",
+    "diesel hvo energy": "hvo100",
+    "gasolio hvo": "hvo100",
+    "gasolio bio hvo": "hvo100",
+    "rehvo": "hvo100",
+    "bchvo": "hvo100",
+    # Premium diesel, each chain under its own name.
+    "blue diesel": "dieselplus",
+    "blu diesel alpino": "dieselplus",
+    "supreme diesel": "dieselplus",
+    "hi-q diesel": "dieselplus",
+    "diesel shell v power": "dieselplus",
+    "v-power diesel": "dieselplus",
+    "excellium diesel": "dieselplus",
+    "dieselmax": "dieselplus",
+    "s-diesel": "dieselplus",
+    "e-diesel": "dieselplus",
+    "gp diesel": "dieselplus",
+    "gasolio speciale": "dieselplus",
+    "gasolio premium": "dieselplus",
+    "gasolio plus": "dieselplus",
+    "gasolio prestazionale": "dieselplus",
+    "gasolio oro diesel": "dieselplus",
+    "gasolio energy d": "dieselplus",
+    "gasolio ecoplus": "dieselplus",
+    # 100 octane. Eni's Blu Super is RON 100, as are Shell V-Power, Q8's WR 100
+    # and Tamoil's HiQ Perform: the names that state a number state 100 or
+    # above, and these four are 100 octane by their own published
+    # specification.
+    "blue super": "oktan100",
+    "benzina wr 100": "oktan100",
+    "benzina shell v power": "oktan100",
+    "v-power": "oktan100",
+    "hiq perform+": "oktan100",
+    "hiq perform b100 ottani": "oktan100",
+    "benzina 100 ottani": "oktan100",
+    "benzina 102 ottani": "oktan100",
+    # 98 octane, said in the name.
+    "benzina energy 98 ottani": "blyfri98",
+    "benzina plus 98": "blyfri98",
+    "benzina speciale 98 ottani": "blyfri98",
+    # A premium petrol whose octane nobody states. Filed as 98, the LOWER of
+    # the two claims it could be: a driver who needs 100 and is offered a 98
+    # is inconvenienced, and one who is promised 100 and handed 98 is not.
+    "benzina speciale": "blyfri98",
+    "verde speciale": "blyfri98",
+}
+
+
+def _it_rows(text: str) -> list[list[str]]:
+    """The pipe-separated rows of one Italian file, header lines dropped.
+
+    Split rather than parsed as CSV: one registry row opens a double quote and
+    never closes it, and a real CSV reader treats everything after it — the
+    next thirty-odd forecourts — as a single quoted field. These files quote
+    nothing; the quotes are characters inside company names.
+
+    Two lines go, not one: the first is `Estrazione del <date>` and the header
+    is the second.
+    """
+    return [line.split("|") for line in text.splitlines()[2:]]
+
+
+def parse_mimit_stations(text: str) -> dict[str, dict]:
+    """Parse the registry file into ``id -> {brand, address, city, lat, lon}``.
+
+    Columns are read from BOTH ends: the id and the sign from the front, the
+    coordinates, town and street from the back. 113 rows carry an extra field
+    — an address typed into the name, pipe and all — and every column after it
+    is shifted, so reading `Latitudine` by its position hands back a province
+    code (`AL`) for 116 forecourts and loses them. From the end, all 23,965
+    placeable ones arrive.
+    """
+    stations: dict[str, dict] = {}
+    for fields in _it_rows(text):
+        if len(fields) < 10:
+            continue
+        station_id = fields[0].strip()
+        latitude = _to_float(fields[-2])
+        longitude = _to_float(fields[-1])
+        if not station_id or latitude is None or longitude is None:
+            continue
+        stations[station_id] = {
+            # "Bandiera" is the sign over the forecourt. An independent flies
+            # "Pompe Bianche" — white pumps, which is what Italy calls an
+            # unbranded station and a truer name than its operating company.
+            "brand": " ".join(fields[2].split()),
+            "address": " ".join(fields[-5].split()),
+            "city": " ".join(fields[-4].split()),
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+    return stations
+
+
+def parse_mimit_prices(text: str) -> dict[str, tuple[dict[str, float], str]]:
+    """Parse the price file into ``id -> (prices, newest communication date)``.
+
+    Two rows per fuel at most forecourts, self-service and served, and the
+    lower of the two is kept — see ``MIMIT_PRICES_URL`` for why that is the
+    right one and ``MIMIT_MIN_PRICE`` for the placeholder prices dropped here.
+    """
+    prices: dict[str, dict[str, float]] = {}
+    newest: dict[str, str] = {}
+    for fields in _it_rows(text):
+        if len(fields) < 5:
+            continue
+        station_id = fields[0].strip()
+        key = _IT_PRODUCT_MAP.get(" ".join(fields[1].split()).lower())
+        price = _to_float(fields[2])
+        if not station_id or key is None or price is None:
+            continue
+        if not MIMIT_MIN_PRICE <= price <= MIMIT_MAX_PRICE:
+            continue
+        found = prices.setdefault(station_id, {})
+        if key not in found or price < found[key]:
+            found[key] = price
+        # "21/09/2026 08:01:41" — day first, and the date is all a card shows.
+        # Rewritten year-first so it compares like every other source's.
+        stamp = fields[4].strip()
+        if len(stamp) >= 10:
+            iso = f"{stamp[6:10]}-{stamp[3:5]}-{stamp[0:2]}"
+            newest[station_id] = max(newest.get(station_id, ""), iso)
+    return {sid: (found, newest.get(sid, "")) for sid, found in prices.items()}
+
+
+def parse_mimit(stations_csv: str, prices_csv: str) -> list[Station]:
+    """Join the two Italian files into stations.
+
+    A forecourt in one file and not the other is dropped: a price with no
+    position can be neither mapped nor measured, and a position with no price
+    is nothing to rank.
+    """
+    registry = parse_mimit_stations(stations_csv)
+    stations: list[Station] = []
+    for station_id, (prices, updated) in parse_mimit_prices(prices_csv).items():
+        record = registry.get(station_id)
+        if record is None or not prices:
+            continue
+        brand = record["brand"]
+        address = record["address"]
+        city = record["city"]
+        stations.append(
+            Station(
+                name=f"{brand} {address}".strip() or brand or city,
+                company=brand,
+                # The registry publishes no postal code at all; the town and
+                # the province are its geography. Italy is placed by its
+                # coordinates like every country outside Denmark, so nothing
+                # here needs one.
+                postnummer="",
+                city=city,
+                address=address,
+                latitude=record["latitude"],
+                longitude=record["longitude"],
+                updated=updated,
+                prices=prices,
+                station_id=station_id,
+                country=COUNTRY_IT,
+            )
+        )
+    return stations
+
+
+async def fetch_mimit(
+    session: aiohttp.ClientSession,
+    credential: str | None = None,
+    area: "Area | None" = None,
+) -> list[Station]:
+    """Fetch both Italian files and join them.
+
+    One after the other rather than at once: it is one ministry's web server,
+    the two files are 7.5 MB between them, and nothing here is in a hurry —
+    the shared provider cache means this runs once per refresh however many
+    Italian areas are configured.
+    """
+    registry = await _fetch_text(
+        session, MIMIT_STATIONS_URL, timeout_s=MIMIT_TIMEOUT_S
+    )
+    prices = await _fetch_text(session, MIMIT_PRICES_URL, timeout_s=MIMIT_TIMEOUT_S)
+    return parse_mimit(registry, prices)
 
 
 # -- provider registry ------------------------------------------------------
@@ -1723,6 +1971,16 @@ PROVIDERS: dict[str, Provider] = {
             ),
             country=COUNTRY_ES,
             fuels=frozenset(_ES_PRODUCT_MAP.values()),
+        ),
+        # Italy: the only source published as CSV, and the only one that
+        # takes two requests to answer — the prices and the forecourts are
+        # separate files, joined on the ministry's own id.
+        Provider(
+            "mimit",
+            "Osservaprezzi carburanti (Italy)",
+            fetch_mimit,
+            country=COUNTRY_IT,
+            fuels=frozenset(_IT_PRODUCT_MAP.values()),
         ),
     )
 }
