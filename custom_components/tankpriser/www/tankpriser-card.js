@@ -89,6 +89,121 @@ function _safeUrl(url) {
     return "";
   }
 }
+// -- language --------------------------------------------------------------
+// The card speaks the *user's* profile language, not the server's: two people
+// on one dashboard can each read it in their own. English lives here, as the
+// source every other language is translated from and the fallback for a key a
+// translation lacks. Every other language is one file, www/translations/
+// <lang>.json, fetched once the first time a card needs it — add the file and
+// its code to CARD_LANGS, nothing else.
+const CARD_I18N = "/tankpriser/translations";
+const CARD_LANGS = ["da"];
+const CARD_STRINGS = {
+  en: {
+    disc_title: "Pump price {price} · discount {ore} øre",
+    n_stations: "{n} stations",
+    map_failed: "The map could not be loaded. Retrying…",
+    car_hide: "Hide this car here",
+    car_hide_title: "This device only — bring it back with the car button",
+    car_pick: "Choose cars ({shown} of {total} shown)",
+    car_panel_head: "Show cars here",
+    car_no_pos: "{name} (no position)",
+    car_panel_note: "Applies to this device only",
+    nav_approx: "≈ The location is only an estimate, so there is no exact route here.",
+    nav: "➤ Navigate here",
+    recenter: "Centre on my position",
+    updated: "Prices updated: {when}",
+    popup_disc: "Pump price {price} · your discount {ore} øre",
+    away: "{km} km from here",
+    pick: "Show prices elsewhere",
+    pick_active: "Tap the map to see prices there",
+    pick_loading: "Fetching prices…",
+    pick_failed: "Could not fetch prices here.",
+    pick_cheapest: "cheapest",
+    pick_no_source: "No prices here: {country} is not set up in Tankpriser.",
+    pick_none_within: "No stations within {km} km{where}.",
+    pick_in: " in {country}",
+    pick_none: "No stations here.",
+    pick_shown: "{n} shown",
+    pick_searched: " · searched {km} km",
+    follow_on: "Follow me: on",
+    follow_off: "Follow me: off",
+    hours: "h",
+  },
+};
+
+function _lang(hass) {
+  const lang = (hass && ((hass.locale && hass.locale.language) || hass.language)) || "";
+  const base = String(lang).toLowerCase().split("-")[0];
+  return CARD_LANGS.includes(base) ? base : "en";
+}
+
+// One fetch per language per page, shared by every card on it. A file that
+// will not load leaves an empty table, so the card falls back to English
+// instead of asking again on every hass update.
+const _langLoads = {};
+
+// True while the card must wait for its language: rendering first would show
+// English and then switch, and a popup bound in English would stay English.
+// `no-cache` revalidates rather than refetches, so an update to the file is
+// seen without a version in its URL.
+function _awaitLang(card) {
+  const lang = _lang(card._hass);
+  if (CARD_STRINGS[lang]) return false;
+  if (!_langLoads[lang]) {
+    _langLoads[lang] = fetch(`${CARD_I18N}/${lang}.json`, { cache: "no-cache" })
+      .then((res) => (res.ok ? res.json() : {}))
+      .catch(() => ({}))
+      .then((table) => {
+        CARD_STRINGS[lang] = table && typeof table === "object" ? table : {};
+      });
+  }
+  if (card._langWait !== lang) {
+    card._langWait = lang;
+    _langLoads[lang].then(() => {
+      card._langWait = null;
+      if (card._hass) card.hass = card._hass;
+    });
+  }
+  return true;
+}
+
+// Values are inserted as given: anything user- or feed-supplied must already
+// be escaped by the caller, exactly as it was before the strings moved here.
+function _tr(hass, key, vars) {
+  const table = CARD_STRINGS[_lang(hass)] || CARD_STRINGS.en;
+  const text = table[key] ?? CARD_STRINGS.en[key] ?? key;
+  return vars ? text.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : text;
+}
+
+// Numbers the way Home Assistant writes them for this user. The frontend's own
+// formatNumber is not reachable from a card, so this repeats its rule: the
+// profile's number format picks the locale ("language" follows the profile
+// language, "system" the browser), and "none" is plain en-US digits.
+const NUMBER_LOCALES = {
+  comma_decimal: ["en-US", "en"],
+  decimal_comma: ["de", "es", "it"],
+  space_comma: ["fr", "sv", "cs"],
+  quote_decimal: ["de-CH"],
+  system: undefined,
+  none: "en-US",
+};
+
+function _fmtNumber(hass, value, minDigits, maxDigits = minDigits) {
+  const locale = (hass && hass.locale) || {};
+  const format = locale.number_format;
+  const opts = { minimumFractionDigits: minDigits, maximumFractionDigits: maxDigits };
+  if (format === "none") opts.useGrouping = false;
+  const tag = format in NUMBER_LOCALES
+    ? NUMBER_LOCALES[format]
+    : locale.language || (hass && hass.language) || undefined;
+  try {
+    return new Intl.NumberFormat(tag, opts).format(Number(value));
+  } catch (e) {
+    return Number(value).toFixed(maxDigits);
+  }
+}
+
 // -- navigation ------------------------------------------------------------
 // Which maps URL a "Navigate here" link should use. Sniffing the platform is
 // the only way to get one link that lands in a real navigator everywhere:
@@ -649,6 +764,7 @@ class TankpriserCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    if (_awaitLang(this)) return;
     // Needs hass: the stored filter is keyed by the logged-in user.
     if (this._hidden === null) this._hidden = _loadHidden(hass);
     this._subscribeUpdates();
@@ -1041,7 +1157,7 @@ class TankpriserCard extends HTMLElement {
               ? `<span class="ff-approx" title="Approximate location (postnummer centre)"> ≈</span>`
               : "";
             const cut = s.discount_ore
-              ? `<span class="ff-disc" title="Pumpepris ${this._price(s.list_price, unit)} · rabat ${this._escape(s.discount_ore)} øre">−${this._escape(s.discount_ore)}</span>`
+              ? `<span class="ff-disc" title="${_tr(this._hass, "disc_title", { price: this._price(s.list_price, unit), ore: this._escape(s.discount_ore) })}">−${this._escape(s.discount_ore)}</span>`
               : "";
             // Where it is, written the Danish way ("8600 Silkeborg"). Sorted by
             // price, the cheapest row can be the far side of the area, and the
@@ -1075,7 +1191,7 @@ class TankpriserCard extends HTMLElement {
       <div class="ff-section">
         <div class="ff-head">
           <span>${this._escape(fuel)}</span>
-          <span class="ff-sub">${this._escape(a.area || a.postnummer || "")} · ${this._escape(a.radius || "")} · ${a.station_count || rows.length} st.${from}</span>
+          <span class="ff-sub">${this._escape(a.area || a.postnummer || "")} · ${this._escape(a.radius || "")} · ${_tr(this._hass, "n_stations", { n: a.station_count || rows.length })}${from}</span>
         </div>
         <table class="ff"><tbody>${body}</tbody></table>
       </div>`;
@@ -1085,7 +1201,7 @@ class TankpriserCard extends HTMLElement {
     // Metres below a kilometre — "0,3 km" is a walk described in the wrong unit.
     const metres = Math.round(km * 100) * 10; // nearest 10 m
     if (metres < 1000) return `${metres} m`;
-    return `${(metres / 1000).toFixed(1).replace(".", ",")} km`;
+    return `${_fmtNumber(this._hass, metres / 1000, 1)} km`;
   }
 
   // -- map data -------------------------------------------------------------
@@ -1449,7 +1565,7 @@ class TankpriserCard extends HTMLElement {
     } catch (e) {
       // Not permanent: the loader forgets the failure, so the next hass update
       // retries. Leave a notice in the meantime.
-      this._mapEl.innerHTML = `<div class="ff-notice">Kortet kunne ikke indlæses. Prøver igen…</div>`;
+      this._mapEl.innerHTML = `<div class="ff-notice">${_tr(this._hass, "map_failed")}</div>`;
       this._mapFailed = true;
       return;
     }
@@ -1730,8 +1846,8 @@ class TankpriserCard extends HTMLElement {
       const hide = document.createElement("a");
       hide.href = "#";
       hide.className = "ff-carhide";
-      hide.textContent = "Skjul denne bil her";
-      hide.title = "Kun på denne enhed — hentes frem igen med bil-knappen";
+      hide.textContent = _tr(this._hass, "car_hide");
+      hide.title = _tr(this._hass, "car_hide_title");
       hide.addEventListener("click", (ev) => {
         ev.preventDefault();
         if (this._map) this._map.closePopup();
@@ -1833,14 +1949,14 @@ class TankpriserCard extends HTMLElement {
       shown === list.length
         ? _carSvg(18)
         : `${_carSvg(18)}<span class="ff-carn">${shown}/${list.length}</span>`;
-    const label = `Vælg biler (${shown} af ${list.length} vises)`;
+    const label = _tr(this._hass, "car_pick", { shown, total: list.length });
     button.title = label;
     button.setAttribute("aria-label", label);
 
     panel.innerHTML = "";
     const head = document.createElement("div");
     head.className = "ff-carpanel-h";
-    head.textContent = "Vis biler her";
+    head.textContent = _tr(this._hass, "car_panel_head");
     panel.appendChild(head);
 
     for (const car of list) {
@@ -1851,7 +1967,7 @@ class TankpriserCard extends HTMLElement {
       box.checked = !car.hidden;
       box.addEventListener("change", () => this._setCarHidden(car.id, !box.checked));
       const text = document.createElement("span");
-      text.textContent = car.positioned ? car.name : `${car.name} (ingen position)`;
+      text.textContent = car.positioned ? car.name : _tr(this._hass, "car_no_pos", { name: car.name });
       if (!car.positioned) row.classList.add("ff-carrow-nopos");
       row.appendChild(box);
       row.appendChild(text);
@@ -1860,7 +1976,7 @@ class TankpriserCard extends HTMLElement {
 
     const note = document.createElement("div");
     note.className = "ff-carpanel-n";
-    note.textContent = "Gælder kun denne enhed";
+    note.textContent = _tr(this._hass, "car_panel_note");
     panel.appendChild(note);
   }
 
@@ -1873,8 +1989,7 @@ class TankpriserCard extends HTMLElement {
     // instead. The price is still the point of the popup.
     if (station.approx) {
       return (
-        `<div class="ff-nav-est">≈ Placeringen er kun anslået, så der kan ikke ` +
-        `navigeres præcist hertil.</div>`
+        `<div class="ff-nav-est">${_tr(this._hass, "nav_approx")}</div>`
       );
     }
     if (this._config.navigation === "off") return "";
@@ -1886,7 +2001,7 @@ class TankpriserCard extends HTMLElement {
     // smuggle a javascript: into.
     return (
       `<div class="ff-nav"><a href="${this._escape(url)}" target="_blank" ` +
-      `rel="noopener">➤ Navigér hertil</a></div>`
+      `rel="noopener">${_tr(this._hass, "nav")}</a></div>`
     );
   }
 
@@ -1907,9 +2022,9 @@ class TankpriserCard extends HTMLElement {
 
         const recenter = L.DomUtil.create("a", "ff-recenter", wrap);
         recenter.href = "#";
-        recenter.title = "Centrér på min position";
+        recenter.title = _tr(card._hass, "recenter");
         recenter.setAttribute("role", "button");
-        recenter.setAttribute("aria-label", "Centrér på min position");
+        recenter.setAttribute("aria-label", _tr(card._hass, "recenter"));
         recenter.innerHTML = "◎";
         L.DomEvent.on(recenter, "click", (ev) => {
           L.DomEvent.stop(ev);
@@ -1984,23 +2099,25 @@ class TankpriserCard extends HTMLElement {
     // `updated` is the chain's own "prices valid from" stamp, not the time we
     // polled — that is what actually tells you how stale a price is.
     const updated = s.updated
-      ? `<div class="ff-popup-updated">Priser opdateret: ${this._escape(s.updated)}</div>`
+      ? `<div class="ff-popup-updated">${_tr(this._hass, "updated", { when: this._escape(s.updated) })}</div>`
       : "";
     // With a loyalty discount configured, the price shown is what you pay —
     // so show the pump price too, or the card and the forecourt sign
     // disagree and you have no way to tell which is wrong.
     const discount =
       s.discount && s.listPrice != null
-        ? `<div class="ff-popup-disc">Pumpepris ${money(s.listPrice)} ·
-           din rabat ${this._escape(s.discount)} øre</div>`
+        ? `<div class="ff-popup-disc">${_tr(this._hass, "popup_disc", {
+            price: money(s.listPrice),
+            ore: this._escape(s.discount),
+          })}</div>`
         : "";
     // Distance is only known for a station that came out of a `nearby` answer,
     // which is exactly the 📍 case — and there it is the thing you want.
     const away =
       s.distance != null
-        ? `<div class="ff-popup-dist">${this._escape(
-            Number(s.distance).toFixed(1).replace(".", ",")
-          )} km herfra</div>`
+        ? `<div class="ff-popup-dist">${_tr(this._hass, "away", {
+            km: this._escape(_fmtNumber(this._hass, s.distance, 1)),
+          })}</div>`
         : "";
     marker.bindPopup(
       `<b>${this._escape(s.name)}</b>${s.city ? "<br>" + this._escape(s.city) : ""}` +
@@ -2023,9 +2140,9 @@ class TankpriserCard extends HTMLElement {
         const wrap = L.DomUtil.create("div", "leaflet-bar ff-mapctl");
         const pick = L.DomUtil.create("a", "ff-pick", wrap);
         pick.href = "#";
-        pick.title = "Vis priser et andet sted";
+        pick.title = _tr(card._hass, "pick");
         pick.setAttribute("role", "button");
-        pick.setAttribute("aria-label", "Vis priser et andet sted");
+        pick.setAttribute("aria-label", _tr(card._hass, "pick"));
         pick.innerHTML = "📍";
         L.DomEvent.on(pick, "click", (ev) => {
           L.DomEvent.stop(ev);
@@ -2060,8 +2177,8 @@ class TankpriserCard extends HTMLElement {
     if (!el) return;
     el.classList.toggle("ff-on", !!this._picking);
     el.title = this._picking
-      ? "Tryk på kortet for at se priser der"
-      : "Vis priser et andet sted";
+      ? _tr(this._hass, "pick_active")
+      : _tr(this._hass, "pick");
   }
 
   // Picked stations live in their own layer, not in `_markerLayer`.
@@ -2094,7 +2211,7 @@ class TankpriserCard extends HTMLElement {
     });
     layer.addLayer(marker);
     this._pickMarker = marker;
-    marker.bindPopup('<div class="ff-pick-pop">Henter priser…</div>').openPopup();
+    marker.bindPopup(`<div class="ff-pick-pop">${_tr(this._hass, "pick_loading")}</div>`).openPopup();
 
     let answer = null;
     try {
@@ -2109,7 +2226,7 @@ class TankpriserCard extends HTMLElement {
       answer = res && res.response ? res.response : res;
     } catch (err) {
       marker.setPopupContent(
-        '<div class="ff-pick-pop">Kunne ikke hente priser her.</div>'
+        `<div class="ff-pick-pop">${_tr(this._hass, "pick_failed")}</div>`
       );
       return;
     }
@@ -2170,7 +2287,7 @@ class TankpriserCard extends HTMLElement {
           ? `${this._escape(block.country_name)}: `
           : "";
       lines.push(
-        `<div class="ff-pick-row"><span class="ff-pick-name">${name}billigst` +
+        `<div class="ff-pick-row"><span class="ff-pick-name">${name}${_tr(this._hass, "pick_cheapest")}` +
           `</span><span class="ff-pick-price">${price}</span></div>`
       );
     }
@@ -2184,25 +2301,27 @@ class TankpriserCard extends HTMLElement {
       const elsewhere = answer && answer.no_source_country;
       if (elsewhere) {
         return (
-          `<div class="ff-pick-pop">Ingen priser her: ` +
-          `${this._escape(elsewhere)} er ikke sat op i Tankpriser.</div>`
+          `<div class="ff-pick-pop">${_tr(this._hass, "pick_no_source", {
+            country: this._escape(elsewhere),
+          })}</div>`
         );
       }
       const reach =
         answer && answer.searched_km ? Math.round(answer.searched_km) : null;
       const where =
-        answer && answer.country_name ? ` i ${this._escape(answer.country_name)}` : "";
+        answer && answer.country_name ? _tr(this._hass, "pick_in", { country: this._escape(answer.country_name) })
+          : "";
       return `<div class="ff-pick-pop">${
         reach
-          ? `Ingen stationer inden for ${reach} km${where}.`
-          : "Ingen stationer her."
+          ? _tr(this._hass, "pick_none_within", { km: reach, where })
+          : _tr(this._hass, "pick_none")
       }</div>`;
     }
     const count = plotted != null ? plotted : 0;
     const reach =
       answer && answer.searched_km ? Math.round(answer.searched_km) : null;
-    const foot = `<div class="ff-pick-foot">${count} vist${
-      reach ? ` · søgt ${reach} km` : ""
+    const foot = `<div class="ff-pick-foot">${_tr(this._hass, "pick_shown", { n: count })}${
+      reach ? _tr(this._hass, "pick_searched", { km: reach }) : ""
     }</div>`;
     return `<div class="ff-pick-pop">${lines.join("")}${foot}</div>`;
   }
@@ -2259,7 +2378,7 @@ class TankpriserCard extends HTMLElement {
     const el = this._followEl;
     if (!el) return;
     el.classList.toggle("active", this._follow);
-    const label = this._follow ? "Følg mig: til" : "Følg mig: fra";
+    const label = _tr(this._hass, this._follow ? "follow_on" : "follow_off");
     el.title = label;
     el.setAttribute("aria-label", label);
     el.setAttribute("aria-pressed", this._follow ? "true" : "false");
@@ -2449,7 +2568,7 @@ class TankpriserCard extends HTMLElement {
   _price(v, unit, decimals) {
     if (v === null || v === undefined) return "–";
     const places = decimals != null ? decimals : this._decimals;
-    return `${Number(v).toFixed(places).replace(".", ",")}${unit ? " " + unit : ""}`;
+    return `${_fmtNumber(this._hass, v, places)}${unit ? " " + unit : ""}`;
   }
 
   _notice(text) {
@@ -2710,6 +2829,7 @@ class TankpriserPredictionCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    if (_awaitLang(this)) return;
     this._render();
   }
 
@@ -2744,7 +2864,8 @@ class TankpriserPredictionCard extends HTMLElement {
     const h = Math.floor(total / 60);
     const m = total % 60;
     if (h <= 0) return `${m} min`;
-    return m ? `${h} t ${m} min` : `${h} t`;
+    const hr = _tr(this._hass, "hours");
+    return m ? `${h} ${hr} ${m} min` : `${h} ${hr}`;
   }
 
   _driving(a) {
@@ -2869,7 +2990,7 @@ class TankpriserPredictionCard extends HTMLElement {
       const shown = Number.isFinite(days)
         ? days >= 10
           ? Math.round(days)
-          : days.toFixed(1)
+          : _fmtNumber(this._hass, days, 1)
         : st.state;
       const when = a.predicted_empty ? this._fmtDate(a.predicted_empty) : "";
       head = `<div class="tp-pred-head">
@@ -3276,7 +3397,7 @@ class TankpriserAccuracyCard extends HTMLElement {
   }
 
   _num(value) {
-    return String(Math.round(Number(value) * 10) / 10).replace(".", ",");
+    return _fmtNumber(this._hass, value, 0, 1);
   }
 
   _date(seconds) {
