@@ -1,0 +1,234 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurer Tankpriser",
+        "description": "Dans quel pays faites-vous le plein ? Une configuration couvre un seul pays — si vous faites aussi le plein de l'autre côté d'une frontière, ajoutez ensuite ce pays comme seconde entrée Tankpriser.",
+        "data": {
+          "country": "Pays"
+        }
+      },
+      "area": {
+        "title": "Zone et types de carburant",
+        "description": "Choisissez les carburants à suivre. Votre zone est l'emplacement Domicile de Home Assistant et le rayon peut être modifié plus tard dans les options.",
+        "data": {
+          "area_name": "Nom (facultatif)",
+          "fuel_types": "Types de carburant",
+          "anchor": "Rechercher à partir de ce point"
+        },
+        "data_description": {
+          "anchor": "La zone couverte par ces capteurs est mesurée à partir d'ici, et ce point doit rester fixe : les capteurs, l'historique et les notifications de prix comparent les mêmes stations d'une mise à jour à l'autre. Une demande vocale cherche toujours à partir de l'endroit où vous vous trouvez réellement."
+        }
+      },
+      "credentials": {
+        "title": "Clé API",
+        "description": "Une partie des prix de ce pays provient de sources qui exigent une clé API personnelle. Elles sont gratuites et elles vous appartiennent — Home Assistant envoie chacune directement à sa source, et nulle part ailleurs.\n\nLaissez un champ vide, sauf si le formulaire l'indique comme obligatoire : cette enseigne sera simplement absente jusqu'à ce que vous ajoutiez sa clé plus tard dans Configurer → Enseignes et clés API.\n\n{guides}",
+        "data": {
+          "tankerkoenig": "Clé API Tankerkönig",
+          "goon": "Clé API Go'on",
+          "unox": "Clé Uno-X, sous la forme client_id:client_secret"
+        }
+      }
+    },
+    "error": {
+      "no_fuel_types": "Sélectionnez au moins un type de carburant.",
+      "key_required": "Cette source exige une clé avant de pouvoir être configurée.",
+      "invalid_auth": "La source a refusé cette clé. Une clé toute neuve n'est généralement pas encore activée — l'activation se fait manuellement et peut prendre plusieurs jours. Vérifiez que vous l'avez copiée en entier, puis réessayez à la réception du courriel d'activation.",
+      "cannot_connect": "Impossible de joindre la source. Vérifiez votre connexion Internet et réessayez.",
+      "no_stations": "La clé a été acceptée mais aucune station n'a été renvoyée. Ouvrez un ticket si le problème persiste."
+    },
+    "abort": {
+      "already_configured": "Tankpriser est déjà configuré."
+    }
+  },
+  "config_subentries": {
+    "car": {
+      "initiate_flow": {
+        "user": "Ajouter une voiture",
+        "reconfigure": "Modifier la voiture"
+      },
+      "entry_type": "Voiture",
+      "step": {
+        "user": {
+          "title": "Ajouter une voiture",
+          "description": "Prévoyez quand cette voiture aura besoin de faire le plein à partir du niveau de carburant que Home Assistant connaît déjà. La prévision est gratuite — si elle vous est utile, pensez à faire un don ; sa conception a demandé un vrai travail. 💛",
+          "data": {
+            "name": "Nom de la voiture",
+            "source_entity": "Entité du niveau de carburant",
+            "level_attribute": "Attribut du niveau (facultatif)",
+            "level_unit": "Le niveau est mesuré en",
+            "tank_capacity_l": "Capacité du réservoir (litres)",
+            "odometer_entity": "Entité du compteur kilométrique (facultatif)",
+            "odometer_attribute": "Attribut du compteur kilométrique (facultatif)",
+            "fuel_key": "Type de carburant"
+          },
+          "data_description": {
+            "source_entity": "L'entité qui indique le niveau de carburant — un capteur ou, par exemple, un device_tracker de voiture.",
+            "level_attribute": "Laissez vide pour utiliser l'état de l'entité. Sinon, l'attribut contenant le niveau, par ex. fuel_level. Les attributs imbriqués s'écrivent avec des points : data.fuel.level.",
+            "tank_capacity_l": "Capacité du réservoir plein, en litres. Sert à convertir un pourcentage en litres et à estimer l'autonomie.",
+            "odometer_entity": "Facultatif. Avec un compteur kilométrique, la prévision se fait en L/100 km ; sans, elle se rabat sur une estimation basée sur le temps.",
+            "odometer_attribute": "Facultatif. Laissez vide pour utiliser l'état de l'entité du compteur kilométrique, ou indiquez l'attribut contenant la valeur.",
+            "fuel_key": "Le carburant utilisé par cette voiture — afin d'afficher le prix le moins cher à proximité pour celui-ci."
+          }
+        },
+        "reconfigure": {
+          "title": "Modifier la voiture",
+          "description": "Mettez à jour la source du niveau de carburant et les paramètres de cette voiture.",
+          "data": {
+            "name": "Nom de la voiture",
+            "source_entity": "Entité du niveau de carburant",
+            "level_attribute": "Attribut du niveau (facultatif)",
+            "level_unit": "Le niveau est mesuré en",
+            "tank_capacity_l": "Capacité du réservoir (litres)",
+            "odometer_entity": "Entité du compteur kilométrique (facultatif)",
+            "odometer_attribute": "Attribut du compteur kilométrique (facultatif)",
+            "fuel_key": "Type de carburant"
+          },
+          "data_description": {
+            "source_entity": "L'entité qui indique le niveau de carburant — un capteur ou, par exemple, un device_tracker de voiture.",
+            "level_attribute": "Laissez vide pour utiliser l'état de l'entité. Sinon, l'attribut contenant le niveau, par ex. fuel_level. Les attributs imbriqués s'écrivent avec des points : data.fuel.level.",
+            "tank_capacity_l": "Capacité du réservoir plein, en litres. Sert à convertir un pourcentage en litres et à estimer l'autonomie.",
+            "odometer_entity": "Facultatif. Avec un compteur kilométrique, la prévision se fait en L/100 km ; sans, elle se rabat sur une estimation basée sur le temps.",
+            "odometer_attribute": "Facultatif. Laissez vide pour utiliser l'état de l'entité du compteur kilométrique, ou indiquez l'attribut contenant la valeur.",
+            "fuel_key": "Le carburant utilisé par cette voiture — afin d'afficher le prix le moins cher à proximité pour celui-ci."
+          }
+        }
+      },
+      "error": {
+        "name_required": "Donnez un nom à la voiture."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options de Tankpriser",
+        "menu_options": {
+          "settings": "Zone et types de carburant",
+          "notifications": "Notifications de prix",
+          "chains": "Enseignes et clés API",
+          "discounts": "Remises de fidélité",
+          "prediction": "Prévision du plein"
+        }
+      },
+      "settings": {
+        "title": "Zone et types de carburant",
+        "description": "Ajustez le rayon autour de votre emplacement Domicile, choisissez les types de carburant et masquez les stations qui ne vous intéressent pas.",
+        "data": {
+          "radius": "Rayon autour du domicile",
+          "fuel_types": "Types de carburant",
+          "excluded_stations": "Masquer ces stations",
+          "scan_interval": "Intervalle de mise à jour (minutes)",
+          "nearby_tracker": "Classer les stations proches de cet appareil (téléphone ou voiture)",
+          "nearby_radius_km": "Distance de recherche des stations proches",
+          "anchor": "Rechercher à partir de ce point"
+        },
+        "data_description": {}
+      },
+      "notifications": {
+        "title": "Notifications de prix",
+        "description": "Soyez averti lorsque les prix changent dans votre zone.",
+        "data": {
+          "notify_enabled": "Envoyer des notifications lors des changements de prix",
+          "notify_service": "Service de notification (par ex. notify.mobile_app_phone)",
+          "notify_rule": "Quand notifier",
+          "notify_threshold": "Seuil de prix (pour « sous le seuil »)",
+          "fillup_enabled": "Alerter aussi quand une voiture est presque à sec et passe près d'une station bon marché",
+          "fillup_level_pct": "Alerter sous cette part du réservoir",
+          "fillup_near_km": "…et une station se trouve à moins de",
+          "fillup_maps": "Ouvrir la navigation dans"
+        },
+        "data_description": {
+          "fillup_enabled": "Nécessite au moins une voiture ajoutée pour la prévision. Vous êtes prévenu une seule fois par réservoir bas, et non à chaque mise à jour — l'alerte suivante attend que la voiture ait fait le plein."
+        }
+      },
+      "chains": {
+        "title": "Enseignes et clés API",
+        "description": "La plupart des sources publient leurs prix librement et ne demandent aucune configuration — les enseignes danoises OK, Q8, F24, Shell et OIL! fonctionnent directement. Les sources ci-dessous ne répondent qu'avec une clé API personnelle que vous devez demander vous-même. Choisissez-en une pour voir comment faire.",
+        "data": {
+          "provider": "Enseigne"
+        }
+      },
+      "provider": {
+        "title": "Clé API {name}",
+        "description": "**Comment obtenir une clé pour {name} :**\n\n{guide}\n\nInscription : {signup_url}\n\nLa clé est stockée dans la configuration de cette intégration, envoyée uniquement à {name} et masquée dans les diagnostics. Laissez le champ vide pour la supprimer et cesser d'utiliser cette enseigne.{warning}",
+        "data": {
+          "api_key": "Clé API"
+        },
+        "data_description": {
+          "api_key": "La clé est vérifiée immédiatement — si l'enseigne la refuse, une erreur s'affichera ici."
+        }
+      },
+      "discounts": {
+        "title": "Remises de fidélité",
+        "description": "Remise par enseigne en øre par litre, telle qu'annoncée par votre carte carburant. Les prix partout — capteurs, carte, notifications et le moins cher — affichent alors ce que vous payez réellement. Laissez une enseigne à 0 si vous n'avez pas de carte pour elle.",
+        "data": {
+          "oil": "OIL!",
+          "f24": "F24",
+          "q8": "Q8",
+          "shell": "Shell",
+          "circlek": "Circle K / INGO",
+          "goon": "Go'on",
+          "unox": "Uno-X",
+          "ok": "OK"
+        }
+      },
+      "prediction": {
+        "title": "Prévision du plein",
+        "description": "Comportement de la prévision du plein pour chaque voiture. Les deux paramètres nécessitent au moins une voiture ajoutée, et aucun n'influe sur les prix des carburants.",
+        "data": {
+          "calibration_enabled": "Apprendre des prévisions passées et corriger les suivantes",
+          "accuracy_enabled": "Me montrer la précision de la prévision (avancé)"
+        },
+        "data_description": {
+          "calibration_enabled": "Après chaque plein, la prévision est comparée à ce que le réservoir a réellement fait. Si le réservoir type penche toujours du même côté, sur cinq pleins ou plus, les prévisions suivantes sont corrigées — de la moitié de l'écart mesuré, sans jamais dépasser 25 %. Une série de pleins inhabituels pendant des vacances est ignorée plutôt que traitée comme un changement d'habitude. Activé par défaut ; désactivez-le pour voir le modèle brut.",
+          "accuracy_enabled": "Ajoute l'action tankpriser.prediction_accuracy et vous permet d'utiliser la carte Prediction Accuracy, qui note chaque réservoir et indique si le modèle se trompe systématiquement ou est simplement bruité. Désactivé par défaut — c'est un outil pour juger la prévision plutôt qu'une partie de celle-ci."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "L'enseigne a refusé cette clé. Vérifiez que vous l'avez copiée en entier et qu'elle a été activée.",
+      "cannot_connect": "Impossible de joindre l'API de l'enseigne. Vérifiez votre connexion Internet et réessayez.",
+      "no_stations": "La clé a été acceptée mais aucune station n'a été renvoyée. Le compte n'a peut-être pas encore accès, ou l'enseigne a changé de format — ouvrez un ticket."
+    },
+    "abort": {
+      "no_credential_chains": "Aucune enseigne ne nécessite actuellement de clé API — toutes les enseignes prises en charge publient leurs prix librement."
+    }
+  },
+  "selector": {
+    "notify_rule": {
+      "options": {
+        "any_change": "Tout changement de prix dans la zone",
+        "cheapest_change": "Quand le prix le plus bas change",
+        "below_threshold": "Quand le prix le plus bas passe sous le seuil",
+        "decrease_only": "Uniquement quand le prix le plus bas baisse"
+      }
+    },
+    "level_unit": {
+      "options": {
+        "percent": "Pourcentage du réservoir (%)",
+        "litres": "Litres"
+      }
+    },
+    "country": {
+      "options": {
+        "dk": "Danemark — OK, Q8, F24, Shell et OIL!, aucune clé nécessaire",
+        "de": "Allemagne — Tankerkönig (MTS-K), nécessite une clé API gratuite",
+        "nl": "Pays-Bas — ANWB, aucune clé nécessaire (sans horodatage des prix)",
+        "be": "Belgique — ANWB, aucune clé nécessaire (sans horodatage des prix)",
+        "lu": "Luxembourg — ANWB, aucune clé nécessaire (sans horodatage des prix)",
+        "fr": "France — le flux national officiel du gouvernement, aucune clé nécessaire, couverture nationale",
+        "es": "Espagne — le registre officiel des prix du gouvernement, aucune clé nécessaire, couverture nationale (sans horodatage des prix)",
+        "it": "Italie — le registre officiel du gouvernement, aucune clé nécessaire, couverture nationale (les prix sont un instantané quotidien)",
+        "at": "Autriche — E-Control, aucune clé nécessaire, dix stations par carburant autour de vous (sans horodatage des prix)"
+      }
+    },
+    "maps": {
+      "options": {
+        "google": "Google Maps",
+        "apple": "Apple Maps",
+        "osm": "OpenStreetMap"
+      }
+    }
+  }
+}

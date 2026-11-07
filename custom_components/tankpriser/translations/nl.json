@@ -1,0 +1,234 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tankpriser instellen",
+        "description": "In welk land tank je? Eén configuratie dekt één land — tank je ook over de grens, voeg dat land dan achteraf toe als tweede Tankpriser-item.",
+        "data": {
+          "country": "Land"
+        }
+      },
+      "area": {
+        "title": "Gebied en brandstoffen",
+        "description": "Kies welke brandstoffen je wilt volgen. Je gebied is de thuislocatie van Home Assistant en de straal kun je later wijzigen onder Opties.",
+        "data": {
+          "area_name": "Naam (optioneel)",
+          "fuel_types": "Brandstoffen",
+          "anchor": "Zoek vanaf dit punt"
+        },
+        "data_description": {
+          "anchor": "Het gebied dat deze sensoren dekken wordt vanaf hier gemeten, en dit punt moet stilstaan: de sensoren, de geschiedenis en de prijsmeldingen vergelijken bij elke update dezelfde tankstations. Hardop vragen zoekt nog steeds vanaf waar je werkelijk bent."
+        }
+      },
+      "credentials": {
+        "title": "API-sleutel",
+        "description": "Een deel van de prijzen van dit land komt uit bronnen die een persoonlijke API-sleutel nodig hebben. Ze zijn gratis en ze zijn van jou — Home Assistant stuurt elke sleutel rechtstreeks naar de eigen bron en nergens anders heen.\n\nLaat een veld leeg tenzij het formulier het als verplicht markeert: die keten ontbreekt dan gewoon totdat je later de sleutel toevoegt onder Configureren → Ketens en API-sleutels.\n\n{guides}",
+        "data": {
+          "tankerkoenig": "Tankerkönig API-sleutel",
+          "goon": "Go'on API-sleutel",
+          "unox": "Uno-X-sleutel, als client_id:client_secret"
+        }
+      }
+    },
+    "error": {
+      "no_fuel_types": "Selecteer minstens één brandstof.",
+      "key_required": "Deze bron heeft een sleutel nodig voordat hij kan worden ingesteld.",
+      "invalid_auth": "De bron heeft die sleutel geweigerd. Een gloednieuwe sleutel is meestal nog niet geactiveerd — dat gebeurt handmatig en kan dagen duren. Controleer of je hem helemaal hebt gekopieerd en probeer het opnieuw zodra de activatiemail binnen is.",
+      "cannot_connect": "Kon de bron niet bereiken. Controleer je internetverbinding en probeer het opnieuw.",
+      "no_stations": "De sleutel is geaccepteerd, maar er kwamen geen tankstations terug. Open een issue als dit blijft gebeuren."
+    },
+    "abort": {
+      "already_configured": "Tankpriser is al ingesteld."
+    }
+  },
+  "config_subentries": {
+    "car": {
+      "initiate_flow": {
+        "user": "Auto toevoegen",
+        "reconfigure": "Auto bewerken"
+      },
+      "entry_type": "Auto",
+      "step": {
+        "user": {
+          "title": "Een auto toevoegen",
+          "description": "Voorspel wanneer deze auto moet tanken, op basis van het brandstofniveau dat Home Assistant al kent. De voorspelling is gratis — als je hem nuttig vindt, overweeg dan een donatie; het heeft echt werk gekost om te bouwen. 💛",
+          "data": {
+            "name": "Naam van de auto",
+            "source_entity": "Brandstofniveau-entiteit",
+            "level_attribute": "Niveau-attribuut (optioneel)",
+            "level_unit": "Niveau wordt gemeten in",
+            "tank_capacity_l": "Tankinhoud (liter)",
+            "odometer_entity": "Kilometerteller-entiteit (optioneel)",
+            "odometer_attribute": "Kilometerteller-attribuut (optioneel)",
+            "fuel_key": "Brandstof"
+          },
+          "data_description": {
+            "source_entity": "De entiteit die het brandstofniveau meldt — een sensor, of bijvoorbeeld de device_tracker van een auto.",
+            "level_attribute": "Laat leeg om de status van de entiteit te gebruiken. Anders het attribuut met het niveau, bijv. fuel_level. Geneste attributen gebruiken punten: data.fuel.level.",
+            "tank_capacity_l": "Inhoud van een volle tank in liter. Wordt gebruikt om een percentage om te rekenen naar liters en om het bereik te schatten.",
+            "odometer_entity": "Optioneel. Met een kilometerteller voorspellen we in L/100 km; zonder vallen we terug op een schatting op basis van tijd.",
+            "odometer_attribute": "Optioneel. Laat leeg om de status van de kilometerteller-entiteit te gebruiken, of geef het attribuut met de stand op.",
+            "fuel_key": "Welke brandstof deze auto gebruikt — zodat we de goedkoopste prijs in de buurt ervoor kunnen tonen."
+          }
+        },
+        "reconfigure": {
+          "title": "Auto bewerken",
+          "description": "Werk de brandstofniveaubron en instellingen van deze auto bij.",
+          "data": {
+            "name": "Naam van de auto",
+            "source_entity": "Brandstofniveau-entiteit",
+            "level_attribute": "Niveau-attribuut (optioneel)",
+            "level_unit": "Niveau wordt gemeten in",
+            "tank_capacity_l": "Tankinhoud (liter)",
+            "odometer_entity": "Kilometerteller-entiteit (optioneel)",
+            "odometer_attribute": "Kilometerteller-attribuut (optioneel)",
+            "fuel_key": "Brandstof"
+          },
+          "data_description": {
+            "source_entity": "De entiteit die het brandstofniveau meldt — een sensor, of bijvoorbeeld de device_tracker van een auto.",
+            "level_attribute": "Laat leeg om de status van de entiteit te gebruiken. Anders het attribuut met het niveau, bijv. fuel_level. Geneste attributen gebruiken punten: data.fuel.level.",
+            "tank_capacity_l": "Inhoud van een volle tank in liter. Wordt gebruikt om een percentage om te rekenen naar liters en om het bereik te schatten.",
+            "odometer_entity": "Optioneel. Met een kilometerteller voorspellen we in L/100 km; zonder vallen we terug op een schatting op basis van tijd.",
+            "odometer_attribute": "Optioneel. Laat leeg om de status van de kilometerteller-entiteit te gebruiken, of geef het attribuut met de stand op.",
+            "fuel_key": "Welke brandstof deze auto gebruikt — zodat we de goedkoopste prijs in de buurt ervoor kunnen tonen."
+          }
+        }
+      },
+      "error": {
+        "name_required": "Geef de auto een naam."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tankpriser-opties",
+        "menu_options": {
+          "settings": "Gebied en brandstoffen",
+          "notifications": "Prijsmeldingen",
+          "chains": "Ketens en API-sleutels",
+          "discounts": "Klantenkortingen",
+          "prediction": "Tankvoorspelling"
+        }
+      },
+      "settings": {
+        "title": "Gebied en brandstoffen",
+        "description": "Pas de straal rond je thuislocatie aan, kies brandstoffen en verberg tankstations die je niet interesseren.",
+        "data": {
+          "radius": "Straal rond thuis",
+          "fuel_types": "Brandstoffen",
+          "excluded_stations": "Verberg deze tankstations",
+          "scan_interval": "Update-interval (minuten)",
+          "nearby_tracker": "Rangschik tankstations bij dit apparaat (telefoon of auto)",
+          "nearby_radius_km": "Hoe ver naar tankstations in de buurt zoeken",
+          "anchor": "Zoek vanaf dit punt"
+        },
+        "data_description": {}
+      },
+      "notifications": {
+        "title": "Prijsmeldingen",
+        "description": "Ontvang een melding als de prijzen in jouw gebied veranderen.",
+        "data": {
+          "notify_enabled": "Meldingen sturen bij prijswijzigingen",
+          "notify_service": "Notify-service (bijv. notify.mobile_app_phone)",
+          "notify_rule": "Wanneer melden",
+          "notify_threshold": "Prijsdrempel (voor \"onder drempel\")",
+          "fillup_enabled": "Ook waarschuwen als een auto bijna leeg is en ergens goedkoops passeert",
+          "fillup_level_pct": "Waarschuw onder zoveel van een tank",
+          "fillup_near_km": "…en een tankstation binnen",
+          "fillup_maps": "Navigatie openen in"
+        },
+        "data_description": {
+          "fillup_enabled": "Vereist minstens één toegevoegde auto voor de voorspelling. Je krijgt één melding per bijna lege tank, niet één per update — de volgende melding wacht tot de auto is getankt."
+        }
+      },
+      "chains": {
+        "title": "Ketens en API-sleutels",
+        "description": "De meeste bronnen publiceren hun prijzen openlijk en vragen geen configuratie — de Deense ketens OK, Q8, F24, Shell en OIL! werken direct. De onderstaande bronnen antwoorden alleen met een persoonlijke API-sleutel die je zelf moet aanvragen. Kies er een om te zien hoe.",
+        "data": {
+          "provider": "Keten"
+        }
+      },
+      "provider": {
+        "title": "{name} API-sleutel",
+        "description": "**Zo krijg je een sleutel voor {name}:**\n\n{guide}\n\nAanmelden: {signup_url}\n\nDe sleutel wordt opgeslagen in de configuratie van deze integratie, alleen naar {name} gestuurd en verborgen in diagnostische gegevens. Laat het veld leeg om hem te verwijderen en deze keten niet meer te gebruiken.{warning}",
+        "data": {
+          "api_key": "API-sleutel"
+        },
+        "data_description": {
+          "api_key": "De sleutel wordt direct gecontroleerd — als de keten hem weigert, zie je hier een foutmelding."
+        }
+      },
+      "discounts": {
+        "title": "Klantenkortingen",
+        "description": "Korting per keten in øre per liter, zoals je tankpas die vermeldt. Prijzen overal — sensoren, de kaart, meldingen en de goedkoopste-van — tonen dan wat je werkelijk betaalt. Laat een keten op 0 staan als je daar geen pas voor hebt.",
+        "data": {
+          "oil": "OIL!",
+          "f24": "F24",
+          "q8": "Q8",
+          "shell": "Shell",
+          "circlek": "Circle K / INGO",
+          "goon": "Go'on",
+          "unox": "Uno-X",
+          "ok": "OK"
+        }
+      },
+      "prediction": {
+        "title": "Tankvoorspelling",
+        "description": "Hoe de tankvoorspelling per auto zich gedraagt. Beide instellingen vereisen minstens één toegevoegde auto en hebben geen invloed op brandstofprijzen.",
+        "data": {
+          "calibration_enabled": "Leer van eerdere voorspellingen en corrigeer toekomstige",
+          "accuracy_enabled": "Toon hoe nauwkeurig de voorspelling is geweest (geavanceerd)"
+        },
+        "data_description": {
+          "calibration_enabled": "Na elke tankbeurt wordt de voorspelling vergeleken met wat de tank werkelijk deed. Als de typische tank bij vijf of meer tankbeurten steeds dezelfde kant op afwijkt, worden latere voorspellingen bijgestuurd — met de helft van de gemeten afwijking, nooit meer dan 25 %. Een vakantie vol ongebruikelijke tanks wordt genegeerd in plaats van als gewoontewijziging gezien. Standaard aan; zet uit om het ruwe model te zien.",
+          "accuracy_enabled": "Voegt de actie tankpriser.prediction_accuracy toe en maakt de Prediction Accuracy-kaart bruikbaar, die elke tank beoordeelt en zegt of het model consequent afwijkt of slechts ruis geeft. Standaard uit — het is een hulpmiddel om de voorspelling te beoordelen en geen onderdeel ervan."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "De keten heeft die sleutel geweigerd. Controleer of je hem helemaal hebt gekopieerd en of hij is geactiveerd.",
+      "cannot_connect": "Kon de API van de keten niet bereiken. Controleer je internetverbinding en probeer het opnieuw.",
+      "no_stations": "De sleutel is geaccepteerd, maar er kwamen geen tankstations terug. Het account heeft mogelijk nog geen toegang, of de keten heeft zijn formaat gewijzigd — open een issue."
+    },
+    "abort": {
+      "no_credential_chains": "Momenteel heeft geen enkele keten een API-sleutel nodig — elke ondersteunde keten publiceert zijn prijzen openlijk."
+    }
+  },
+  "selector": {
+    "notify_rule": {
+      "options": {
+        "any_change": "Elke prijswijziging in het gebied",
+        "cheapest_change": "Als de goedkoopste prijs verandert",
+        "below_threshold": "Als de goedkoopste prijs onder de drempel zakt",
+        "decrease_only": "Alleen als de goedkoopste prijs daalt"
+      }
+    },
+    "level_unit": {
+      "options": {
+        "percent": "Percentage van de tank (%)",
+        "litres": "Liters"
+      }
+    },
+    "country": {
+      "options": {
+        "dk": "Denemarken — OK, Q8, F24, Shell en OIL!, geen sleutel nodig",
+        "de": "Duitsland — Tankerkönig (MTS-K), vereist een gratis API-sleutel",
+        "nl": "Nederland — ANWB, geen sleutel nodig (geen tijdstempels bij prijzen)",
+        "be": "België — ANWB, geen sleutel nodig (geen tijdstempels bij prijzen)",
+        "lu": "Luxemburg — ANWB, geen sleutel nodig (geen tijdstempels bij prijzen)",
+        "fr": "Frankrijk — de eigen landelijke feed van de overheid, geen sleutel nodig, landelijk",
+        "es": "Spanje — het eigen prijsregister van de overheid, geen sleutel nodig, landelijk (geen tijdstempels bij prijzen)",
+        "it": "Italië — het eigen register van de overheid, geen sleutel nodig, landelijk (prijzen zijn een dagelijkse momentopname)",
+        "at": "Oostenrijk — E-Control, geen sleutel nodig, tien tankstations per brandstof in je buurt (geen tijdstempels bij prijzen)"
+      }
+    },
+    "maps": {
+      "options": {
+        "google": "Google Maps",
+        "apple": "Apple Maps",
+        "osm": "OpenStreetMap"
+      }
+    }
+  }
+}

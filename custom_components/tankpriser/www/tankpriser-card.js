@@ -97,7 +97,7 @@ function _safeUrl(url) {
 // <lang>.json, fetched once the first time a card needs it — add the file and
 // its code to CARD_LANGS, nothing else.
 const CARD_I18N = "/tankpriser/translations";
-const CARD_LANGS = ["da"];
+const CARD_LANGS = ["da", "de", "es", "fr", "it", "nl"];
 const CARD_STRINGS = {
   en: {
     disc_title: "Pump price {price} · discount {ore} øre",

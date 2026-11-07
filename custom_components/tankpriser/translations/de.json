@@ -1,0 +1,234 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tankpriser einrichten",
+        "description": "In welchem Land tankst du? Eine Einrichtung deckt ein Land ab – wenn du auch jenseits der Grenze tankst, füge dieses Land anschließend als zweiten Tankpriser-Eintrag hinzu.",
+        "data": {
+          "country": "Land"
+        }
+      },
+      "area": {
+        "title": "Gebiet & Kraftstoffarten",
+        "description": "Wähle aus, welche Kraftstoffe verfolgt werden sollen. Dein Gebiet ist der Standort „Zuhause“ von Home Assistant; den Radius kannst du später unter „Optionen“ ändern.",
+        "data": {
+          "area_name": "Name (optional)",
+          "fuel_types": "Kraftstoffarten",
+          "anchor": "Von diesem Punkt aus suchen"
+        },
+        "data_description": {
+          "anchor": "Das Gebiet, das diese Sensoren abdecken, wird von hier aus gemessen, und dieser Punkt muss fest bleiben: Sensoren, Verlauf und Preisbenachrichtigungen vergleichen von einer Aktualisierung zur nächsten jeweils dieselben Tankstellen. Eine gesprochene Frage sucht weiterhin von deinem tatsächlichen Standort aus."
+        }
+      },
+      "credentials": {
+        "title": "API-Schlüssel",
+        "description": "Ein Teil der Preise dieses Landes stammt aus Quellen, die einen persönlichen API-Schlüssel benötigen. Er ist kostenlos und gehört dir – Home Assistant sendet jeden Schlüssel direkt an die jeweilige Quelle und nirgendwohin sonst.\n\nLass ein Feld leer, sofern das Formular es nicht als erforderlich markiert: Diese Kette fehlt dann einfach, bis du ihren Schlüssel später unter Konfigurieren → Ketten & API-Schlüssel hinzufügst.\n\n{guides}",
+        "data": {
+          "tankerkoenig": "Tankerkönig-API-Schlüssel",
+          "goon": "Go'on-API-Schlüssel",
+          "unox": "Uno-X-Schlüssel, als client_id:client_secret"
+        }
+      }
+    },
+    "error": {
+      "no_fuel_types": "Wähle mindestens eine Kraftstoffart aus.",
+      "key_required": "Diese Quelle benötigt einen Schlüssel, bevor sie eingerichtet werden kann.",
+      "invalid_auth": "Die Quelle hat diesen Schlüssel abgelehnt. Ein brandneuer Schlüssel ist meist noch nicht freigeschaltet – das geschieht von Hand und kann Tage dauern. Prüfe, ob du ihn vollständig kopiert hast, und versuche es erneut, sobald die Aktivierungs-E-Mail eintrifft.",
+      "cannot_connect": "Die Quelle ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.",
+      "no_stations": "Der Schlüssel wurde akzeptiert, aber es wurden keine Tankstellen zurückgegeben. Bitte eröffne ein Issue, falls das weiterhin auftritt."
+    },
+    "abort": {
+      "already_configured": "Tankpriser ist bereits eingerichtet."
+    }
+  },
+  "config_subentries": {
+    "car": {
+      "initiate_flow": {
+        "user": "Auto hinzufügen",
+        "reconfigure": "Auto bearbeiten"
+      },
+      "entry_type": "Auto",
+      "step": {
+        "user": {
+          "title": "Auto hinzufügen",
+          "description": "Sage voraus, wann dieses Auto tanken muss – anhand des Füllstands, den Home Assistant bereits kennt. Die Vorhersage ist kostenlos – wenn sie dir nützt, denk bitte über eine Spende nach; der Aufbau hat echte Arbeit gekostet. 💛",
+          "data": {
+            "name": "Name des Autos",
+            "source_entity": "Tankfüllstand-Entität",
+            "level_attribute": "Füllstand-Attribut (optional)",
+            "level_unit": "Füllstand wird gemessen in",
+            "tank_capacity_l": "Tankvolumen (Liter)",
+            "odometer_entity": "Kilometerzähler-Entität (optional)",
+            "odometer_attribute": "Kilometerzähler-Attribut (optional)",
+            "fuel_key": "Kraftstoffart"
+          },
+          "data_description": {
+            "source_entity": "Die Entität, die den Tankfüllstand meldet – ein Sensor oder z. B. der device_tracker eines Autos.",
+            "level_attribute": "Leer lassen, um den Zustand der Entität zu verwenden. Andernfalls das Attribut, das den Füllstand enthält, z. B. fuel_level. Verschachtelte Attribute werden mit Punkten angegeben: data.fuel.level.",
+            "tank_capacity_l": "Größe des vollen Tanks in Litern. Dient dazu, einen Prozentwert in Liter umzurechnen und die Reichweite zu schätzen.",
+            "odometer_entity": "Optional. Mit Kilometerzähler rechnen wir die Vorhersage in l/100 km; ohne ihn greifen wir auf eine zeitbasierte Schätzung zurück.",
+            "odometer_attribute": "Optional. Leer lassen, um den Zustand der Kilometerzähler-Entität zu verwenden, oder das Attribut mit dem Wert angeben.",
+            "fuel_key": "Welchen Kraftstoff dieses Auto verwendet – damit wir dafür den günstigsten Preis in der Nähe anzeigen können."
+          }
+        },
+        "reconfigure": {
+          "title": "Auto bearbeiten",
+          "description": "Aktualisiere die Füllstandsquelle und die Einstellungen dieses Autos.",
+          "data": {
+            "name": "Name des Autos",
+            "source_entity": "Tankfüllstand-Entität",
+            "level_attribute": "Füllstand-Attribut (optional)",
+            "level_unit": "Füllstand wird gemessen in",
+            "tank_capacity_l": "Tankvolumen (Liter)",
+            "odometer_entity": "Kilometerzähler-Entität (optional)",
+            "odometer_attribute": "Kilometerzähler-Attribut (optional)",
+            "fuel_key": "Kraftstoffart"
+          },
+          "data_description": {
+            "source_entity": "Die Entität, die den Tankfüllstand meldet – ein Sensor oder z. B. der device_tracker eines Autos.",
+            "level_attribute": "Leer lassen, um den Zustand der Entität zu verwenden. Andernfalls das Attribut, das den Füllstand enthält, z. B. fuel_level. Verschachtelte Attribute werden mit Punkten angegeben: data.fuel.level.",
+            "tank_capacity_l": "Größe des vollen Tanks in Litern. Dient dazu, einen Prozentwert in Liter umzurechnen und die Reichweite zu schätzen.",
+            "odometer_entity": "Optional. Mit Kilometerzähler rechnen wir die Vorhersage in l/100 km; ohne ihn greifen wir auf eine zeitbasierte Schätzung zurück.",
+            "odometer_attribute": "Optional. Leer lassen, um den Zustand der Kilometerzähler-Entität zu verwenden, oder das Attribut mit dem Wert angeben.",
+            "fuel_key": "Welchen Kraftstoff dieses Auto verwendet – damit wir dafür den günstigsten Preis in der Nähe anzeigen können."
+          }
+        }
+      },
+      "error": {
+        "name_required": "Gib dem Auto einen Namen."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tankpriser-Optionen",
+        "menu_options": {
+          "settings": "Gebiet & Kraftstoffarten",
+          "notifications": "Preisbenachrichtigungen",
+          "chains": "Ketten & API-Schlüssel",
+          "discounts": "Treuerabatte",
+          "prediction": "Tankvorhersage"
+        }
+      },
+      "settings": {
+        "title": "Gebiet & Kraftstoffarten",
+        "description": "Passe den Radius um deinen Standort „Zuhause“ an, wähle Kraftstoffarten und blende Tankstellen aus, die dich nicht interessieren.",
+        "data": {
+          "radius": "Radius um „Zuhause“",
+          "fuel_types": "Kraftstoffarten",
+          "excluded_stations": "Diese Tankstellen ausblenden",
+          "scan_interval": "Aktualisierungsintervall (Minuten)",
+          "nearby_tracker": "Tankstellen in der Nähe dieses Geräts einstufen (Handy oder Auto)",
+          "nearby_radius_km": "Wie weit nach Tankstellen in der Nähe gesucht wird",
+          "anchor": "Von diesem Punkt aus suchen"
+        },
+        "data_description": {}
+      },
+      "notifications": {
+        "title": "Preisbenachrichtigungen",
+        "description": "Werde benachrichtigt, wenn sich die Preise in deiner Umgebung ändern.",
+        "data": {
+          "notify_enabled": "Bei Preisänderungen Benachrichtigungen senden",
+          "notify_service": "Benachrichtigungsdienst (z. B. notify.mobile_app_phone)",
+          "notify_rule": "Wann benachrichtigen",
+          "notify_threshold": "Preisschwelle (für „unter Schwellenwert“)",
+          "fillup_enabled": "Auch warnen, wenn ein Auto fast leer ist und an einer günstigen Tankstelle vorbeikommt",
+          "fillup_level_pct": "Warnen unter diesem Tankanteil",
+          "fillup_near_km": "…und eine Tankstelle liegt im Umkreis von",
+          "fillup_maps": "Navigation öffnen in"
+        },
+        "data_description": {
+          "fillup_enabled": "Erfordert mindestens ein für die Vorhersage hinzugefügtes Auto. Du wirst einmal pro niedrigem Tankstand benachrichtigt, nicht bei jeder Aktualisierung – die nächste Warnung wartet, bis das Auto vollgetankt wurde."
+        }
+      },
+      "chains": {
+        "title": "Ketten & API-Schlüssel",
+        "description": "Die meisten Quellen veröffentlichen ihre Preise offen und brauchen keine Einrichtung – die dänischen Ketten OK, Q8, F24, Shell und OIL! funktionieren sofort. Die folgenden Quellen antworten nur mit einem persönlichen API-Schlüssel, den du selbst beantragen musst. Wähle eine aus, um zu sehen, wie.",
+        "data": {
+          "provider": "Kette"
+        }
+      },
+      "provider": {
+        "title": "{name}-API-Schlüssel",
+        "description": "**So erhältst du einen Schlüssel für {name}:**\n\n{guide}\n\nRegistrierung: {signup_url}\n\nDer Schlüssel wird in der Konfiguration dieser Integration gespeichert, nur an {name} gesendet und in der Diagnose ausgeblendet. Lass das Feld leer, um ihn zu entfernen und diese Kette nicht mehr zu verwenden.{warning}",
+        "data": {
+          "api_key": "API-Schlüssel"
+        },
+        "data_description": {
+          "api_key": "Der Schlüssel wird sofort geprüft – wenn die Kette ihn ablehnt, siehst du hier einen Fehler."
+        }
+      },
+      "discounts": {
+        "title": "Treuerabatte",
+        "description": "Rabatt pro Kette in øre pro Liter, wie ihn deine Tankkarte ausweist. Die Preise überall – Sensoren, Karte, Benachrichtigungen und „günstigste“ – zeigen dann, was du tatsächlich zahlst. Lass eine Kette auf 0, wenn du dafür keine Karte hast.",
+        "data": {
+          "oil": "OIL!",
+          "f24": "F24",
+          "q8": "Q8",
+          "shell": "Shell",
+          "circlek": "Circle K / INGO",
+          "goon": "Go'on",
+          "unox": "Uno-X",
+          "ok": "OK"
+        }
+      },
+      "prediction": {
+        "title": "Tankvorhersage",
+        "description": "Wie sich die Tankvorhersage pro Auto verhält. Beide Einstellungen erfordern mindestens ein hinzugefügtes Auto und beeinflussen die Kraftstoffpreise nicht.",
+        "data": {
+          "calibration_enabled": "Aus früheren Vorhersagen lernen und künftige korrigieren",
+          "accuracy_enabled": "Zeige mir, wie genau die Vorhersage bisher war (erweitert)"
+        },
+        "data_description": {
+          "calibration_enabled": "Nach jedem Tanken wird die Vorhersage mit dem tatsächlichen Verlauf des Tanks verglichen. Wenn der typische Tank über fünf oder mehr Füllungen hinweg in dieselbe Richtung abweicht, werden spätere Vorhersagen zurückkorrigiert – um die Hälfte der gemessenen Abweichung, nie um mehr als 25 %. Ungewöhnliche Tankfüllungen während eines Urlaubs werden ignoriert und nicht als geänderte Gewohnheit gewertet. Standardmäßig an; schalte es aus, um das reine Modell zu sehen.",
+          "accuracy_enabled": "Fügt die Aktion tankpriser.prediction_accuracy hinzu und ermöglicht die Nutzung der Karte „Prediction Accuracy“, die jede Tankfüllung bewertet und sagt, ob das Modell durchgehend danebenliegt oder nur streut. Standardmäßig aus – es ist ein Werkzeug zur Beurteilung der Vorhersage und nicht Teil davon."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Die Kette hat diesen Schlüssel abgelehnt. Prüfe, ob du ihn vollständig kopiert hast und ob er freigeschaltet wurde.",
+      "cannot_connect": "Die API der Kette ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut.",
+      "no_stations": "Der Schlüssel wurde akzeptiert, aber es wurden keine Tankstellen zurückgegeben. Das Konto hat möglicherweise noch keinen Zugriff, oder die Kette hat ihr Format geändert – bitte eröffne ein Issue."
+    },
+    "abort": {
+      "no_credential_chains": "Derzeit benötigt keine Kette einen API-Schlüssel – jede unterstützte Kette veröffentlicht ihre Preise offen."
+    }
+  },
+  "selector": {
+    "notify_rule": {
+      "options": {
+        "any_change": "Jede Preisänderung in der Umgebung",
+        "cheapest_change": "Wenn sich der günstigste Preis ändert",
+        "below_threshold": "Wenn der günstigste Preis unter den Schwellenwert fällt",
+        "decrease_only": "Nur wenn der günstigste Preis sinkt"
+      }
+    },
+    "level_unit": {
+      "options": {
+        "percent": "Prozent des Tanks (%)",
+        "litres": "Liter"
+      }
+    },
+    "country": {
+      "options": {
+        "dk": "Dänemark – OK, Q8, F24, Shell und OIL!, kein Schlüssel nötig",
+        "de": "Deutschland – Tankerkönig (MTS-K), benötigt einen kostenlosen API-Schlüssel",
+        "nl": "Niederlande – ANWB, kein Schlüssel nötig (keine Preiszeitstempel)",
+        "be": "Belgien – ANWB, kein Schlüssel nötig (keine Preiszeitstempel)",
+        "lu": "Luxemburg – ANWB, kein Schlüssel nötig (keine Preiszeitstempel)",
+        "fr": "Frankreich – der offizielle nationale Datenfeed der Regierung, kein Schlüssel nötig, landesweit",
+        "es": "Spanien – das offizielle Preisregister der Regierung, kein Schlüssel nötig, landesweit (keine Preiszeitstempel)",
+        "it": "Italien – das offizielle Register der Regierung, kein Schlüssel nötig, landesweit (Preise sind eine Tagesaufnahme)",
+        "at": "Österreich – E-Control, kein Schlüssel nötig, zehn Tankstellen pro Kraftstoff in deiner Umgebung (keine Preiszeitstempel)"
+      }
+    },
+    "maps": {
+      "options": {
+        "google": "Google Maps",
+        "apple": "Apple Maps",
+        "osm": "OpenStreetMap"
+      }
+    }
+  }
+}
