@@ -37,6 +37,9 @@ assert.ok(window.L && window.L.markerClusterGroup, "Leaflet + plugin loaded");
 
 // The card registers custom elements; jsdom supports customElements.
 run(read("tankpriser-card.js"), "card");
+// The fake hass is Danish. The card would fetch da.json on its first update;
+// jsdom has no server to fetch from, so hand it the file directly.
+run(`CARD_STRINGS.da = ${read("translations/da.json")};`, "da strings");
 const Card = window.customElements.get("tankpriser-card");
 assert.ok(Card, "card element defined");
 

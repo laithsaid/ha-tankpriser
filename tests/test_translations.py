@@ -29,6 +29,7 @@ BASE = os.path.join(
 )
 SOURCE = os.path.join(BASE, "strings.json")
 TRANSLATIONS = os.path.join(BASE, "translations")
+LANG_FILES = tuple(sorted(n for n in os.listdir(TRANSLATIONS) if n.endswith(".json")))
 
 # hassfest's rule, copied exactly.
 KEY = re.compile(r"^[a-z0-9-_]+$")
@@ -90,9 +91,9 @@ def test_every_key_matches_the_rule() -> None:
 
 
 def test_the_three_files_agree() -> None:
-    print("strings.json, en.json and da.json carry the same keys")
+    print("strings.json and every translation carry the same keys")
     source = keyset(load(SOURCE))
-    for name in ("en.json", "da.json"):
+    for name in LANG_FILES:
         other = keyset(load(os.path.join(TRANSLATIONS, name)))
         missing = sorted(source - other)
         extra = sorted(other - source)
@@ -103,7 +104,7 @@ def test_the_three_files_agree() -> None:
 def test_nothing_is_left_blank() -> None:
     print("every leaf actually says something")
     blank: list[str] = []
-    for name in ("../strings.json", "en.json", "da.json"):
+    for name in ("../strings.json", *LANG_FILES):
         path = os.path.join(TRANSLATIONS, name)
         for parent, key, value in walk(load(path)):
             if isinstance(value, str) and not value.strip():

@@ -852,6 +852,8 @@ app does — so all of it runs for real from your desk. See
 
 - **Danish and English UI** — every dialog, error and option is translated, and
   the spoken sentence for Siri follows Home Assistant's own language.
+  The cards follow each user's own profile language and number format; a
+  card language is one file in `www/translations/`.
 - **Redacted diagnostics** and two maintenance services — see
   [Services, events and diagnostics](#services-events-and-diagnostics).
 

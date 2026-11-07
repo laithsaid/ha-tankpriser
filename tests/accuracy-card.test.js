@@ -64,6 +64,8 @@ function card(state) {
   instance._report = state.report === undefined ? null : state.report;
   instance._error = state.error || "";
   instance._loading = Boolean(state.loading);
+  // A Danish profile: numbers follow the user's format, so this pins the comma.
+  instance._hass = { locale: { language: "da" } };
   return instance;
 }
 
