@@ -331,4 +331,55 @@ assert.deepStrictEqual(
 // two sections when a card lists several fuels.
 assert.strictEqual(rows[0].s.name, "cheap far", "_orderRows must copy, not sort in place");
 
+// 8. The card speaks the user's language: Danish for a Danish profile,
+//    English for everyone else, and both tables carry the same keys.
+const { _tr } = ctx;
+const CARD_STRINGS = vm.runInContext("CARD_STRINGS", ctx);
+const LANG_DIR = path.join(path.dirname(CARD), "translations");
+const LANG_FILES = fs.readdirSync(LANG_DIR).filter((f) => f.endsWith(".json"));
+for (const file of LANG_FILES) {
+  CARD_STRINGS[file.slice(0, -5)] = JSON.parse(fs.readFileSync(path.join(LANG_DIR, file), "utf8"));
+}
+const da = { locale: { language: "da" } };
+const en = { locale: { language: "en-GB" } };
+const el = { locale: { language: "el" } };
+assert.strictEqual(_tr(da, "nav"), "➤ Navigér hertil");
+assert.strictEqual(_tr(en, "nav"), "➤ Navigate here");
+assert.strictEqual(_tr(el, "nav"), "➤ Navigate here", "no table of its own falls back to English");
+assert.strictEqual(_tr({ language: "da" }, "nav"), "➤ Navigér hertil", "older hass.language");
+assert.strictEqual(_tr(undefined, "nav"), "➤ Navigate here", "before the first hass");
+assert.strictEqual(_tr(en, "car_pick", { shown: 1, total: 3 }), "Choose cars (1 of 3 shown)");
+assert.strictEqual(_tr(en, "pick_none_within", { km: 25, where: "" }), "No stations within 25 km.");
+assert.strictEqual(_tr(en, "away", {}), "{km} km from here", "a missing value stays visible, not 'undefined'");
+assert.strictEqual(_tr({ locale: { language: "da-DK" } }, "nav"), "➤ Navigér hertil", "region tag");
+// Every translation file is listed, every listed language has a file, and each
+// carries exactly the English keys — a missing one would show English, an extra
+// one is a typo nothing reads.
+assert.deepStrictEqual(
+  LANG_FILES.map((f) => f.slice(0, -5)).sort(),
+  [...vm.runInContext("CARD_LANGS", ctx)].sort(),
+  "CARD_LANGS lists exactly the files in www/translations"
+);
+const enKeys = Object.keys(CARD_STRINGS.en).sort();
+for (const file of LANG_FILES) {
+  const lang = file.slice(0, -5);
+  assert.deepStrictEqual(Object.keys(CARD_STRINGS[lang]).sort(), enKeys, `${file} carries the English keys`);
+  for (const key of enKeys) {
+    const want = (CARD_STRINGS.en[key].match(/\{\w+\}/g) || []).sort();
+    const got = (CARD_STRINGS[lang][key].match(/\{\w+\}/g) || []).sort();
+    assert.deepStrictEqual(got, want, `${file} ${key} keeps the placeholders`);
+    assert.ok(CARD_STRINGS[lang][key].trim(), `${file} ${key} is not blank`);
+  }
+}
+
+// 9. Numbers follow the user's number format, the way Home Assistant's own
+//    formatNumber does.
+const { _fmtNumber } = ctx;
+assert.strictEqual(_fmtNumber({ locale: { language: "da", number_format: "language" } }, 2.107, 3), "2,107");
+assert.strictEqual(_fmtNumber({ locale: { language: "en", number_format: "language" } }, 2.107, 3), "2.107");
+assert.strictEqual(_fmtNumber({ locale: { language: "en", number_format: "decimal_comma" } }, 2.1, 2), "2,10");
+assert.strictEqual(_fmtNumber({ locale: { language: "da", number_format: "comma_decimal" } }, 1234.5, 1), "1,234.5");
+assert.strictEqual(_fmtNumber({ locale: { language: "da", number_format: "none" } }, 1234.5, 1), "1234.5");
+assert.strictEqual(_fmtNumber({ locale: { language: "da" } }, 0.3, 0, 1), "0,3", "older frontends without number_format");
+
 console.log("card helper tests passed");
